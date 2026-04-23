@@ -1,4 +1,4 @@
-# aeresov/claude-plugins
+# aeresov/misc-claude-plugins
 
 Private Claude Code plugin marketplace.
 
@@ -9,7 +9,7 @@ Private Claude Code plugin marketplace.
 /plugin marketplace add /path/to/this/repo
 
 # or, once pushed to GitHub
-/plugin marketplace add aeresov/claude-plugins
+/plugin marketplace add aeresov/misc-claude-plugins
 ```
 
 Then install individual plugins:
