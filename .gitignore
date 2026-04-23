@@ -1,0 +1,12 @@
+# Never commit per-project settings — they may contain internal hostnames
+# and infrastructure-specific commands.
+.claude/*.local.md
+.claude/*.local.json
+
+# Python artifacts from running the MCP server locally.
+__pycache__/
+*.pyc
+.venv/
+
+# uv cache if colocated.
+.uv/

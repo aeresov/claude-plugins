@@ -1,0 +1,100 @@
+---
+name: vpn-on-demand
+description: This skill should be used before running any command that touches private network resources - specifically mysql/psql/redis-cli pointing at AWS hostnames ending in .rds.amazonaws.com / .elasticache.amazonaws.com / .memorydb.amazonaws.com, aws CLI calls against rds/elasticache/memorydb/secretsmanager/ssm in internal accounts, kubectl against non-public clusters, ssh to private hosts, curl/http to RFC1918 addresses (10.x, 172.16-31.x, 192.168.x) or .internal/.corp/.local/.private/.vpc hostnames, and anything else matched by trigger_patterns in .claude/openvpn3-on-demand.local.md. Invokes vpn_connect before the command and vpn_disconnect at end of task.
+version: 0.1.0
+---
+
+# VPN On Demand
+
+Bring up the project's OpenVPN3 tunnel before running any command that needs it, and tear it down when the task is done. The plugin ships an `openvpn3` MCP server with the tools below; this skill is the policy that decides *when* to call them.
+
+## Preflight: is this plugin even active for this project?
+
+This skill only applies when the current project opts in by declaring a VPN profile in `.claude/openvpn3-on-demand.local.md` (see the Configuration section). Before anything else:
+
+1. Check whether `.claude/openvpn3-on-demand.local.md` exists in the project root.
+2. If it does not exist, stop — do nothing, do not call any `vpn_*` tool, proceed with the user's request as normal.
+3. If it does exist, read it and extract the YAML frontmatter fields `profile_name`, `ovpn_provision_cmd` (optional), and `trigger_patterns` (optional list of regex).
+
+If the file exists but `profile_name` is missing or empty, surface that as a configuration error to the user rather than guessing.
+
+## When to activate the VPN
+
+Call `vpn_connect(profile_name)` before executing a command whose destination is a private network resource. Use this matrix:
+
+**Activate** when the command targets:
+
+- Hosts ending in `.rds.amazonaws.com`, `.elasticache.amazonaws.com`, `.memorydb.amazonaws.com`, `.redshift.amazonaws.com`, or `.docdb.amazonaws.com`.
+- Hosts in the RFC1918 ranges `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`.
+- Hostnames ending in `.internal`, `.corp`, `.local`, `.private`, `.vpc`, or anything documented as internal-only in the project's CLAUDE.md / README.
+- `aws` CLI calls against prod accounts for services that talk to private endpoints (RDS, ElastiCache, MemoryDB, Secrets Manager, SSM Parameter Store, ECR inside a VPC, Lambda in a VPC).
+- `kubectl` / `helm` against a cluster whose API endpoint is private.
+- `ssh` to hosts without a public IP.
+- Any bash, Read/Grep/Glob-free tool call that matches one of the `trigger_patterns` regexes in the settings file. Patterns there extend the defaults — they do not replace them.
+
+**Do NOT activate** for:
+
+- Read/Edit/Write/Glob/Grep on local files (they never leave the machine).
+- Commands hitting obviously public endpoints: `github.com`, `pypi.org`, `npmjs.com`, `docker.io`, public S3 buckets via `https://...s3.amazonaws.com` without a VPC endpoint requirement, public REST APIs.
+- Reading docs, running tests that don't hit the network, local builds.
+
+When uncertain, check the settings file's `trigger_patterns` and the project's CLAUDE.md for guidance. If still uncertain, ask the user rather than speculating.
+
+## The core flow
+
+Given a matching command, the flow is:
+
+1. **Connect.** Call `vpn_connect(profile_name=<value from settings>)`. The tool is idempotent — if the session already exists, it returns `status: already_connected` immediately.
+
+2. **If connect returns an error about a missing config** (`stderr` mentions "not found" / "no such config" / similar), run first-time provisioning:
+   - If the settings file declares `ovpn_provision_cmd`, run that shell command. It is responsible for producing a fresh `.ovpn` file. The command must print the absolute path of the generated file as its last non-empty stdout line, or explicitly set an `OUTPUT=…` path — adopt whichever convention the settings file uses.
+   - Call `vpn_import(ovpn_path=<path>, profile_name=<name>)` to register it.
+   - Retry `vpn_connect(profile_name)`.
+   - If `ovpn_provision_cmd` is not set, stop and tell the user: the profile needs to be imported manually (e.g. `openvpn3 config-import --config path/to/file.ovpn --name <name> --persistent`).
+
+3. **Run the user's command.** Proceed as normal.
+
+4. **Disconnect at end of task.** Once the user's task is complete and no subsequent step in the same task still needs VPN, call `vpn_disconnect(profile_name=<value>)`. Disconnecting is also idempotent — `status: not_connected` is fine.
+
+Do not disconnect between two VPN-gated commands in the same task. Connect once, keep the tunnel up for the run, disconnect at the end.
+
+## Interaction with the teardown hook
+
+The plugin ships Stop and SessionEnd hooks that disconnect the configured profile as a safety net. Those hooks are a backup for the case where the model forgot step 4 above; they are not an excuse to skip it. Explicit disconnect at task end is the expected behavior because:
+
+- Stop also fires between turns in a long conversation; letting the hook do the work means every follow-up turn pays a reconnect.
+- Explicit disconnect produces cleaner transcripts (the user sees the intent).
+
+## Tool reference
+
+The MCP server exposes these tools under the `openvpn3` prefix:
+
+- `vpn_status()` — returns the list of active sessions. Useful for confirming state, debugging, or checking before a manual step.
+- `vpn_connect(profile_name)` — start a session. Idempotent.
+- `vpn_disconnect(profile_name)` — stop a session. Idempotent. `profile_name` is required; the server will not disconnect arbitrary sessions.
+- `vpn_import(ovpn_path, profile_name)` — register an `.ovpn` file as a named persistent config. Idempotent.
+
+All tools return a dict with a `status` field. Treat `status: "error"` as a hard failure and surface `stderr` / `stdout` to the user — do not silently retry.
+
+## Configuration file
+
+Per-project settings live in `.claude/openvpn3-on-demand.local.md` (git-ignored). Frontmatter fields:
+
+| Field               | Required | Purpose                                                                 |
+|---------------------|----------|-------------------------------------------------------------------------|
+| `profile_name`      | yes      | Name of the openvpn3 config to start. Matches the argument passed to `vpn_connect` and `vpn_disconnect`. |
+| `ovpn_provision_cmd`| no       | Shell command that (re)generates the `.ovpn` file on first connect. Required only if `vpn_import` has never been run for this profile. |
+| `trigger_patterns`  | no       | Extra regex patterns to treat as VPN-requiring, beyond the defaults in this skill. |
+
+See `references/example-local-settings.md` for a full commented template.
+
+## Failure modes and how to handle them
+
+- **`openvpn3` CLI not installed.** All tools return `{"status": "error", "message": "openvpn3 CLI not found on PATH"}`. Tell the user to install `openvpn3-linux` (or equivalent) and stop; do not attempt the command without VPN.
+- **Connect fails with auth error.** Surface `stderr` to the user. The `.ovpn` file may need re-provisioning or the credentials have rotated.
+- **`sessions-list` shows the session but the command still fails to reach the host.** The tunnel may be up without routing. Confirm with `vpn_status()` and report both the session state and the original command's error — don't just re-run `vpn_connect`.
+- **Multiple simultaneous tasks share a profile.** The tunnel is a shared resource. If one task disconnects while another still needs it, the second will fail. Default to connecting at the start of the VPN-requiring block of work and disconnecting only when no further VPN-gated step is queued.
+
+## Additional resources
+
+- `references/example-local-settings.md` — full commented template for the per-project settings file.
