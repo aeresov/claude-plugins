@@ -6,11 +6,12 @@
 """
 openvpn3 MCP server.
 
-Exposes four tools that shell out to the openvpn3 CLI:
+Exposes five tools that shell out to the openvpn3 CLI:
   - vpn_status()
   - vpn_connect(profile_name)
   - vpn_disconnect(profile_name)
-  - vpn_import(ovpn_path, profile_name)
+  - vpn_config_import(ovpn_path, profile_name)
+  - vpn_config_remove(profile_name)
 
 Run via `uv run --script` (inline PEP 723 dependencies) or any Python 3.10+
 environment with `mcp` installed.
@@ -156,7 +157,7 @@ def vpn_disconnect(profile_name: str) -> dict:
 
 
 @mcp.tool()
-def vpn_import(ovpn_path: str, profile_name: str) -> dict:
+def vpn_config_import(ovpn_path: str, profile_name: str) -> dict:
     """Import a .ovpn file as a persistent OpenVPN3 config. Idempotent: returns early if a config with this name already exists.
 
     Args:
@@ -190,6 +191,34 @@ def vpn_import(ovpn_path: str, profile_name: str) -> dict:
             "stdout": r.stdout.strip(),
         }
     return {"status": "imported", "profile_name": profile_name, "ovpn_path": str(path)}
+
+
+@mcp.tool()
+def vpn_config_remove(profile_name: str) -> dict:
+    """Remove a previously-imported OpenVPN3 config. Idempotent: returns `already_removed` if no config with this name exists.
+
+    Useful before re-provisioning — e.g. after the user regenerates the .ovpn file for a new deployment
+    environment or toggles a DNS workaround. openvpn3 refuses to remove a config that still has an active
+    session; call vpn_disconnect first if needed.
+
+    Args:
+        profile_name: Name of the imported config to remove.
+    """
+    err = _require_cli()
+    if err:
+        return err
+    if profile_name not in _list_configs():
+        return {"status": "already_removed", "profile_name": profile_name}
+    r = _run(OPENVPN3, "config-remove", "--config", profile_name, "--force", timeout=15.0)
+    if r.returncode != 0:
+        return {
+            "status": "error",
+            "profile_name": profile_name,
+            "returncode": r.returncode,
+            "stderr": r.stderr.strip(),
+            "stdout": r.stdout.strip(),
+        }
+    return {"status": "removed", "profile_name": profile_name}
 
 
 def main() -> None:

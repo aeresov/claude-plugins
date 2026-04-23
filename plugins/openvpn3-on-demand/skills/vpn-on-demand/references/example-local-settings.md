@@ -7,13 +7,13 @@ fields, and add `.claude/*.local.md` to `.gitignore`.
 ---
 # REQUIRED. Name of the openvpn3 config to start/stop. This is the name you
 # passed to `openvpn3 config-import --name <name>` (or will pass via
-# ovpn_provision_cmd + vpn_import below).
+# ovpn_provision_cmd + vpn_config_import below).
 profile_name: my-prod-vpn
 
 # OPTIONAL. Shell command that produces a fresh .ovpn file on first connect.
 # The skill runs this iff vpn_connect fails because the profile isn't imported
 # yet. Point it at a deterministic output path you also reference when calling
-# vpn_import. Example: a Makefile target that fetches the file from a secrets
+# vpn_config_import. Example: a Makefile target that fetches the file from a secrets
 # manager or generates it on the fly.
 ovpn_provision_cmd: make get_vpn_client_config OUTPUT=~/.config/openvpn3/my-prod-vpn.ovpn
 
@@ -39,8 +39,8 @@ when it's broken. This body is not consumed by the plugin; it's for humans
 
 ## How the fields flow through the plugin
 
-- `profile_name` is passed verbatim as the argument to `vpn_connect`, `vpn_disconnect`, and `vpn_import`. Keep it in kebab-case for consistency with openvpn3's own conventions.
-- `ovpn_provision_cmd` is invoked only when `vpn_connect` fails because no config with that name is registered. On success, the skill calls `vpn_import` and retries the connect. If this field is absent, the user must import the profile manually before the plugin is useful for them.
+- `profile_name` is passed verbatim as the argument to `vpn_connect`, `vpn_disconnect`, and `vpn_config_import`. Keep it in kebab-case for consistency with openvpn3's own conventions.
+- `ovpn_provision_cmd` is invoked only when `vpn_connect` fails because no config with that name is registered. On success, the skill calls `vpn_config_import` and retries the connect. If this field is absent, the user must import the profile manually before the plugin is useful for them.
 - `trigger_patterns` *extend* the skill's built-in defaults. Use it for project-specific internal hostnames or wrapper scripts.
 
 ## Gitignore

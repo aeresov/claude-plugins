@@ -49,7 +49,7 @@ Given a matching command, the flow is:
 
 2. **If connect returns an error about a missing config** (`stderr` mentions "not found" / "no such config" / similar), run first-time provisioning:
    - If the settings file declares `ovpn_provision_cmd`, run that shell command. It is responsible for producing a fresh `.ovpn` file. The command must print the absolute path of the generated file as its last non-empty stdout line, or explicitly set an `OUTPUT=…` path — adopt whichever convention the settings file uses.
-   - Call `vpn_import(ovpn_path=<path>, profile_name=<name>)` to register it.
+   - Call `vpn_config_import(ovpn_path=<path>, profile_name=<name>)` to register it.
    - Retry `vpn_connect(profile_name)`.
    - If `ovpn_provision_cmd` is not set, stop and tell the user: the profile needs to be imported manually (e.g. `openvpn3 config-import --config path/to/file.ovpn --name <name> --persistent`).
 
@@ -58,6 +58,16 @@ Given a matching command, the flow is:
 4. **Disconnect at end of task.** Once the user's task is complete and no subsequent step in the same task still needs VPN, call `vpn_disconnect(profile_name=<value>)`. Disconnecting is also idempotent — `status: not_connected` is fine.
 
 Do not disconnect between two VPN-gated commands in the same task. Connect once, keep the tunnel up for the run, disconnect at the end.
+
+## Resetting a profile (env switch, DNS workaround, stale credentials)
+
+If the user indicates they're switching deployment environments, toggling a DNS workaround, or regenerating the `.ovpn` file for any other reason, the imported openvpn3 config still has the *old* contents — `vpn_connect` would reuse the stale profile. The reset cycle is:
+
+1. `vpn_disconnect(profile_name)` — openvpn3 refuses to remove a config that has an active session, so disconnect first. `status: not_connected` is fine.
+2. `vpn_config_remove(profile_name)` — drop the stale import. `status: already_removed` is fine.
+3. Next time a VPN-gated command fires, the normal flow (connect → "not imported" → `ovpn_provision_cmd` → `vpn_config_import` → retry connect) re-provisions cleanly.
+
+Do not run the reset cycle speculatively. Only do it when the user asks to switch envs / refresh the profile, or when a connect failure points at a stale config (e.g. auth errors immediately after the user ran their provision target manually).
 
 ## Interaction with the teardown hook
 
@@ -73,7 +83,8 @@ The MCP server exposes these tools under the `openvpn3` prefix:
 - `vpn_status()` — returns the list of active sessions. Useful for confirming state, debugging, or checking before a manual step.
 - `vpn_connect(profile_name)` — start a session. Idempotent.
 - `vpn_disconnect(profile_name)` — stop a session. Idempotent. `profile_name` is required; the server will not disconnect arbitrary sessions.
-- `vpn_import(ovpn_path, profile_name)` — register an `.ovpn` file as a named persistent config. Idempotent.
+- `vpn_config_import(ovpn_path, profile_name)` — register an `.ovpn` file as a named persistent config. Idempotent.
+- `vpn_config_remove(profile_name)` — drop an imported config so it can be re-provisioned. Idempotent. Requires the session to be disconnected first.
 
 All tools return a dict with a `status` field. Treat `status: "error"` as a hard failure and surface `stderr` / `stdout` to the user — do not silently retry.
 
@@ -84,7 +95,7 @@ Per-project settings live in `.claude/openvpn3-on-demand.local.md` (git-ignored)
 | Field               | Required | Purpose                                                                 |
 |---------------------|----------|-------------------------------------------------------------------------|
 | `profile_name`      | yes      | Name of the openvpn3 config to start. Matches the argument passed to `vpn_connect` and `vpn_disconnect`. |
-| `ovpn_provision_cmd`| no       | Shell command that (re)generates the `.ovpn` file on first connect. Required only if `vpn_import` has never been run for this profile. |
+| `ovpn_provision_cmd`| no       | Shell command that (re)generates the `.ovpn` file on first connect. Required only if `vpn_config_import` has never been run for this profile. |
 | `trigger_patterns`  | no       | Extra regex patterns to treat as VPN-requiring, beyond the defaults in this skill. |
 
 See `references/example-local-settings.md` for a full commented template.

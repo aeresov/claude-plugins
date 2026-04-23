@@ -9,7 +9,7 @@ down at session end as a safety net. No always-on VPN, no per-command
 
 | Piece                                     | What it does                                                                                                |
 |-------------------------------------------|-------------------------------------------------------------------------------------------------------------|
-| `servers/openvpn3_mcp.py` (MCP server)    | Exposes `vpn_connect`, `vpn_disconnect`, `vpn_status`, `vpn_import` to Claude via `.mcp.json`.              |
+| `servers/openvpn3_mcp.py` (MCP server)    | Exposes `vpn_connect`, `vpn_disconnect`, `vpn_status`, `vpn_config_import`, `vpn_config_remove` to Claude via `.mcp.json`. |
 | `skills/vpn-on-demand/` (skill)           | Policy layer. Tells Claude *when* to call the MCP tools, based on command heuristics + project settings.    |
 | `hooks/hooks.json` + `teardown.py`        | Stop + SessionEnd safety net. Disconnects the configured profile if Claude forgot to.                       |
 | `.claude/openvpn3-on-demand.local.md`     | Per-project settings (user-owned, git-ignored). Declares the profile name, optional provision command, optional extra trigger patterns. |
@@ -61,7 +61,7 @@ claude --plugin-dir /path/to/openvpn3-on-demand
    ```
 
 3. If the profile is not yet imported into openvpn3 and `ovpn_provision_cmd`
-   is set, the skill will call `vpn_import` automatically on first connect.
+   is set, the skill will call `vpn_config_import` automatically on first connect.
    Otherwise, import it yourself once:
 
    ```bash
@@ -88,15 +88,19 @@ claude --plugin-dir /path/to/openvpn3-on-demand
 
 ## MCP tools
 
-| Tool                                    | Args                           | Returns                                                           |
-|-----------------------------------------|--------------------------------|-------------------------------------------------------------------|
-| `vpn_status`                            | —                              | `{session_count, sessions: [...]}`                                |
-| `vpn_connect`                           | `profile_name`                 | `{status: connected / already_connected / error, ...}`            |
-| `vpn_disconnect`                        | `profile_name`                 | `{status: disconnected / not_connected / error, ...}`             |
-| `vpn_import`                            | `ovpn_path`, `profile_name`    | `{status: imported / already_imported / error, ...}`              |
+| Tool                  | Args                           | Returns                                                           |
+|-----------------------|--------------------------------|-------------------------------------------------------------------|
+| `vpn_status`          | —                              | `{session_count, sessions: [...]}`                                |
+| `vpn_connect`         | `profile_name`                 | `{status: connected / already_connected / error, ...}`            |
+| `vpn_disconnect`      | `profile_name`                 | `{status: disconnected / not_connected / error, ...}`             |
+| `vpn_config_import`   | `ovpn_path`, `profile_name`    | `{status: imported / already_imported / error, ...}`              |
+| `vpn_config_remove`   | `profile_name`                 | `{status: removed / already_removed / error, ...}`                |
 
-`profile_name` is required on `vpn_disconnect`; the server will not
-disconnect arbitrary sessions it wasn't told about.
+`profile_name` is required on `vpn_disconnect` and `vpn_config_remove`;
+the server will not touch sessions or configs it wasn't told about.
+`vpn_config_remove` fails if a session is still using the config —
+disconnect first. The skill uses this sequence automatically when the
+user asks to switch envs or refresh a profile.
 
 ## Security notes
 
