@@ -1,12 +1,11 @@
 {
-  "description": "Safety-net teardown: disconnect the configured openvpn3 profile at Stop and SessionEnd so no tunnel leaks past the end of work.",
   "hooks": {
     "Stop": [
       {
         "hooks": [
           {
             "type": "command",
-            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/teardown.sh\"",
+            "command": "bash \"${CLAUDE_PLUGIN_ROOT:?}/hooks/scripts/teardown.sh\"",
             "timeout": 10
           }
         ]
@@ -17,7 +16,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/teardown.sh\"",
+            "command": "bash \"${CLAUDE_PLUGIN_ROOT:?}/hooks/scripts/teardown.sh\"",
             "timeout": 10
           }
         ]

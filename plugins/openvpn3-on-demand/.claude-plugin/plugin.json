@@ -5,6 +5,5 @@
   "author": {
     "name": "aeresov"
   },
-  "keywords": ["vpn", "openvpn3", "networking", "security", "on-demand"],
-  "license": "MIT"
+  "keywords": ["vpn", "openvpn3", "networking", "security", "on-demand"]
 }

@@ -1,7 +1,6 @@
 ---
 name: vpn-on-demand
-description: This skill should be used before running any command that touches private network resources - specifically mysql/psql/redis-cli pointing at AWS hostnames ending in .rds.amazonaws.com / .elasticache.amazonaws.com / .memorydb.amazonaws.com, aws CLI calls against rds/elasticache/memorydb/secretsmanager/ssm in internal accounts, kubectl against non-public clusters, ssh to private hosts, curl/http to RFC1918 addresses (10.x, 172.16-31.x, 192.168.x) or .internal/.corp/.local/.private/.vpc hostnames, and anything else matched by trigger_patterns in .claude/openvpn3-on-demand.local.md. Invokes vpn_connect before the command and vpn_disconnect at end of task.
-version: 0.1.0
+description: Connect the project's OpenVPN3 tunnel before commands that touch private network resources — RDS/ElastiCache/MemoryDB hosts, internal hostnames, private kubectl contexts, RFC1918 targets of remote-access verbs, plus any trigger_patterns declared in .claude/openvpn3-on-demand.local.md — and disconnect at task end.
 ---
 
 # VPN On Demand
@@ -25,8 +24,8 @@ Call `vpn_connect(profile_name)` before executing a command whose destination is
 **Activate** when the command targets:
 
 - Hosts ending in `.rds.amazonaws.com`, `.elasticache.amazonaws.com`, `.memorydb.amazonaws.com`, `.redshift.amazonaws.com`, or `.docdb.amazonaws.com`.
-- Hosts in the RFC1918 ranges `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`.
-- Hostnames ending in `.internal`, `.corp`, `.local`, `.private`, `.vpc`, or anything documented as internal-only in the project's CLAUDE.md / README.
+- Hosts in the RFC1918 ranges `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16` **only** when targeted by a remote-access verb (`ssh`, `kubectl`, `mysql`, `psql`, `redis-cli`, `curl`/`wget` to a non-loopback URL, etc.). A bare RFC1918 address on its own is not enough — local Docker networks live in this range too.
+- Hostnames ending in `.internal`, `.corp`, `.private`, `.vpc`, or anything documented as internal-only in the project's CLAUDE.md / README.
 - `aws` CLI calls against prod accounts for services that talk to private endpoints (RDS, ElastiCache, MemoryDB, Secrets Manager, SSM Parameter Store, ECR inside a VPC, Lambda in a VPC).
 - `kubectl` / `helm` against a cluster whose API endpoint is private.
 - `ssh` to hosts without a public IP.
@@ -37,6 +36,8 @@ Call `vpn_connect(profile_name)` before executing a command whose destination is
 - Read/Edit/Write/Glob/Grep on local files (they never leave the machine).
 - Commands hitting obviously public endpoints: `github.com`, `pypi.org`, `npmjs.com`, `docker.io`, public S3 buckets via `https://...s3.amazonaws.com` without a VPC endpoint requirement, public REST APIs.
 - Reading docs, running tests that don't hit the network, local builds.
+- Local Docker traffic: the `docker0` bridge (`172.17.0.0/16`), `docker compose` project networks, and anything on `localhost` / `127.0.0.1` / `::1`.
+- `.local` / mDNS / Bonjour hostnames — those are LAN service discovery, not VPN territory.
 
 When uncertain, check the settings file's `trigger_patterns` and the project's CLAUDE.md for guidance. If still uncertain, ask the user rather than speculating.
 

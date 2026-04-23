@@ -22,12 +22,18 @@ down at session end as a safety net. No always-on VPN, no per-command
 
 ## Install
 
+This plugin ships in the [`misc-claude-plugins`](https://github.com/aeresov/misc-claude-plugins) marketplace. Add the marketplace once, then install:
+
 ```bash
-# from a Claude Code marketplace that includes this plugin, or locally:
-cc --plugin-dir /path/to/openvpn3-on-demand
+/plugin marketplace add aeresov/misc-claude-plugins
+/plugin install openvpn3-on-demand@misc-claude-plugins
 ```
 
-Or copy the plugin to a marketplace you control and install via `/plugin`.
+For local development against a working copy:
+
+```bash
+claude --plugin-dir /path/to/openvpn3-on-demand
+```
 
 ## Per-project setup
 
@@ -45,9 +51,8 @@ Or copy the plugin to a marketplace you control and install via `/plugin`.
    # Notes for humans go below the frontmatter.
    ```
 
-   See `examples/openvpn3-on-demand.local.md` for a template and
-   `skills/vpn-on-demand/references/example-local-settings.md` for the full
-   commented reference.
+   See `skills/vpn-on-demand/references/example-local-settings.md` for the
+   full commented template.
 
 2. Add the settings file to your project's `.gitignore`:
 

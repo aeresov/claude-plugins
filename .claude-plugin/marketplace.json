@@ -12,7 +12,6 @@
       "source": "./plugins/openvpn3-on-demand",
       "description": "Bring up an OpenVPN3 tunnel on demand before Claude runs commands against private network resources, and tear it down at session end.",
       "version": "0.1.0",
-      "keywords": ["vpn", "openvpn3", "networking", "security", "on-demand"],
       "license": "MIT"
     }
   ]
