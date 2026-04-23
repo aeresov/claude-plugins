@@ -11,14 +11,14 @@ down at session end as a safety net. No always-on VPN, no per-command
 |-------------------------------------------|-------------------------------------------------------------------------------------------------------------|
 | `servers/openvpn3_mcp.py` (MCP server)    | Exposes `vpn_connect`, `vpn_disconnect`, `vpn_status`, `vpn_import` to Claude via `.mcp.json`.              |
 | `skills/vpn-on-demand/` (skill)           | Policy layer. Tells Claude *when* to call the MCP tools, based on command heuristics + project settings.    |
-| `hooks/hooks.json` + `teardown.sh`        | Stop + SessionEnd safety net. Disconnects the configured profile if Claude forgot to.                       |
+| `hooks/hooks.json` + `teardown.py`        | Stop + SessionEnd safety net. Disconnects the configured profile if Claude forgot to.                       |
 | `.claude/openvpn3-on-demand.local.md`     | Per-project settings (user-owned, git-ignored). Declares the profile name, optional provision command, optional extra trigger patterns. |
 
 ## Prerequisites
 
 - `openvpn3` CLI installed (Linux: `openvpn3-linux` package; macOS: via Homebrew or openvpn3 sources).
-- `uv` installed (used to run the MCP server with inline dependencies). Install from <https://docs.astral.sh/uv/>.
-- Python 3.10+ (pulled in by `uv run --script` automatically).
+- `python3` (3.10+) on PATH. Used directly by the Stop/SessionEnd teardown hook (stdlib only, no extra packages), and by `uv run --script` for the MCP server.
+- `uv` installed (runs the MCP server with inline PEP 723 dependencies). Install from <https://docs.astral.sh/uv/>.
 
 ## Install
 
@@ -72,17 +72,17 @@ claude --plugin-dir /path/to/openvpn3-on-demand
 ## How it behaves
 
 - The skill loads when Claude sees a request that plausibly touches a private
-  resource (RDS/ElastiCache/MemoryDB hosts, RFC1918 addresses, `.internal` /
-  `.corp` / `.local` / `.private` / `.vpc` hostnames, `aws` CLI against
-  private services, private `kubectl` contexts, etc., plus anything in the
-  project's `trigger_patterns`).
+  resource (RDS/ElastiCache/MemoryDB hosts, RFC1918 addresses targeted by
+  a remote-access verb, `.internal` / `.corp` / `.private` / `.vpc`
+  hostnames, `aws` CLI against private services, private `kubectl`
+  contexts, etc., plus anything in the project's `trigger_patterns`).
 - Claude calls `vpn_connect(profile_name)`. The MCP server runs
   `openvpn3 session-start --config <name>` (or returns early if the session
   already exists).
 - Claude runs the user's command. Subsequent VPN-gated commands in the same
   task reuse the tunnel.
 - At the end of the task, Claude calls `vpn_disconnect(profile_name)`.
-- The Stop and SessionEnd hooks run `teardown.sh`, which reads
+- The Stop and SessionEnd hooks run `teardown.py`, which reads
   `profile_name` from the settings file and disconnects that profile iff
   it's still active. This catches cases where the model forgot step 4.
 
@@ -120,6 +120,9 @@ disconnect arbitrary sessions it wasn't told about.
   turn's end. If your workflow needs the tunnel up for a multi-turn session,
   consider running the commands in one conversation turn, or disable the
   Stop hook locally (keep SessionEnd for safety).
-- **Settings changes don't take effect** — hooks load at session start.
-  Restart Claude Code after editing `.claude/openvpn3-on-demand.local.md`
-  or the plugin's `hooks.json`.
+- **Settings changes don't take effect** — edits to
+  `.claude/openvpn3-on-demand.local.md` take effect immediately; the
+  teardown hook re-reads the file every time it fires, and the skill
+  re-reads it per turn. Only changes to the plugin's `hooks.json` or
+  `.mcp.json` require restarting Claude Code (those are loaded at session
+  start).
