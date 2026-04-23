@@ -1,7 +1,10 @@
 {
-  "name": "claude-plugins",
+  "name": "misc-claude-plugins",
   "owner": {
     "name": "aeresov"
+  },
+  "metadata": {
+    "description": "Personal collection of miscellaneous Claude Code plugins by aeresov."
   },
   "plugins": [
     {

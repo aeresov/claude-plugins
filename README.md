@@ -15,7 +15,7 @@ Private Claude Code plugin marketplace.
 Then install individual plugins:
 
 ```bash
-/plugin install openvpn3-on-demand@claude-plugins
+/plugin install openvpn3-on-demand@misc-claude-plugins
 ```
 
 ## Plugins
