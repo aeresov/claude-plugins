@@ -1,4 +1,4 @@
-# aeresov/misc-claude-plugins
+# aeresov/claude-plugins
 
 Private Claude Code plugin marketplace.
 
@@ -9,13 +9,13 @@ Private Claude Code plugin marketplace.
 /plugin marketplace add /path/to/this/repo
 
 # or, once pushed to GitHub
-/plugin marketplace add aeresov/misc-claude-plugins
+/plugin marketplace add aeresov/claude-plugins
 ```
 
 Then install individual plugins:
 
 ```bash
-/plugin install openvpn3-on-demand@misc-claude-plugins
+/plugin install openvpn3-on-demand@aeresov-claude-plugins
 ```
 
 ## Plugins

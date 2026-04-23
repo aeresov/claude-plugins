@@ -5,7 +5,7 @@
   "author": {
     "name": "aeresov"
   },
-  "homepage": "https://github.com/aeresov/misc-claude-plugins/tree/main/plugins/openvpn3-on-demand",
-  "repository": "https://github.com/aeresov/misc-claude-plugins",
+  "homepage": "https://github.com/aeresov/claude-plugins/tree/main/plugins/openvpn3-on-demand",
+  "repository": "https://github.com/aeresov/claude-plugins",
   "keywords": ["vpn", "openvpn3", "networking", "security", "on-demand"]
 }

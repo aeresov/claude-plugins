@@ -22,11 +22,11 @@ down at session end as a safety net. No always-on VPN, no per-command
 
 ## Install
 
-This plugin ships in the [`misc-claude-plugins`](https://github.com/aeresov/misc-claude-plugins) marketplace. Add the marketplace once, then install:
+This plugin ships in the [`aeresov-claude-plugins`](https://github.com/aeresov/claude-plugins) marketplace. Add the marketplace once, then install:
 
 ```bash
-/plugin marketplace add aeresov/misc-claude-plugins
-/plugin install openvpn3-on-demand@misc-claude-plugins
+/plugin marketplace add aeresov/claude-plugins
+/plugin install openvpn3-on-demand@aeresov-claude-plugins
 ```
 
 For local development against a working copy:
