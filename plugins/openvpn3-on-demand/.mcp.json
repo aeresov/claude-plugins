@@ -5,8 +5,9 @@
       "args": [
         "run",
         "--quiet",
-        "--script",
-        "${CLAUDE_PLUGIN_ROOT}/servers/openvpn3_mcp.py"
+        "--project",
+        "${CLAUDE_PLUGIN_ROOT}/servers/openvpn3",
+        "openvpn3-mcp"
       ]
     }
   }

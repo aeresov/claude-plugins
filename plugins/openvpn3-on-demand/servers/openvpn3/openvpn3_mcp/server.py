@@ -1,8 +1,3 @@
-#!/usr/bin/env -S uv run --quiet --script
-# /// script
-# requires-python = ">=3.10"
-# dependencies = ["mcp>=1.2.0"]
-# ///
 """
 openvpn3 MCP server.
 
@@ -12,9 +7,6 @@ Exposes five tools that shell out to the openvpn3 CLI:
   - vpn_disconnect(profile_name)
   - vpn_config_import(ovpn_path, profile_name)
   - vpn_config_remove(profile_name)
-
-Run via `uv run --script` (inline PEP 723 dependencies) or any Python 3.10+
-environment with `mcp` installed.
 """
 
 from __future__ import annotations

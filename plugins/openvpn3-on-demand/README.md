@@ -9,7 +9,7 @@ down at session end as a safety net. No always-on VPN, no per-command
 
 | Piece                                     | What it does                                                                                                |
 |-------------------------------------------|-------------------------------------------------------------------------------------------------------------|
-| `servers/openvpn3_mcp.py` (MCP server)    | Exposes `vpn_connect`, `vpn_disconnect`, `vpn_status`, `vpn_config_import`, `vpn_config_remove` to Claude via `.mcp.json`. |
+| `servers/openvpn3/` (MCP server, uv project) | Exposes `vpn_connect`, `vpn_disconnect`, `vpn_status`, `vpn_config_import`, `vpn_config_remove` to Claude via `.mcp.json`. Dependencies are pinned in `uv.lock`; first run calls `uv sync` implicitly. |
 | `skills/vpn-on-demand/` (skill)           | Policy layer. Tells Claude *when* to call the MCP tools, based on command heuristics + project settings.    |
 | `hooks/hooks.json` + `teardown.py`        | Stop + SessionEnd safety net. Disconnects the configured profile if Claude forgot to.                       |
 | `.claude/openvpn3-on-demand.local.md`     | Per-project settings (user-owned, git-ignored). Declares the profile name, optional provision command, optional extra trigger patterns. |
@@ -17,8 +17,8 @@ down at session end as a safety net. No always-on VPN, no per-command
 ## Prerequisites
 
 - `openvpn3` CLI installed (Linux: `openvpn3-linux` package; macOS: via Homebrew or openvpn3 sources).
-- `python3` (3.10+) on PATH. Used directly by the Stop/SessionEnd teardown hook (stdlib only, no extra packages), and by `uv run --script` for the MCP server.
-- `uv` installed (runs the MCP server with inline PEP 723 dependencies). Install from <https://docs.astral.sh/uv/>.
+- `python3` (3.10+) on PATH. Used directly by the Stop/SessionEnd teardown hook (stdlib only, no extra packages).
+- `uv` installed. Runs the MCP server via `uv run --project servers/openvpn3 openvpn3-mcp`; on first use it materializes `.venv/` from the committed `uv.lock`. Install from <https://docs.astral.sh/uv/>.
 
 ## Install
 
