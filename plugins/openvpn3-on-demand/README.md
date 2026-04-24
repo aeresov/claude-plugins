@@ -5,20 +5,24 @@ the model runs a command that needs private network access — and tears it
 down at session end as a safety net. No always-on VPN, no per-command
 `Bash(openvpn3 *)` permission grants.
 
+Linux-only. Talks to `openvpn3-linux` over its D-Bus services via the
+`openvpn3` Python module shipped with `openvpn3-client`.
+
 ## Components
 
 | Piece                                     | What it does                                                                                                |
 |-------------------------------------------|-------------------------------------------------------------------------------------------------------------|
-| `servers/openvpn3/` (MCP server, uv project) | Exposes `vpn_connect`, `vpn_disconnect`, `vpn_status`, `vpn_config_import`, `vpn_config_remove` to Claude via `.mcp.json`. Dependencies are pinned in `uv.lock`; first run calls `uv sync` implicitly. |
+| `servers/openvpn3/` (MCP server, uv project) | Exposes `vpn_connect`, `vpn_disconnect`, `vpn_status`, `vpn_config_import`, `vpn_config_remove` to Claude via `.mcp.json`. Calls openvpn3 over D-Bus; no CLI shell-out. The launcher script recreates the venv with `--system-site-packages` the first time so it can see system-installed `dbus` and `openvpn3` modules. |
 | `skills/vpn-on-demand/` (skill)           | Policy layer. Tells Claude *when* to call the MCP tools, based on command heuristics + project settings.    |
-| `hooks/hooks.json` + `teardown.py`        | Stop + SessionEnd safety net. Disconnects the configured profile if Claude forgot to.                       |
+| `hooks/hooks.json` + `teardown.py`        | Stop + SessionEnd safety net. Disconnects the configured profile if Claude forgot to. Uses the same D-Bus API as the MCP server; silently no-ops if `python3-dbus`/`openvpn3-client` aren't installed. |
 | `.claude/openvpn3-on-demand.local.md`     | Per-project settings (user-owned, git-ignored). Declares the profile name, optional provision command, optional extra trigger patterns. |
 
 ## Prerequisites
 
-- `openvpn3` CLI installed (Linux: `openvpn3-linux` package; macOS: via Homebrew or openvpn3 sources).
-- `python3` (3.10+) on PATH. Used directly by the Stop/SessionEnd teardown hook (stdlib only, no extra packages).
-- `uv` installed. Runs the MCP server via `uv run --project servers/openvpn3 openvpn3-mcp`; on first use it materializes `.venv/` from the committed `uv.lock`. Install from <https://docs.astral.sh/uv/>.
+- `openvpn3-client` system package installed (Debian/Ubuntu: `apt install openvpn3-client`; Fedora/RHEL: the upstream OpenVPN 3 repo). Provides the D-Bus services *and* the `openvpn3` Python module at `/usr/lib/python3/dist-packages/openvpn3/`.
+- `python3-dbus` system package. Debian/Ubuntu: `apt install python3-dbus`. This is NOT automatically pulled in by `openvpn3-client` (it should be, but the package only declares a bare `python3:any` dep), though it is usually present transitively on desktop installs. Minimal servers/containers need to install it explicitly.
+- `python3` (3.10+) on PATH. Used both by the MCP server venv and directly by the Stop/SessionEnd teardown hook.
+- `uv` installed. Runs the MCP server via `scripts/launch.sh`; on first use the launcher creates `.venv/` with `--system-site-packages` and syncs `mcp` into it. Install from <https://docs.astral.sh/uv/>.
 
 ## Install
 
@@ -76,9 +80,9 @@ claude --plugin-dir /path/to/openvpn3-on-demand
   a remote-access verb, `.internal` / `.corp` / `.private` / `.vpc`
   hostnames, `aws` CLI against private services, private `kubectl`
   contexts, etc., plus anything in the project's `trigger_patterns`).
-- Claude calls `vpn_connect(profile_name)`. The MCP server runs
-  `openvpn3 session-start --config <name>` (or returns early if the session
-  already exists).
+- Claude calls `vpn_connect(profile_name)`. The MCP server asks the
+  openvpn3 session manager to start a tunnel for the named config (or
+  returns early if the session already exists).
 - On a fresh connect, if the settings file declares `post_connect_cmd`,
   Claude runs it — typical uses are warming a DNS cache, probing a VPC
   endpoint, or opening an ssh control master. Non-fatal on failure.
@@ -111,19 +115,29 @@ user asks to switch envs or refresh a profile.
 
 ## Security notes
 
-- The plugin never reads `.ovpn` contents itself; it hands paths to
-  `openvpn3 config-import` and lets openvpn3 own the secret material.
+- The plugin reads the `.ovpn` file only to pass it to `openvpn3.ConfigParser`,
+  which inlines any external cert/key references and hands the result to the
+  openvpn3 configuration manager over D-Bus. The secret material lives inside
+  openvpn3 after import; the plugin doesn't cache it.
 - `.claude/openvpn3-on-demand.local.md` can contain internal hostnames and
   provision commands. Keep it out of git.
-- The MCP server refuses to act if `openvpn3` is not on `PATH`. It does not
-  try to install it or run as root.
+- The MCP server refuses to act if the `openvpn3` Python module or
+  `dbus-python` is missing. It does not try to install them or run as root.
 - The teardown hook only targets the profile declared in the settings file;
   unrelated openvpn3 sessions started by other tools are untouched.
 
+## Licensing
+
+AGPL-3.0-only. The plugin embeds calls to the AGPL-licensed `openvpn3`
+Python module that ships with `openvpn3-client`; the whole repo is under
+the same license for consistency. See [LICENSE](../../LICENSE) at the repo
+root for the full text.
+
 ## Troubleshooting
 
-- **"openvpn3 CLI not found on PATH"** — install the CLI and restart Claude
-  Code. The MCP server process inherits the shell's PATH at startup.
+- **"openvpn3 Python module or dbus-python is not available"** — install
+  both `openvpn3-client` and `python3-dbus` system packages, then restart
+  Claude Code so the MCP server process picks them up.
 - **`vpn_connect` errors about an unknown config** — the profile isn't
   imported yet. Either set `ovpn_provision_cmd` in the settings file or run
   `openvpn3 config-import` manually.

@@ -336,7 +336,7 @@ wheels = [
 
 [[package]]
 name = "openvpn3-mcp"
-version = "0.3.3"
+version = "0.4.0"
 source = { editable = "." }
 dependencies = [
     { name = "mcp" },
@@ -351,7 +351,7 @@ dev = [
 requires-dist = [{ name = "mcp", specifier = ">=1.2.0" }]
 
 [package.metadata.requires-dev]
-dev = [{ name = "pytest", specifier = ">=7" }]
+dev = [{ name = "pytest", specifier = ">=9" }]
 
 [[package]]
 name = "packaging"

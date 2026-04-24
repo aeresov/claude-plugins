@@ -113,9 +113,9 @@ See `references/example-local-settings.md` for a full commented template.
 
 ## Failure modes and how to handle them
 
-- **`openvpn3` CLI not installed.** All tools return `{"status": "error", "message": "openvpn3 CLI not found on PATH"}`. Tell the user to install `openvpn3-linux` (or equivalent) and stop; do not attempt the command without VPN.
-- **Connect fails with auth error.** Surface `stderr` to the user. The `.ovpn` file may need re-provisioning or the credentials have rotated.
-- **`sessions-list` shows the session but the command still fails to reach the host.** The tunnel may be up without routing. Confirm with `vpn_status()` and report both the session state and the original command's error — don't just re-run `vpn_connect`.
+- **openvpn3 / dbus-python not installed.** All tools return `{"status": "error", "message": "openvpn3 Python module or dbus-python is not available. ..."}`. Tell the user to install the `openvpn3-client` and `python3-dbus` system packages and stop; do not attempt the command without VPN.
+- **Connect fails with auth error.** Surface the `message` to the user. The `.ovpn` file may need re-provisioning or the credentials have rotated. Note: this MCP server is non-interactive — profiles that prompt for a username/password must have credentials embedded (`auth-user-pass` inlined). A connect that returns `"Backend not ready (likely needs credentials embedded in the profile)"` means the profile asks for interactive input that the server can't supply.
+- **`vpn_status()` shows the session but the command still fails to reach the host.** The tunnel may be up without routing. Confirm with `vpn_status()` and report both the session state and the original command's error — don't just re-run `vpn_connect`.
 - **Multiple simultaneous tasks share a profile.** The tunnel is a shared resource. If one task disconnects while another still needs it, the second will fail. Default to connecting at the start of the VPN-requiring block of work and disconnecting only when no further VPN-gated step is queued.
 
 ## Additional resources

@@ -1,185 +1,190 @@
-"""
-openvpn3 MCP server.
+# SPDX-License-Identifier: AGPL-3.0-only
+#
+# Copyright (C) 2026 aeresov
+#
+# This program is free software: you can redistribute it and/or modify it
+# under the terms of the GNU Affero General Public License v3 as published
+# by the Free Software Foundation. See the LICENSE file at the repo root.
 
-Exposes five tools that shell out to the openvpn3 CLI:
-  - vpn_status()
-  - vpn_connect(profile_name)
-  - vpn_disconnect(profile_name)
-  - vpn_config_import(ovpn_path, profile_name)
-  - vpn_config_remove(profile_name)
+"""openvpn3 MCP server.
+
+Talks to openvpn3-linux over its D-Bus services
+(``net.openvpn.v3.configuration`` and ``net.openvpn.v3.sessions``) using the
+``openvpn3`` Python module shipped with the ``openvpn3-client`` system
+package. No CLI shell-out, no stdout parsing — dict returns mirror what the
+previous subprocess-based server exposed so the skill keeps working.
 """
 
 from __future__ import annotations
 
-import json
+import contextlib
 import os
-import shutil
-import subprocess
+import sys
 import time
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
 from mcp.server.fastmcp import FastMCP
 
+try:
+    import dbus  # type: ignore[import-not-found]
+    import openvpn3  # type: ignore[import-not-found]
+except ImportError as exc:  # pragma: no cover - exercised only via _require_deps
+    _IMPORT_ERROR: Optional[ImportError] = exc
+    dbus = None  # type: ignore[assignment]
+    openvpn3 = None  # type: ignore[assignment]
+else:
+    _IMPORT_ERROR = None
+
+
 mcp = FastMCP("openvpn3")
 
-OPENVPN3 = "openvpn3"
+
+_DEP_ERROR = {
+    "status": "error",
+    "message": (
+        "openvpn3 Python module or dbus-python is not available. "
+        "Install the 'openvpn3-client' and 'python3-dbus' system packages."
+    ),
+}
 
 
-def _run(*args: str, timeout: float = 30.0) -> subprocess.CompletedProcess:
-    return subprocess.run(
-        list(args),
-        capture_output=True,
-        text=True,
-        check=False,
-        timeout=timeout,
-    )
+def _require_deps() -> Optional[dict]:
+    return None if _IMPORT_ERROR is None else _DEP_ERROR
 
 
-def _require_cli() -> Optional[dict]:
-    if not shutil.which(OPENVPN3):
-        return {
-            "status": "error",
-            "message": f"{OPENVPN3} CLI not found on PATH. Install openvpn3-linux or equivalent.",
-        }
-    return None
+def _bus() -> Any:
+    return dbus.SystemBus()
 
 
-def _parse_sessions(stdout: str) -> list[dict]:
-    sessions: list[dict] = []
-    current: dict = {}
-    for raw in stdout.splitlines():
-        if not raw.strip() or set(raw.strip()) == {"-"}:
-            if current:
-                sessions.append(current)
-                current = {}
-            continue
-        if ":" in raw:
-            key, _, value = raw.partition(":")
-            k = key.strip().lower().replace(" ", "_")
-            current[k] = value.strip()
-    if current:
-        sessions.append(current)
-    return sessions
+def _get_config_mgr() -> Any:
+    return openvpn3.ConfigurationManager(_bus())
 
 
-def _list_sessions() -> list[dict]:
-    r = _run(OPENVPN3, "sessions-list")
-    if r.returncode != 0:
+def _get_session_mgr() -> Any:
+    return openvpn3.SessionManager(_bus())
+
+
+def _dbus_error_msg(exc: BaseException) -> str:
+    """Normalize D-Bus / openvpn3 errors into a single human string.
+
+    ``ConfigurationManager`` / ``SessionManager`` both raise ``RuntimeError``
+    from their private ``__ping()`` helper when the D-Bus service is
+    unreachable or access is denied; actual method calls raise
+    ``dbus.exceptions.DBusException``. Callers catch both, then ask this
+    helper for a message they can hand back to the MCP client.
+    """
+    if isinstance(exc, dbus.exceptions.DBusException):
+        return exc.get_dbus_message()
+    return str(exc)
+
+
+def _session_config_name(sess: Any) -> str:
+    try:
+        return str(sess.GetProperty("config_name"))
+    except (dbus.exceptions.DBusException, RuntimeError):
+        try:
+            return str(sess.GetProperty("session_name"))
+        except (dbus.exceptions.DBusException, RuntimeError):
+            return "<unknown>"
+
+
+def _session_status(sess: Any) -> str:
+    try:
+        status = sess.GetStatus()
+    except (dbus.exceptions.DBusException, RuntimeError) as exc:
+        return f"<unavailable: {_dbus_error_msg(exc)}>"
+    major = getattr(status.get("major"), "name", "?")
+    minor = getattr(status.get("minor"), "name", "?")
+    message = status.get("message", "")
+    return f"{major} / {minor}: {message}"
+
+
+def _session_as_dict(sess: Any) -> dict:
+    return {
+        "path": str(sess.GetPath()),
+        "config_name": _session_config_name(sess),
+        "status": _session_status(sess),
+    }
+
+
+def _sessions_for(profile: str) -> list:
+    """Return live Session objects whose registered config name matches ``profile``."""
+    mgr = _get_session_mgr()
+    try:
+        paths = mgr.LookupConfigName(profile)
+    except (dbus.exceptions.DBusException, RuntimeError):
         return []
-    return _parse_sessions(r.stdout)
+    return [mgr.Retrieve(p) for p in paths]
 
 
-def _find_session(profile: str) -> Optional[dict]:
-    # Returns the first session whose config name matches. openvpn3 only allows
-    # one active session per (config, user), but if duplicate-name configs ever
-    # accumulated, this would only see the first one — `vpn_config_remove`
-    # cleans those up by D-Bus path.
-    for s in _list_sessions():
-        if s.get("config_name") == profile or s.get("config") == profile:
-            return s
-    return None
+def _configs_for(profile: str) -> list:
+    """Return Configuration objects registered under ``profile`` (may be many)."""
+    mgr = _get_config_mgr()
+    try:
+        paths = mgr.LookupConfigName(profile)
+    except (dbus.exceptions.DBusException, RuntimeError):
+        return []
+    return [mgr.Retrieve(p) for p in paths]
 
 
 def _wait_session_cleared(profile: str, timeout: float = 5.0) -> bool:
-    """Poll sessions-list until `profile`'s session is gone or timeout elapses.
+    """Poll ``_sessions_for`` until ``profile``'s session is gone or timeout hits.
 
-    `openvpn3 session-manage --disconnect` returns immediately, but the D-Bus
-    teardown can take a beat. A follow-up `vpn_config_remove` issued within
-    that window hits "config in use" because the session is still attached.
-    Callers of `vpn_disconnect` expect the session to be gone on return; this
-    polls at 100 ms intervals until it actually is, giving up after `timeout`.
-
-    Returns True if the session cleared in time, False otherwise.
+    ``Session.Disconnect()`` asks the session-manager to tear down the tunnel;
+    in practice the session-manager's own cleanup (netcfg release, D-Bus
+    object removal) can trail by a beat. A follow-up ``vpn_config_remove``
+    issued inside that window hits "config in use" because the session is
+    still attached to the config. Callers of ``vpn_disconnect`` expect the
+    session to be gone on return — this polls at 100 ms intervals until it
+    actually is, giving up after ``timeout``. Returns True if cleared.
     """
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
-        if _find_session(profile) is None:
+        if not _sessions_for(profile):
             return True
         time.sleep(0.1)
-    return _find_session(profile) is None
+    return not _sessions_for(profile)
 
 
-def _all_configs() -> list[dict[str, str]]:
-    """Return [{path, name}, ...] for every registered openvpn3 config.
+@contextlib.contextmanager
+def _muzzle_stdio():
+    """Context manager that isolates ``ConfigParser`` from the JSON-RPC channel.
 
-    Tries `configs-list --json` first — newer openvpn3 builds emit structured
-    output that's immune to formatting drift. Falls back to a whitespace-tolerant
-    text parse (keyed on `Configuration path:` / `Name:` pairs separated by
-    dashed divider rows) for older builds. Only entries with a non-empty path
-    are returned; `name` may be the empty string for anonymous configs.
+    ``openvpn3.ConfigParser`` reads a ``.ovpn`` file during ``__init__`` and
+    may (a) print warnings to stdout via ``IgnoreArg`` on unsupported options
+    (``--up``/``--down``/``--route-up`` style) and (b) call ``getpass()`` on a
+    PKCS12 profile needing a passphrase. Both would corrupt or block the MCP
+    stdio protocol. We temporarily redirect stdout to stderr and point stdin
+    at /dev/null — printed warnings surface in the server's log instead of
+    the protocol stream, and getpass either reads EOF (returning "") or
+    fails with an exception we catch downstream.
     """
-    jr = _run(OPENVPN3, "configs-list", "--json")
-    if jr.returncode == 0 and jr.stdout.strip():
+    devnull_r = open(os.devnull, "r")
+    try:
+        old_stdin = sys.stdin
+        sys.stdin = devnull_r
         try:
-            data = json.loads(jr.stdout)
-        except json.JSONDecodeError:
-            data = None
-        pairs: list[tuple[str, dict]] = []
-        if isinstance(data, dict):
-            # Real openvpn3 shape: outer dict keyed by D-Bus path, each value
-            # holds the config's metadata (name, acl, valid, …). Previously we
-            # iterated data.values() and dropped the keys — so the path always
-            # came out empty and _all_configs returned []. Don't do that again.
-            pairs = [(str(p), d) for p, d in data.items() if isinstance(d, dict)]
-        elif isinstance(data, list):
-            # Defensive: tolerate a hypothetical future list-of-objects shape
-            # where each entry carries its own path field.
-            pairs = [
-                (
-                    str(d.get("path") or d.get("dbus_path") or d.get("config_path") or ""),
-                    d,
-                )
-                for d in data
-                if isinstance(d, dict)
-            ]
-        if pairs:
-            return [
-                {"path": p, "name": str(d.get("name") or d.get("config_name") or "")}
-                for p, d in pairs
-                if p
-            ]
-
-    r = _run(OPENVPN3, "configs-list")
-    if r.returncode != 0:
-        return []
-    configs: list[dict[str, str]] = []
-    current: dict[str, str] = {}
-    for raw in r.stdout.splitlines():
-        stripped = raw.strip()
-        if not stripped or set(stripped) <= {"-"}:
-            if current.get("path"):
-                configs.append({"path": current["path"], "name": current.get("name", "")})
-            current = {}
-            continue
-        key, sep, value = stripped.partition(":")
-        if not sep:
-            continue
-        k = key.strip().lower()
-        v = value.strip()
-        if k in {"configuration path", "path"}:
-            if current.get("path"):
-                configs.append({"path": current["path"], "name": current.get("name", "")})
-            current = {"path": v}
-        elif k == "name":
-            current["name"] = v
-    if current.get("path"):
-        configs.append({"path": current["path"], "name": current.get("name", "")})
-    return configs
-
-
-def _list_configs() -> list[str]:
-    return [c["name"] for c in _all_configs() if c["name"]]
+            with contextlib.redirect_stdout(sys.stderr):
+                yield
+        finally:
+            sys.stdin = old_stdin
+    finally:
+        devnull_r.close()
 
 
 @mcp.tool()
 def vpn_status() -> dict:
     """List active OpenVPN3 sessions with config names and statuses. No arguments."""
-    err = _require_cli()
+    err = _require_deps()
     if err:
         return err
-    sessions = _list_sessions()
-    return {"session_count": len(sessions), "sessions": sessions}
+    try:
+        sessions = _get_session_mgr().FetchAvailableSessions()
+    except (dbus.exceptions.DBusException, RuntimeError) as exc:
+        return {"status": "error", "message": f"D-Bus error: {_dbus_error_msg(exc)}"}
+    out = [_session_as_dict(s) for s in sessions]
+    return {"session_count": len(out), "sessions": out}
 
 
 @mcp.tool()
@@ -187,56 +192,108 @@ def vpn_connect(profile_name: str) -> dict:
     """Start an OpenVPN3 session for the given imported profile. Idempotent: returns early if already connected.
 
     Args:
-        profile_name: Name of a previously-imported OpenVPN3 config (as shown by `openvpn3 configs-list`).
+        profile_name: Name of a previously-imported OpenVPN3 config (the name passed to `vpn_config_import`).
     """
-    err = _require_cli()
+    err = _require_deps()
     if err:
         return err
-    existing = _find_session(profile_name)
+    existing = _sessions_for(profile_name)
     if existing:
-        return {"status": "already_connected", "profile_name": profile_name, "session": existing}
-    r = _run(OPENVPN3, "session-start", "--config", profile_name, timeout=60.0)
-    if r.returncode != 0:
+        return {
+            "status": "already_connected",
+            "profile_name": profile_name,
+            "session": _session_as_dict(existing[0]),
+        }
+    configs = _configs_for(profile_name)
+    if not configs:
         return {
             "status": "error",
             "profile_name": profile_name,
-            "returncode": r.returncode,
-            "stderr": r.stderr.strip(),
-            "stdout": r.stdout.strip(),
+            "message": f"No openvpn3 config named {profile_name!r}. Import it first.",
         }
-    return {"status": "connected", "profile_name": profile_name, "output": r.stdout.strip()}
+    try:
+        sess = _get_session_mgr().NewTunnel(configs[0])
+    except (dbus.exceptions.DBusException, RuntimeError) as exc:
+        return {
+            "status": "error",
+            "profile_name": profile_name,
+            "message": f"NewTunnel failed: {_dbus_error_msg(exc)}",
+        }
+    # Poll Ready() with a short deadline. It raises while the backend is still
+    # initialising or if interactive credentials are required; non-interactive
+    # profiles reach ready within a few D-Bus round-trips. We don't handle
+    # user-input prompts — those need to be baked into the .ovpn (embedded
+    # auth-user-pass) for this non-interactive server.
+    deadline = time.monotonic() + 15.0
+    last_err: Optional[BaseException] = None
+    while time.monotonic() < deadline:
+        try:
+            sess.Ready()
+            break
+        except (dbus.exceptions.DBusException, RuntimeError) as exc:
+            last_err = exc
+            time.sleep(0.2)
+    else:
+        try:
+            sess.Disconnect()
+        except (dbus.exceptions.DBusException, RuntimeError):
+            pass
+        return {
+            "status": "error",
+            "profile_name": profile_name,
+            "message": (
+                "Backend not ready (likely needs credentials embedded in the profile): "
+                f"{_dbus_error_msg(last_err) if last_err else 'timeout'}"
+            ),
+        }
+    try:
+        sess.Connect()
+    except (dbus.exceptions.DBusException, RuntimeError) as exc:
+        return {
+            "status": "error",
+            "profile_name": profile_name,
+            "message": f"Connect failed: {_dbus_error_msg(exc)}",
+        }
+    return {
+        "status": "connected",
+        "profile_name": profile_name,
+        "session": _session_as_dict(sess),
+    }
 
 
 @mcp.tool()
 def vpn_disconnect(profile_name: str) -> dict:
     """Disconnect the OpenVPN3 session for the given profile. No-op if not connected.
 
-    Waits (up to 5s) for openvpn3's D-Bus session teardown to actually complete
-    before returning, so a follow-up `vpn_config_remove` or re-import doesn't
-    hit "config in use" races. The returned payload includes `session_cleared`
-    (bool) so callers can detect the rare case where teardown didn't finish in
-    time.
+    Waits (up to 5s) for the session-manager's teardown to actually complete
+    before returning, so a follow-up ``vpn_config_remove`` or re-import
+    doesn't hit "config in use" races. The returned payload includes
+    ``session_cleared`` (bool) so callers can detect the rare case where
+    teardown didn't finish in time.
 
     Args:
         profile_name: Name of the config whose session should be torn down. Required — this tool
             never disconnects sessions it wasn't asked about.
     """
-    err = _require_cli()
+    err = _require_deps()
     if err:
         return err
     if not profile_name:
         return {"status": "error", "message": "profile_name is required"}
-    target = _find_session(profile_name)
-    if not target:
+    matches = _sessions_for(profile_name)
+    if not matches:
         return {"status": "not_connected", "profile_name": profile_name}
-    r = _run(OPENVPN3, "session-manage", "--config", profile_name, "--disconnect", timeout=30.0)
-    if r.returncode != 0:
+    failures: list[str] = []
+    for sess in matches:
+        try:
+            sess.Disconnect()
+        except (dbus.exceptions.DBusException, RuntimeError) as exc:
+            failures.append(_dbus_error_msg(exc))
+    if failures:
         return {
             "status": "error",
             "profile_name": profile_name,
-            "returncode": r.returncode,
-            "stderr": r.stderr.strip(),
-            "stdout": r.stdout.strip(),
+            "failures": failures,
         }
     cleared = _wait_session_cleared(profile_name)
     return {
@@ -254,73 +311,80 @@ def vpn_config_import(ovpn_path: str, profile_name: str) -> dict:
         ovpn_path: Path to the .ovpn file to import (~ expansion supported).
         profile_name: Name to register the imported config under.
     """
-    err = _require_cli()
+    err = _require_deps()
     if err:
         return err
     path = Path(os.path.expanduser(ovpn_path)).resolve()
     if not path.is_file():
         return {"status": "error", "message": f"File not found: {path}"}
-    if profile_name in _list_configs():
+    if _configs_for(profile_name):
         return {"status": "already_imported", "profile_name": profile_name}
-    r = _run(
-        OPENVPN3,
-        "config-import",
-        "--config",
-        str(path),
-        "--name",
-        profile_name,
-        "--persistent",
-        timeout=30.0,
-    )
-    if r.returncode != 0:
+    try:
+        # ConfigParser reads the .ovpn, inlines any external cert/key refs, and
+        # emits the fully-embedded string the configuration manager expects.
+        # It also prints warnings for unsupported options and can getpass()
+        # on PKCS12 profiles — _muzzle_stdio keeps that off the JSON-RPC wire.
+        with _muzzle_stdio():
+            parser = openvpn3.ConfigParser(
+                ["openvpn3-mcp", "--config", str(path)],
+                "openvpn3 MCP server",
+            )
+            cfg_str = parser.GenerateConfig()
+    except Exception as exc:
         return {
             "status": "error",
             "profile_name": profile_name,
-            "returncode": r.returncode,
-            "stderr": r.stderr.strip(),
-            "stdout": r.stdout.strip(),
+            "message": (
+                f"Failed to parse {path}: {exc}. "
+                "Profiles that prompt for credentials must embed auth-user-pass "
+                "or provide an unencrypted PKCS12."
+            ),
         }
-    return {"status": "imported", "profile_name": profile_name, "ovpn_path": str(path)}
+    try:
+        cfg = _get_config_mgr().Import(
+            profile_name,
+            cfg_str,
+            False,  # single_use
+            True,   # persistent
+        )
+    except (dbus.exceptions.DBusException, RuntimeError) as exc:
+        return {
+            "status": "error",
+            "profile_name": profile_name,
+            "message": f"Import failed: {_dbus_error_msg(exc)}",
+        }
+    return {
+        "status": "imported",
+        "profile_name": profile_name,
+        "ovpn_path": str(path),
+        "config_path": str(cfg.GetPath()),
+    }
 
 
 @mcp.tool()
 def vpn_config_remove(profile_name: str) -> dict:
     """Remove every OpenVPN3 config registered under this name. Idempotent.
 
-    Targets each match by D-Bus path (`openvpn3 config-remove --path …`) so it
-    handles the duplicate-name case cleanly: if two or more configs share the
-    same name — which can happen when a prior import ran while a stale one
-    was still registered — each is removed individually rather than hitting
-    `config-remove --config <name>`'s "More than one configuration profile was
-    found" error.
-
-    openvpn3 refuses to remove a config whose session is still active; call
-    `vpn_disconnect` first.
+    The configuration manager refuses to remove a config whose session is
+    still active; call `vpn_disconnect` first.
 
     Args:
         profile_name: Name of the imported config to remove.
     """
-    err = _require_cli()
+    err = _require_deps()
     if err:
         return err
-    matches = [c["path"] for c in _all_configs() if c["name"] == profile_name]
+    matches = _configs_for(profile_name)
     if not matches:
         return {"status": "already_removed", "profile_name": profile_name}
-    failures: list[dict] = []
+    failures: list[str] = []
     removed = 0
-    for path in matches:
-        r = _run(OPENVPN3, "config-remove", "--path", path, "--force", timeout=15.0)
-        if r.returncode == 0:
+    for cfg in matches:
+        try:
+            cfg.Remove()
             removed += 1
-        else:
-            failures.append(
-                {
-                    "path": path,
-                    "returncode": r.returncode,
-                    "stderr": r.stderr.strip(),
-                    "stdout": r.stdout.strip(),
-                }
-            )
+        except (dbus.exceptions.DBusException, RuntimeError) as exc:
+            failures.append(_dbus_error_msg(exc))
     if failures:
         return {
             "status": "error",
@@ -332,6 +396,9 @@ def vpn_config_remove(profile_name: str) -> dict:
 
 
 def main() -> None:
+    # AGPL-3.0 §5(d): make the copyright notice visible. The MCP stdio
+    # protocol reserves stdout, so the banner goes to stderr.
+    print("openvpn3-mcp 0.4.0 — AGPL-3.0-only", file=sys.stderr)
     mcp.run()
 
 
