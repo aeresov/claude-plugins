@@ -17,7 +17,6 @@ previous subprocess-based server exposed so the skill keeps working.
 
 from __future__ import annotations
 
-import contextlib
 import os
 import sys
 import time
@@ -147,30 +146,6 @@ def _wait_session_cleared(profile: str, timeout: float = 5.0) -> bool:
     return not _sessions_for(profile)
 
 
-@contextlib.contextmanager
-def _muzzle_stdio():
-    """Context manager that isolates ``ConfigParser`` from the JSON-RPC channel.
-
-    ``openvpn3.ConfigParser`` reads a ``.ovpn`` file during ``__init__`` and
-    may (a) print warnings to stdout via ``IgnoreArg`` on unsupported options
-    (``--up``/``--down``/``--route-up`` style) and (b) call ``getpass()`` on a
-    PKCS12 profile needing a passphrase. Both would corrupt or block the MCP
-    stdio protocol. We temporarily redirect stdout to stderr and point stdin
-    at /dev/null — printed warnings surface in the server's log instead of
-    the protocol stream, and getpass either reads EOF (returning "") or
-    fails with an exception we catch downstream.
-    """
-    devnull_r = open(os.devnull, "r")
-    try:
-        old_stdin = sys.stdin
-        sys.stdin = devnull_r
-        try:
-            with contextlib.redirect_stdout(sys.stderr):
-                yield
-        finally:
-            sys.stdin = old_stdin
-    finally:
-        devnull_r.close()
 
 
 @mcp.tool()
@@ -320,26 +295,27 @@ def vpn_config_import(ovpn_path: str, profile_name: str) -> dict:
     if _configs_for(profile_name):
         return {"status": "already_imported", "profile_name": profile_name}
     try:
-        # ConfigParser reads the .ovpn, inlines any external cert/key refs, and
-        # emits the fully-embedded string the configuration manager expects.
-        # It also prints warnings for unsupported options and can getpass()
-        # on PKCS12 profiles — _muzzle_stdio keeps that off the JSON-RPC wire.
-        with _muzzle_stdio():
-            parser = openvpn3.ConfigParser(
-                ["openvpn3-mcp", "--config", str(path)],
-                "openvpn3 MCP server",
-            )
-            cfg_str = parser.GenerateConfig()
-    except Exception as exc:
+        cfg_str = path.read_text(encoding="utf-8")
+    except OSError as exc:
         return {
             "status": "error",
             "profile_name": profile_name,
-            "message": (
-                f"Failed to parse {path}: {exc}. "
-                "Profiles that prompt for credentials must embed auth-user-pass "
-                "or provide an unencrypted PKCS12."
-            ),
+            "message": f"Cannot read {path}: {exc}",
         }
+    # Hand the raw .ovpn contents to the configuration manager — openvpn3's
+    # own C++ parser (net.openvpn.v3.configuration.Import) is authoritative
+    # and accepts every directive the openvpn3 CLI accepts. DO NOT pre-parse
+    # with openvpn3.ConfigParser here: that class is argparse-backed and
+    # rejects any directive not in its whitelist (e.g. AWS Client VPN's
+    # --remote-random-hostname), which is why 0.4.0 regressed importing
+    # real-world profiles.
+    #
+    # The contract for Import per ConfigManager.py is that external file
+    # references must be pre-inlined. Every major provider (AWS Client VPN,
+    # OpenVPN Access Server, Tunnelblick, network-manager-openvpn exports)
+    # already emits inlined <ca>/<cert>/<key>/<tls-crypt> blocks; if a user
+    # hands us a profile with bare `ca /path/to/file` instead, the backend
+    # raises a DBus error and we surface it verbatim.
     try:
         cfg = _get_config_mgr().Import(
             profile_name,
@@ -398,7 +374,7 @@ def vpn_config_remove(profile_name: str) -> dict:
 def main() -> None:
     # AGPL-3.0 §5(d): make the copyright notice visible. The MCP stdio
     # protocol reserves stdout, so the banner goes to stderr.
-    print("openvpn3-mcp 0.4.0 — AGPL-3.0-only", file=sys.stderr)
+    print("openvpn3-mcp 0.4.1 — AGPL-3.0-only", file=sys.stderr)
     mcp.run()
 
 

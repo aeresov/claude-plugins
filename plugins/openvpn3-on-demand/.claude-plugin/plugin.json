@@ -1,6 +1,6 @@
 {
   "name": "openvpn3-on-demand",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "description": "Bring up an OpenVPN3 tunnel on demand before Claude runs commands against private network resources, and tear it down at session end.",
   "author": {
     "name": "aeresov"

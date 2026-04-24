@@ -283,36 +283,82 @@ def test_vpn_status_surfaces_runtime_error_from_ping():
     assert "Session Manager" in result["message"]
 
 
-def test_vpn_config_import_muzzles_stdout(tmp_path, capsys):
-    """ConfigParser prints warnings to stdout for unsupported options. The
-    server MUST NOT let those escape to the JSON-RPC channel — _muzzle_stdio
-    redirects them to stderr."""
-    ovpn = tmp_path / "noisy.ovpn"
-    ovpn.write_text("client\n")
+def test_vpn_config_import_passes_raw_ovpn_contents(tmp_path):
+    """The .ovpn file contents are handed verbatim to ConfigurationManager.Import.
 
-    # Simulate ConfigParser printing a warning during __init__ (as IgnoreArg
-    # does for unsupported options). Real ConfigParser isn't used here — we
-    # swap it out so we can assert the stdout redirect wraps the call site.
-    def noisy_config_parser(*_args, **_kwargs):
-        print("** WARNING ** Ignoring option: --up /some/script")
-        parser = MagicMock()
-        parser.GenerateConfig.return_value = "client\nremote example 1194\nca inline\n"
-        return parser
+    Regression: 0.4.0 ran files through ``openvpn3.ConfigParser`` (argparse-
+    backed, openvpn2 CLI frontend), which rejected valid directives its
+    whitelist didn't know — notably ``remote-random-hostname`` from AWS
+    Client VPN exports. The fix is to let the configuration manager's
+    authoritative parser (over D-Bus) handle the file.
+    """
+    # Realistic AWS Client VPN-style directive soup; many entries would fail
+    # argparse-style parsing.
+    ovpn_text = (
+        "client\n"
+        "dev tun\n"
+        "proto udp\n"
+        "remote cvpn-endpoint-deadbeef.prod.clientvpn.us-east-1.amazonaws.com 443\n"
+        "remote-random-hostname\n"
+        "resolv-retry infinite\n"
+        "nobind\n"
+        "persist-key\n"
+        "persist-tun\n"
+        "remote-cert-tls server\n"
+        "cipher AES-256-GCM\n"
+        "verb 3\n"
+        "<ca>\n-----BEGIN CERTIFICATE-----\nFAKE\n-----END CERTIFICATE-----\n</ca>\n"
+        "<cert>\n-----BEGIN CERTIFICATE-----\nFAKE\n-----END CERTIFICATE-----\n</cert>\n"
+        "<key>\n-----BEGIN PRIVATE KEY-----\nFAKE\n-----END PRIVATE KEY-----\n</key>\n"
+        "reneg-sec 0\n"
+    )
+    ovpn = tmp_path / "aws.ovpn"
+    ovpn.write_text(ovpn_text)
 
     cfg_mgr = MagicMock()
     cfg_mgr.LookupConfigName.return_value = []
-    cfg_mgr.Import.return_value = MagicMock(GetPath=MagicMock(return_value="/cfg/x"))
+    cfg_mgr.Import.return_value = MagicMock(
+        GetPath=MagicMock(return_value="/net/openvpn/v3/configuration/aws")
+    )
 
-    with (
-        patch.object(server, "_get_config_mgr", return_value=cfg_mgr),
-        patch.object(server.openvpn3, "ConfigParser", side_effect=noisy_config_parser),
-    ):
-        result = server.vpn_config_import(ovpn_path=str(ovpn), profile_name="x")
+    with patch.object(server, "_get_config_mgr", return_value=cfg_mgr):
+        result = server.vpn_config_import(ovpn_path=str(ovpn), profile_name="aws-vpn")
 
     assert result["status"] == "imported"
-    captured = capsys.readouterr()
-    assert "Ignoring option" not in captured.out, "ConfigParser noise leaked to stdout"
-    assert "Ignoring option" in captured.err, "ConfigParser noise should surface on stderr"
+    # Verify the contents reached Import untouched — no argparse detour.
+    cfg_mgr.Import.assert_called_once()
+    args, _ = cfg_mgr.Import.call_args
+    passed_name, passed_body, passed_single_use, passed_persistent = args
+    assert passed_name == "aws-vpn"
+    assert passed_body == ovpn_text
+    assert passed_single_use is False
+    assert passed_persistent is True
+
+
+def test_vpn_config_import_surfaces_backend_parse_error(tmp_path):
+    """If the backend rejects the config (bad directive, missing inline cert,
+    whatever), the error message is the DBusException message verbatim — no
+    glued-on "embed auth-user-pass" commentary that could mislead about the
+    actual failure."""
+    ovpn = tmp_path / "broken.ovpn"
+    ovpn.write_text("garbage\n")
+
+    cfg_mgr = MagicMock()
+    cfg_mgr.LookupConfigName.return_value = []
+    cfg_mgr.Import.side_effect = dbus.exceptions.DBusException(
+        "Failed to parse configuration: unknown option on line 1"
+    )
+
+    with patch.object(server, "_get_config_mgr", return_value=cfg_mgr):
+        result = server.vpn_config_import(ovpn_path=str(ovpn), profile_name="broken")
+
+    assert result["status"] == "error"
+    assert result["message"] == (
+        "Import failed: Failed to parse configuration: unknown option on line 1"
+    )
+    # Regression guard: 0.4.0's message glued a misleading auth-user-pass
+    # sentence onto every parse failure.
+    assert "auth-user-pass" not in result["message"]
 
 
 def test_tools_error_when_deps_missing(monkeypatch):
