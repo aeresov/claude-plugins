@@ -1,6 +1,6 @@
 [project]
 name = "openvpn3-mcp"
-version = "0.3.2"
+version = "0.3.3"
 description = "MCP server wrapping the openvpn3-linux CLI. Ships as part of the openvpn3-on-demand Claude Code plugin."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -9,6 +9,11 @@ authors = [{ name = "aeresov" }]
 keywords = ["mcp", "openvpn3", "vpn"]
 dependencies = [
     "mcp>=1.2.0",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=7",
 ]
 
 [project.scripts]
@@ -20,3 +25,6 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["openvpn3_mcp"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

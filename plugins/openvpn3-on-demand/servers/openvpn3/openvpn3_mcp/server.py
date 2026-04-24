@@ -115,24 +115,30 @@ def _all_configs() -> list[dict[str, str]]:
             data = json.loads(jr.stdout)
         except json.JSONDecodeError:
             data = None
-        items: list[dict] = []
-        if isinstance(data, list):
-            items = [d for d in data if isinstance(d, dict)]
-        elif isinstance(data, dict):
-            items = [d for d in data.values() if isinstance(d, dict)]
-        if items:
-            out: list[dict[str, str]] = []
-            for item in items:
-                path = str(
-                    item.get("path")
-                    or item.get("dbus_path")
-                    or item.get("config_path")
-                    or ""
+        pairs: list[tuple[str, dict]] = []
+        if isinstance(data, dict):
+            # Real openvpn3 shape: outer dict keyed by D-Bus path, each value
+            # holds the config's metadata (name, acl, valid, …). Previously we
+            # iterated data.values() and dropped the keys — so the path always
+            # came out empty and _all_configs returned []. Don't do that again.
+            pairs = [(str(p), d) for p, d in data.items() if isinstance(d, dict)]
+        elif isinstance(data, list):
+            # Defensive: tolerate a hypothetical future list-of-objects shape
+            # where each entry carries its own path field.
+            pairs = [
+                (
+                    str(d.get("path") or d.get("dbus_path") or d.get("config_path") or ""),
+                    d,
                 )
-                name = str(item.get("name") or item.get("config_name") or "")
-                if path:
-                    out.append({"path": path, "name": name})
-            return out
+                for d in data
+                if isinstance(d, dict)
+            ]
+        if pairs:
+            return [
+                {"path": p, "name": str(d.get("name") or d.get("config_name") or "")}
+                for p, d in pairs
+                if p
+            ]
 
     r = _run(OPENVPN3, "configs-list")
     if r.returncode != 0:

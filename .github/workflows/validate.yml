@@ -35,3 +35,26 @@ jobs:
           if [ "$found" -eq 0 ]; then
             echo "No plugins found under plugins/ — skipping per-plugin validation."
           fi
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Run MCP server test suites
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          found=0
+          for proj in plugins/*/servers/*/pyproject.toml; do
+            found=1
+            dir=$(dirname "$proj")
+            if [ -d "$dir/tests" ]; then
+              echo "::group::$dir"
+              (cd "$dir" && uv sync --group dev --quiet && uv run --quiet pytest -q)
+              echo "::endgroup::"
+            else
+              echo "Skipping $dir — no tests/ directory."
+            fi
+          done
+          if [ "$found" -eq 0 ]; then
+            echo "No in-tree server projects found."
+          fi
