@@ -79,9 +79,13 @@ claude --plugin-dir /path/to/openvpn3-on-demand
 - Claude calls `vpn_connect(profile_name)`. The MCP server runs
   `openvpn3 session-start --config <name>` (or returns early if the session
   already exists).
+- On a fresh connect, if the settings file declares `post_connect_cmd`,
+  Claude runs it — typical uses are warming a DNS cache, probing a VPC
+  endpoint, or opening an ssh control master. Non-fatal on failure.
 - Claude runs the user's command. Subsequent VPN-gated commands in the same
   task reuse the tunnel.
-- At the end of the task, Claude calls `vpn_disconnect(profile_name)`.
+- At the end of the task, Claude calls `vpn_disconnect(profile_name)`; on a
+  fresh disconnect, `post_disconnect_cmd` (if set) runs for cleanup.
 - The Stop and SessionEnd hooks run `teardown.py`, which reads
   `profile_name` from the settings file and disconnects that profile iff
   it's still active. This catches cases where the model forgot step 4.

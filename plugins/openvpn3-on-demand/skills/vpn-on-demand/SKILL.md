@@ -13,7 +13,12 @@ This skill only applies when the current project opts in by declaring a VPN prof
 
 1. Check whether `.claude/openvpn3-on-demand.local.md` exists in the project root.
 2. If it does not exist, stop — do nothing, do not call any `vpn_*` tool, proceed with the user's request as normal.
-3. If it does exist, read it and extract the YAML frontmatter fields `profile_name`, `ovpn_provision_cmd` (optional), and `trigger_patterns` (optional list of regex).
+3. If it does exist, read it and extract the YAML frontmatter fields:
+   - `profile_name` — **required**. The openvpn3 config name for this project.
+   - `ovpn_provision_cmd` — optional. Shell command that (re)generates the `.ovpn` file.
+   - `trigger_patterns` — optional list of regex strings; extends the built-in trigger defaults.
+   - `post_connect_cmd` — optional shell command to run after a fresh `vpn_connect` (see "The core flow").
+   - `post_disconnect_cmd` — optional shell command to run after a fresh `vpn_disconnect` (see "The core flow").
 
 If the file exists but `profile_name` is missing or empty, surface that as a configuration error to the user rather than guessing.
 
@@ -53,9 +58,13 @@ Given a matching command, the flow is:
    - Retry `vpn_connect(profile_name)`.
    - If `ovpn_provision_cmd` is not set, stop and tell the user: the profile needs to be imported manually (e.g. `openvpn3 config-import --config path/to/file.ovpn --name <name> --persistent`).
 
-3. **Run the user's command.** Proceed as normal.
+3. **Post-connect hook (fresh connects only).** If `vpn_connect` returned `status: connected` (i.e. *not* `already_connected`) and the settings file declares `post_connect_cmd`, run that shell command via Bash before proceeding. Typical uses: warming a DNS cache, probing a VPC endpoint to confirm routing, logging the connection. A non-zero exit is surfaced to the user but **not** fatal — do not tear down the session on post-connect failure. Skip this step when the tunnel was already up; the command is a one-time setup, not a per-turn heartbeat.
 
-4. **Disconnect at end of task.** Once the user's task is complete and no subsequent step in the same task still needs VPN, call `vpn_disconnect(profile_name=<value>)`. Disconnecting is also idempotent — `status: not_connected` is fine.
+4. **Run the user's command.** Proceed as normal.
+
+5. **Disconnect at end of task.** Once the user's task is complete and no subsequent step in the same task still needs VPN, call `vpn_disconnect(profile_name=<value>)`. Disconnecting is also idempotent — `status: not_connected` is fine.
+
+6. **Post-disconnect hook (fresh disconnects only).** If `vpn_disconnect` returned `status: disconnected` (i.e. *not* `not_connected`) and the settings file declares `post_disconnect_cmd`, run that shell command via Bash. Typical uses: flushing DNS resolver caches, tearing down port-forwards set up by `post_connect_cmd`, logging session end. Failures here are informational only. The Stop/SessionEnd teardown hook does **not** run `post_disconnect_cmd` — it's deliberately minimal — so if the model relies on the hook to tear down, post-disconnect cleanup is skipped.
 
 Do not disconnect between two VPN-gated commands in the same task. Connect once, keep the tunnel up for the run, disconnect at the end.
 
@@ -92,11 +101,13 @@ All tools return a dict with a `status` field. Treat `status: "error"` as a hard
 
 Per-project settings live in `.claude/openvpn3-on-demand.local.md` (git-ignored). Frontmatter fields:
 
-| Field               | Required | Purpose                                                                 |
-|---------------------|----------|-------------------------------------------------------------------------|
-| `profile_name`      | yes      | Name of the openvpn3 config to start. Matches the argument passed to `vpn_connect` and `vpn_disconnect`. |
-| `ovpn_provision_cmd`| no       | Shell command that (re)generates the `.ovpn` file on first connect. Required only if `vpn_config_import` has never been run for this profile. |
-| `trigger_patterns`  | no       | Extra regex patterns to treat as VPN-requiring, beyond the defaults in this skill. |
+| Field                 | Required | Purpose                                                                 |
+|-----------------------|----------|-------------------------------------------------------------------------|
+| `profile_name`        | yes      | Name of the openvpn3 config to start. Matches the argument passed to `vpn_connect` and `vpn_disconnect`. |
+| `ovpn_provision_cmd`  | no       | Shell command that (re)generates the `.ovpn` file on first connect. Required only if `vpn_config_import` has never been run for this profile. |
+| `trigger_patterns`    | no       | Extra regex patterns to treat as VPN-requiring, beyond the defaults in this skill. |
+| `post_connect_cmd`    | no       | Shell command run after a fresh `vpn_connect` (not on `already_connected`). DNS warming, endpoint probes, opening ssh control masters. Non-fatal on failure. |
+| `post_disconnect_cmd` | no       | Shell command run after a fresh `vpn_disconnect` (not on `not_connected`). DNS/route cleanup, closing port-forwards. Not run by the teardown hook. |
 
 See `references/example-local-settings.md` for a full commented template.
 
