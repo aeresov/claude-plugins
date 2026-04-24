@@ -22,6 +22,22 @@ This skill only applies when the current project opts in by declaring a VPN prof
 
 If the file exists but `profile_name` is missing or empty, surface that as a configuration error to the user rather than guessing.
 
+4. **Host DNS integration check** (once per session, before the first `vpn_connect`).
+
+   Run `test -f /var/lib/openvpn3/netcfg.json` (no sudo needed — the file is world-readable when present). If the file does **not** exist, stop and tell the user to run these three commands once per machine:
+
+   ```bash
+   sudo openvpn3-admin init-config --write-configs --force
+   sudo openvpn3-admin netcfg-service --config-set systemd-resolved true
+   sudo killall -INT openvpn3-service-netcfg
+   ```
+
+   The user can verify with `sudo openvpn3-admin netcfg-service --config-show` — the output should include `Systemd-resolved in use: Yes`.
+
+   Why this matters: without netcfg initialized, `openvpn3-service-netcfg` runs with no DNS backend configured. `vpn_connect` still returns `status: connected`, the tunnel is up, and TCP to private IPs works — but `systemd-resolved` never receives the pushed DNS servers, so `tun0` shows `Current Scopes: none` and hostname resolution for `*.rds.amazonaws.com` / `*.cache.amazonaws.com` / other private-zone endpoints fails silently with NXDOMAIN. The silent-partial-failure mode is the single worst symptom this plugin has — catch it at preflight.
+
+   Skip this check only if (a) the user has explicitly confirmed the host is set up, or (b) the host is on a non-systemd distro (Alpine, minimal Debian without systemd) where the mechanism doesn't apply. On non-systemd hosts, expect hostname-based access over the tunnel to need alternative DNS glue that is out of scope for this plugin.
+
 ## When to activate the VPN
 
 Call `vpn_connect(profile_name)` before executing a command whose destination is a private network resource. Use this matrix:
