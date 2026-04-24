@@ -1,6 +1,6 @@
 [project]
 name = "openvpn3-mcp"
-version = "0.3.1"
+version = "0.3.2"
 description = "MCP server wrapping the openvpn3-linux CLI. Ships as part of the openvpn3-on-demand Claude Code plugin."
 readme = "README.md"
 requires-python = ">=3.10"

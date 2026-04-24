@@ -15,6 +15,7 @@ import json
 import os
 import shutil
 import subprocess
+import time
 from pathlib import Path
 from typing import Optional
 
@@ -70,10 +71,33 @@ def _list_sessions() -> list[dict]:
 
 
 def _find_session(profile: str) -> Optional[dict]:
+    # Returns the first session whose config name matches. openvpn3 only allows
+    # one active session per (config, user), but if duplicate-name configs ever
+    # accumulated, this would only see the first one — `vpn_config_remove`
+    # cleans those up by D-Bus path.
     for s in _list_sessions():
         if s.get("config_name") == profile or s.get("config") == profile:
             return s
     return None
+
+
+def _wait_session_cleared(profile: str, timeout: float = 5.0) -> bool:
+    """Poll sessions-list until `profile`'s session is gone or timeout elapses.
+
+    `openvpn3 session-manage --disconnect` returns immediately, but the D-Bus
+    teardown can take a beat. A follow-up `vpn_config_remove` issued within
+    that window hits "config in use" because the session is still attached.
+    Callers of `vpn_disconnect` expect the session to be gone on return; this
+    polls at 100 ms intervals until it actually is, giving up after `timeout`.
+
+    Returns True if the session cleared in time, False otherwise.
+    """
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if _find_session(profile) is None:
+            return True
+        time.sleep(0.1)
+    return _find_session(profile) is None
 
 
 def _all_configs() -> list[dict[str, str]]:
@@ -181,6 +205,12 @@ def vpn_connect(profile_name: str) -> dict:
 def vpn_disconnect(profile_name: str) -> dict:
     """Disconnect the OpenVPN3 session for the given profile. No-op if not connected.
 
+    Waits (up to 5s) for openvpn3's D-Bus session teardown to actually complete
+    before returning, so a follow-up `vpn_config_remove` or re-import doesn't
+    hit "config in use" races. The returned payload includes `session_cleared`
+    (bool) so callers can detect the rare case where teardown didn't finish in
+    time.
+
     Args:
         profile_name: Name of the config whose session should be torn down. Required — this tool
             never disconnects sessions it wasn't asked about.
@@ -202,7 +232,12 @@ def vpn_disconnect(profile_name: str) -> dict:
             "stderr": r.stderr.strip(),
             "stdout": r.stdout.strip(),
         }
-    return {"status": "disconnected", "profile_name": profile_name}
+    cleared = _wait_session_cleared(profile_name)
+    return {
+        "status": "disconnected",
+        "profile_name": profile_name,
+        "session_cleared": cleared,
+    }
 
 
 @mcp.tool()
