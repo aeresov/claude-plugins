@@ -40,16 +40,16 @@ trigger_patterns:
 # tunnel — treat this as supplementary.
 post_connect_cmd: dig +short internal-db.my-vpc.internal
 
-# OPTIONAL. Shell command run by the skill after a fresh `vpn_disconnect`
-# succeeds (not on `not_connected`). Typical uses:
+# OPTIONAL. Shell command run after a fresh `vpn_disconnect` succeeds
+# (not on `not_connected`). Typical uses:
 # - Tearing down something `post_connect_cmd` set up:
 #     ssh -O exit my-bastion
 # - Flushing a DNS resolver cache:
 #     sudo resolvectl flush-caches
-# NOTE: the Stop / SessionEnd teardown hook (the safety net that
-# disconnects if the model forgot to) does NOT run this — it's
-# deliberately minimal. So if you rely on the hook rather than an
-# explicit `vpn_disconnect`, your post-disconnect cleanup is skipped.
+# Runs from BOTH paths: an explicit `vpn_disconnect` in the skill, and
+# the Stop / SessionEnd safety-net hook when it actually disconnects a
+# session. The hook gives it a 5s timeout and swallows failures, so
+# keep it quick and idempotent.
 post_disconnect_cmd: echo "vpn disconnected at $(date -Is)"
 ---
 
@@ -67,7 +67,7 @@ when it's broken. This body is not consumed by the plugin; it's for humans
 - `ovpn_provision_cmd` is invoked only when `vpn_connect` fails because no config with that name is registered. On success, the skill calls `vpn_config_import` and retries the connect. If this field is absent, the user must import the profile manually before the plugin is useful for them.
 - `trigger_patterns` *extend* the skill's built-in defaults. Use it for project-specific internal hostnames or wrapper scripts.
 - `post_connect_cmd` runs once per fresh connect, not on `already_connected`; intended for DNS warming, control masters, and logging. Non-fatal on failure.
-- `post_disconnect_cmd` runs once per fresh disconnect, not on `not_connected`; pair it with `post_connect_cmd` for teardown. Skipped by the Stop/SessionEnd safety-net hook.
+- `post_disconnect_cmd` runs once per fresh disconnect, not on `not_connected`; pair it with `post_connect_cmd` for teardown. The Stop/SessionEnd safety-net hook also runs it (5s timeout, silent failure) whenever it actually disconnects a session, so cleanup happens even if the model forgets to call `vpn_disconnect`.
 
 ## Gitignore
 

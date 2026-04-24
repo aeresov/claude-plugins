@@ -64,7 +64,7 @@ Given a matching command, the flow is:
 
 5. **Disconnect at end of task.** Once the user's task is complete and no subsequent step in the same task still needs VPN, call `vpn_disconnect(profile_name=<value>)`. Disconnecting is also idempotent — `status: not_connected` is fine.
 
-6. **Post-disconnect hook (fresh disconnects only).** If `vpn_disconnect` returned `status: disconnected` (i.e. *not* `not_connected`) and the settings file declares `post_disconnect_cmd`, run that shell command via Bash. Typical uses: flushing DNS resolver caches, tearing down port-forwards set up by `post_connect_cmd`, logging session end. Failures here are informational only. The Stop/SessionEnd teardown hook does **not** run `post_disconnect_cmd` — it's deliberately minimal — so if the model relies on the hook to tear down, post-disconnect cleanup is skipped.
+6. **Post-disconnect hook (fresh disconnects only).** If `vpn_disconnect` returned `status: disconnected` (i.e. *not* `not_connected`) and the settings file declares `post_disconnect_cmd`, run that shell command via Bash. Typical uses: flushing DNS resolver caches, tearing down port-forwards set up by `post_connect_cmd`, logging session end. Failures here are informational only. The Stop/SessionEnd safety-net hook *also* runs `post_disconnect_cmd` (with a 5s timeout, silent failure) whenever it actually disconnects a session — so cleanup happens even when the model forgets step 5.
 
 Do not disconnect between two VPN-gated commands in the same task. Connect once, keep the tunnel up for the run, disconnect at the end.
 
@@ -107,7 +107,7 @@ Per-project settings live in `.claude/openvpn3-on-demand.local.md` (git-ignored)
 | `ovpn_provision_cmd`  | no       | Shell command that (re)generates the `.ovpn` file on first connect. Required only if `vpn_config_import` has never been run for this profile. |
 | `trigger_patterns`    | no       | Extra regex patterns to treat as VPN-requiring, beyond the defaults in this skill. |
 | `post_connect_cmd`    | no       | Shell command run after a fresh `vpn_connect` (not on `already_connected`). DNS warming, endpoint probes, opening ssh control masters. Non-fatal on failure. |
-| `post_disconnect_cmd` | no       | Shell command run after a fresh `vpn_disconnect` (not on `not_connected`). DNS/route cleanup, closing port-forwards. Not run by the teardown hook. |
+| `post_disconnect_cmd` | no       | Shell command run after a fresh `vpn_disconnect` (not on `not_connected`). DNS/route cleanup, closing port-forwards. Also runs from the Stop/SessionEnd safety-net hook when it actually disconnects a session (5s timeout, silent failure). |
 
 See `references/example-local-settings.md` for a full commented template.
 

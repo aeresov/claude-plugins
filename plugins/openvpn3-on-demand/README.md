@@ -89,6 +89,9 @@ claude --plugin-dir /path/to/openvpn3-on-demand
 - The Stop and SessionEnd hooks run `teardown.py`, which reads
   `profile_name` from the settings file and disconnects that profile iff
   it's still active. This catches cases where the model forgot step 4.
+  If `post_disconnect_cmd` is set, the hook also runs it (5s timeout,
+  silent failure) — so DNS/route cleanup still happens on the safety-net
+  path.
 
 ## MCP tools
 
