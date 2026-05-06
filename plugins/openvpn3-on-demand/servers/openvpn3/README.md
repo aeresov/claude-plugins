@@ -28,7 +28,12 @@ Tools: `vpn_status`, `vpn_connect`, `vpn_disconnect`, `vpn_config_import`,
 
 ```bash
 cd servers/openvpn3
-uv venv --system-site-packages  # must have system site-packages for dbus + openvpn3
+# Pin to /usr/bin/python3 explicitly: --system-site-packages only exposes
+# the *parent interpreter's* site-packages, and uv's default Python is its
+# own managed interpreter (under ~/.local/share/uv/python/), whose
+# site-packages does NOT include /usr/lib/python3/dist-packages where
+# openvpn3-client and python3-dbus install dbus + openvpn3.
+uv venv --python /usr/bin/python3 --system-site-packages
 uv sync
 uv run openvpn3-mcp             # runs the stdio server (expects an MCP client)
 uv run --group dev pytest -q    # unit tests (stub dbus/openvpn3 — no real D-Bus needed)

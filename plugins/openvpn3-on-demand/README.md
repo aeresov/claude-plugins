@@ -137,7 +137,13 @@ root for the full text.
 
 - **"openvpn3 Python module or dbus-python is not available"** — install
   both `openvpn3-client` and `python3-dbus` system packages, then restart
-  Claude Code so the MCP server process picks them up.
+  Claude Code so the MCP server process picks them up. If the error
+  persists after installing those packages (this affected 0.4.0–0.4.2),
+  the launcher's venv is pinned to a uv-managed Python that can't see
+  /usr/lib/python3/dist-packages: upgrade to ≥0.4.3 and the next launch
+  will recreate the venv against /usr/bin/python3 automatically. As a
+  manual workaround on older versions, delete
+  `servers/openvpn3/.venv` under the plugin directory and restart.
 - **`vpn_connect` errors about an unknown config** — the profile isn't
   imported yet. Either set `ovpn_provision_cmd` in the settings file or run
   `openvpn3 config-import` manually.

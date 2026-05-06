@@ -374,7 +374,7 @@ def vpn_config_remove(profile_name: str) -> dict:
 def main() -> None:
     # AGPL-3.0 §5(d): make the copyright notice visible. The MCP stdio
     # protocol reserves stdout, so the banner goes to stderr.
-    print("openvpn3-mcp 0.4.2 — AGPL-3.0-only", file=sys.stderr)
+    print("openvpn3-mcp 0.4.3 — AGPL-3.0-only", file=sys.stderr)
     mcp.run()
 
 
