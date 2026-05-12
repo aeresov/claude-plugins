@@ -68,3 +68,112 @@ def test_session_id_from_stdin_missing_key(monkeypatch):
 def test_session_id_from_stdin_empty(monkeypatch):
     monkeypatch.setattr(sys, "stdin", io.StringIO(""))
     assert teardown._session_id_from_stdin() is None
+
+
+# ---------- main() integration -------------------------------------------
+
+
+def _write_settings(tmp_path: Path, frontmatter: str) -> Path:
+    p = tmp_path / "openvpn3-on-demand.local.md"
+    p.write_text(f"---\n{frontmatter}\n---\n\n# notes for humans\n")
+    return p
+
+
+def test_main_noop_when_state_file_missing(tmp_path, monkeypatch):
+    monkeypatch.setattr(teardown, "STATE_FILE", tmp_path / "absent.md")
+    with patch.object(teardown, "_disconnect_via_dbus") as disc:
+        assert teardown.main() == 0
+    disc.assert_not_called()
+
+
+def test_main_noop_when_both_fields_set(tmp_path, monkeypatch):
+    sf = _write_settings(tmp_path, "profile_name: a\novpn_provision_cmd: cat x")
+    monkeypatch.setattr(teardown, "STATE_FILE", sf)
+    with patch.object(teardown, "_disconnect_via_dbus") as disc, patch.object(
+        teardown, "_remove_config_via_dbus"
+    ) as rem:
+        assert teardown.main() == 0
+    disc.assert_not_called()
+    rem.assert_not_called()
+
+
+def test_main_byo_disconnects_named_profile_no_config_removal(tmp_path, monkeypatch):
+    sf = _write_settings(tmp_path, "profile_name: my-vpn")
+    monkeypatch.setattr(teardown, "STATE_FILE", sf)
+    with patch.object(teardown, "_disconnect_via_dbus", return_value=True) as disc, patch.object(
+        teardown, "_remove_config_via_dbus"
+    ) as rem:
+        assert teardown.main() == 0
+    disc.assert_called_once_with("my-vpn")
+    rem.assert_not_called()
+
+
+def test_main_byo_runs_post_disconnect_when_disconnected(tmp_path, monkeypatch):
+    sf = _write_settings(tmp_path, "profile_name: my-vpn\npost_disconnect_cmd: echo bye")
+    monkeypatch.setattr(teardown, "STATE_FILE", sf)
+    with patch.object(teardown, "_disconnect_via_dbus", return_value=True), patch.object(
+        teardown, "run_post_disconnect"
+    ) as post:
+        assert teardown.main() == 0
+    post.assert_called_once_with("echo bye")
+
+
+def test_main_byo_skips_post_disconnect_when_nothing_disconnected(tmp_path, monkeypatch):
+    sf = _write_settings(tmp_path, "profile_name: my-vpn\npost_disconnect_cmd: echo bye")
+    monkeypatch.setattr(teardown, "STATE_FILE", sf)
+    with patch.object(teardown, "_disconnect_via_dbus", return_value=False), patch.object(
+        teardown, "run_post_disconnect"
+    ) as post:
+        assert teardown.main() == 0
+    post.assert_not_called()
+
+
+def test_main_ephemeral_uses_session_id_from_env(tmp_path, monkeypatch):
+    sf = _write_settings(tmp_path, "ovpn_provision_cmd: cat x")
+    monkeypatch.setattr(teardown, "STATE_FILE", sf)
+    monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "env-sid")
+    with patch.object(teardown, "_disconnect_via_dbus", return_value=True) as disc, patch.object(
+        teardown, "_remove_config_via_dbus"
+    ) as rem:
+        assert teardown.main() == 0
+    disc.assert_called_once_with("ovpn3-od-env-sid")
+    rem.assert_called_once_with("ovpn3-od-env-sid")
+
+
+def test_main_ephemeral_falls_back_to_stdin_session_id(tmp_path, monkeypatch):
+    sf = _write_settings(tmp_path, "ovpn_provision_cmd: cat x")
+    monkeypatch.setattr(teardown, "STATE_FILE", sf)
+    monkeypatch.delenv("CLAUDE_CODE_SESSION_ID", raising=False)
+    monkeypatch.setattr(sys, "stdin", io.StringIO('{"session_id": "stdin-sid"}'))
+    with patch.object(teardown, "_disconnect_via_dbus", return_value=True) as disc, patch.object(
+        teardown, "_remove_config_via_dbus"
+    ) as rem:
+        assert teardown.main() == 0
+    disc.assert_called_once_with("ovpn3-od-stdin-sid")
+    rem.assert_called_once_with("ovpn3-od-stdin-sid")
+
+
+def test_main_ephemeral_noop_without_session_id(tmp_path, monkeypatch):
+    sf = _write_settings(tmp_path, "ovpn_provision_cmd: cat x")
+    monkeypatch.setattr(teardown, "STATE_FILE", sf)
+    monkeypatch.delenv("CLAUDE_CODE_SESSION_ID", raising=False)
+    monkeypatch.setattr(sys, "stdin", io.StringIO(""))  # empty → no session id
+    with patch.object(teardown, "_disconnect_via_dbus") as disc, patch.object(
+        teardown, "_remove_config_via_dbus"
+    ) as rem:
+        assert teardown.main() == 0
+    disc.assert_not_called()
+    rem.assert_not_called()
+
+
+def test_main_ephemeral_removes_config_even_when_nothing_disconnected(tmp_path, monkeypatch):
+    sf = _write_settings(tmp_path, "ovpn_provision_cmd: cat x")
+    monkeypatch.setattr(teardown, "STATE_FILE", sf)
+    monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "sid")
+    with patch.object(teardown, "_disconnect_via_dbus", return_value=False) as disc, patch.object(
+        teardown, "_remove_config_via_dbus"
+    ) as rem, patch.object(teardown, "run_post_disconnect") as post:
+        assert teardown.main() == 0
+    disc.assert_called_once_with("ovpn3-od-sid")
+    rem.assert_called_once_with("ovpn3-od-sid")
+    post.assert_not_called()

@@ -2,10 +2,15 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 """Safety-net teardown for openvpn3-on-demand.
 
-Fires on Stop and SessionEnd. Reads profile_name from the project's
-.claude/openvpn3-on-demand.local.md (YAML frontmatter) and disconnects
-that single profile iff it's currently active. Silent no-op otherwise;
-never raises to the hook runner.
+Fires on Stop and SessionEnd. Reads the project's
+.claude/openvpn3-on-demand.local.md (YAML frontmatter) to learn which
+mode the project uses, then disconnects that single profile iff it's
+active. BYO mode (profile_name): disconnect that named session, leave
+its config alone. Ephemeral mode (ovpn_provision_cmd): disconnect — and
+remove the config for — ``ovpn3-od-<CLAUDE_CODE_SESSION_ID>`` (the id
+comes from the environment, or from the hook's JSON stdin as a
+fallback). Misconfigured (both fields, or neither) or no session id:
+silent no-op. Never raises to the hook runner.
 
 Talks to openvpn3 over D-Bus using the ``openvpn3`` Python module shipped
 with openvpn3-client. If either dbus-python or openvpn3 isn't importable
@@ -116,6 +121,34 @@ def _disconnect_via_dbus(profile: str) -> bool:
     return disconnected_any
 
 
+def _remove_config_via_dbus(profile: str) -> None:
+    """Best-effort: remove every openvpn3 config registered under ``profile``.
+
+    Mirrors ``_disconnect_via_dbus`` but against the configuration manager.
+    Ephemeral configs are imported single-use and openvpn3 normally drops them
+    once a tunnel starts, so this is usually a no-op; it covers the case where a
+    turn imported a config but its NewTunnel threw before consuming it. Swallows
+    everything — never raises to the hook runner.
+    """
+    try:
+        import dbus  # type: ignore[import-not-found]
+        import openvpn3  # type: ignore[import-not-found]
+    except ImportError:
+        return  # silent: _disconnect_via_dbus runs first and prints the breadcrumb
+    try:
+        mgr = openvpn3.ConfigurationManager(dbus.SystemBus())
+        paths = mgr.LookupConfigName(profile)
+    except (dbus.exceptions.DBusException, RuntimeError):
+        return
+    if not paths:
+        return
+    for p in paths:
+        try:
+            mgr.Retrieve(p).Remove()
+        except (dbus.exceptions.DBusException, RuntimeError):
+            continue
+
+
 def run_post_disconnect(cmd: str) -> None:
     """Best-effort run of the user's post_disconnect_cmd. Swallows all failures."""
     try:
@@ -182,11 +215,24 @@ def _resolve_target(
 def main() -> int:
     if not STATE_FILE.is_file():
         return 0
-    fields = _frontmatter_fields(STATE_FILE, "profile_name", "post_disconnect_cmd")
+    fields = _frontmatter_fields(
+        STATE_FILE, "profile_name", "ovpn_provision_cmd", "post_disconnect_cmd"
+    )
+    # Only consult the environment / stdin for a session id when we'd actually
+    # use one (ephemeral mode), so a manual `teardown.py` run on a tty doesn't
+    # block in json.load(sys.stdin).
     profile = fields.get("profile_name")
-    if not profile:
+    provision = fields.get("ovpn_provision_cmd")
+    session_id: str | None = None
+    if provision and not profile:
+        session_id = os.environ.get("CLAUDE_CODE_SESSION_ID") or _session_id_from_stdin()
+    target, also_remove = _resolve_target(fields, session_id)
+    if not target:
         return 0
-    if _disconnect_via_dbus(profile):
+    disconnected = _disconnect_via_dbus(target)
+    if also_remove:
+        _remove_config_via_dbus(target)
+    if disconnected:
         post_cmd = fields.get("post_disconnect_cmd")
         if post_cmd:
             run_post_disconnect(post_cmd)
