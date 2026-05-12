@@ -19,6 +19,7 @@ blanket-disconnects.
 
 from __future__ import annotations
 
+import json
 import os
 import subprocess
 import sys
@@ -127,6 +128,55 @@ def run_post_disconnect(cmd: str) -> None:
         )
     except Exception:
         pass
+
+
+def _session_id_from_stdin() -> str | None:
+    """Best-effort: the Claude session id from the hook's JSON stdin payload.
+
+    Stop / SessionEnd hooks receive a JSON object on stdin with a ``session_id``
+    field. We only consult stdin when ``CLAUDE_CODE_SESSION_ID`` wasn't in the
+    environment. If stdin is a tty (someone ran this script by hand) or isn't
+    valid JSON, return None instead of blocking or raising — this is a safety
+    net, not a hard dependency.
+    """
+    try:
+        if sys.stdin.isatty():
+            return None
+        data = json.load(sys.stdin)
+    except Exception:
+        return None
+    if isinstance(data, dict):
+        sid = data.get("session_id")
+        if isinstance(sid, str) and sid:
+            return sid
+    return None
+
+
+def _resolve_target(
+    fields: dict[str, str], session_id: str | None
+) -> tuple[str | None, bool]:
+    """Map settings-file frontmatter to (config name to tear down, also remove its config?).
+
+    - ``profile_name`` set, no ``ovpn_provision_cmd`` → BYO: disconnect that named
+      session; leave its config alone (it's the user's).
+    - ``ovpn_provision_cmd`` set, no ``profile_name`` → ephemeral: disconnect and
+      remove the config for ``ovpn3-od-<session_id>``; needs a session id.
+    - both set → misconfigured; the skill won't have started anything → no-op.
+    - neither, or ephemeral with no session id → no-op.
+
+    Every no-op case returns ``(None, False)``.
+    """
+    profile = fields.get("profile_name")
+    provision = fields.get("ovpn_provision_cmd")
+    if profile and provision:
+        return None, False
+    if profile:
+        return profile, False
+    if provision:
+        if not session_id:
+            return None, False
+        return f"ovpn3-od-{session_id}", True
+    return None, False
 
 
 def main() -> int:
