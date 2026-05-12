@@ -7,24 +7,27 @@ description: Connect the project's OpenVPN3 tunnel before commands that touch pr
 
 Bring up the project's OpenVPN3 tunnel before running any command that needs it, and tear it down when the task is done. The plugin ships an `openvpn3` MCP server with the tools below; this skill is the policy that decides *when* to call them.
 
-## Preflight: is this plugin even active for this project?
+The project picks one of two modes in `.claude/openvpn3-on-demand.local.md`:
 
-This skill only applies when the current project opts in by declaring a VPN profile in `.claude/openvpn3-on-demand.local.md` (see the Configuration section). Before anything else:
+- **BYO profile** — `profile_name` names an openvpn3 config the user has already imported. The skill only starts/stops sessions for it; the config is the user's and is never created or removed by the plugin.
+- **Ephemeral profile** — `ovpn_provision_cmd` is a command whose stdout is an `.ovpn` file body. The skill generates a fresh, single-use config from it whenever the tunnel is needed, under an internal name the user never sees; openvpn3 drops the config once the tunnel starts.
 
-1. Check whether `.claude/openvpn3-on-demand.local.md` exists in the project root.
-2. If it does not exist, stop — do nothing, do not call any `vpn_*` tool, proceed with the user's request as normal.
-3. If it does exist, read it and extract the YAML frontmatter fields:
-   - `profile_name` — **required**. The openvpn3 config name for this project.
-   - `ovpn_provision_cmd` — optional. Shell command that (re)generates the `.ovpn` file.
-   - `trigger_patterns` — optional list of regex strings; extends the built-in trigger defaults.
-   - `post_connect_cmd` — optional shell command to run after a fresh `vpn_connect` (see "The core flow").
-   - `post_disconnect_cmd` — optional shell command to run after a fresh `vpn_disconnect` (see "The core flow").
+## Preflight: is this plugin active for this project, and in which mode?
 
-If the file exists but `profile_name` is missing or empty, surface that as a configuration error to the user rather than guessing.
+1. Check whether `.claude/openvpn3-on-demand.local.md` exists in the project root. If not, **stop** — do nothing, call no `vpn_*` tool, handle the user's request normally.
+2. If it exists, read its YAML frontmatter. Relevant fields:
+   - `profile_name` — selects BYO mode.
+   - `ovpn_provision_cmd` — selects ephemeral mode.
+   - `trigger_patterns` — optional list of regex strings; extends the built-in triggers below. (Both modes.)
+   - `post_connect_cmd` — optional shell command run after a fresh `vpn_connect`. (Both modes.)
+   - `post_disconnect_cmd` — optional shell command run after a fresh `vpn_disconnect`. (Both modes.)
+3. **Validate the mode.** Exactly one of `profile_name` / `ovpn_provision_cmd` must be present and non-empty:
+   - Neither → tell the user the settings file must declare either `profile_name` (an already-imported config) or `ovpn_provision_cmd` (an ephemeral one).
+   - Both → tell the user the two fields are mutually exclusive — `profile_name` for an existing config, `ovpn_provision_cmd` for an ephemeral one.
+   In either error case: surface the message, call **no** `vpn_*` tool, and proceed with the user's request as normal (their command may fail if it needed the tunnel — that's the misconfiguration's fault, not something to paper over).
+4. **Host DNS integration check** (once per session, before the first `vpn_connect`, in either mode).
 
-4. **Host DNS integration check** (once per session, before the first `vpn_connect`).
-
-   Run `test -f /var/lib/openvpn3/netcfg.json` (no sudo needed — the file is world-readable when present). If the file does **not** exist, stop and tell the user to run these three commands once per machine:
+   Run `test -f /var/lib/openvpn3/netcfg.json` (no sudo needed — world-readable when present). If the file does **not** exist, stop and tell the user to run these once per machine:
 
    ```bash
    sudo openvpn3-admin init-config --write-configs --force
@@ -32,15 +35,13 @@ If the file exists but `profile_name` is missing or empty, surface that as a con
    sudo killall -INT openvpn3-service-netcfg
    ```
 
-   The user can verify with `sudo openvpn3-admin netcfg-service --config-show` — the output should include `Systemd-resolved in use: Yes`.
+   (Verify with `sudo openvpn3-admin netcfg-service --config-show` — output should include `Systemd-resolved in use: Yes`.)
 
-   Why this matters: without netcfg initialized, `openvpn3-service-netcfg` runs with no DNS backend configured. `vpn_connect` still returns `status: connected`, the tunnel is up, and TCP to private IPs works — but `systemd-resolved` never receives the pushed DNS servers, so `tun0` shows `Current Scopes: none` and hostname resolution for `*.rds.amazonaws.com` / `*.cache.amazonaws.com` / other private-zone endpoints fails silently with NXDOMAIN. The silent-partial-failure mode is the single worst symptom this plugin has — catch it at preflight.
-
-   Skip this check only if (a) the user has explicitly confirmed the host is set up, or (b) the host is on a non-systemd distro (Alpine, minimal Debian without systemd) where the mechanism doesn't apply. On non-systemd hosts, expect hostname-based access over the tunnel to need alternative DNS glue that is out of scope for this plugin.
+   Why it matters: without netcfg initialized the tunnel comes up and TCP to private IPs works, but `systemd-resolved` never receives the pushed DNS servers, so `tun0` shows `Current Scopes: none` and hostname resolution for `*.rds.amazonaws.com` / `*.cache.amazonaws.com` / other private-zone endpoints fails silently with NXDOMAIN. Skip this check only if (a) the user has confirmed the host is set up, or (b) the host is non-systemd (Alpine, minimal Debian without systemd) — on those, hostname access over the tunnel needs DNS glue that is out of scope for this plugin.
 
 ## When to activate the VPN
 
-Call `vpn_connect(profile_name)` before executing a command whose destination is a private network resource. Use this matrix:
+Call the connect step (per the relevant mode's flow below) before executing a command whose destination is a private network resource. Use this matrix:
 
 **Activate** when the command targets:
 
@@ -50,90 +51,104 @@ Call `vpn_connect(profile_name)` before executing a command whose destination is
 - `aws` CLI calls against prod accounts for services that talk to private endpoints (RDS, ElastiCache, MemoryDB, Secrets Manager, SSM Parameter Store, ECR inside a VPC, Lambda in a VPC).
 - `kubectl` / `helm` against a cluster whose API endpoint is private.
 - `ssh` to hosts without a public IP.
-- Any bash, Read/Grep/Glob-free tool call that matches one of the `trigger_patterns` regexes in the settings file. Patterns there extend the defaults — they do not replace them.
+- Any command matching one of the `trigger_patterns` regexes in the settings file. Patterns there extend the defaults — they do not replace them.
 
 **Do NOT activate** for:
 
-- Read/Edit/Write/Glob/Grep on local files (they never leave the machine).
-- Commands hitting obviously public endpoints: `github.com`, `pypi.org`, `npmjs.com`, `docker.io`, public S3 buckets via `https://...s3.amazonaws.com` without a VPC endpoint requirement, public REST APIs.
+- Read/Edit/Write/Glob/Grep on local files.
+- Commands hitting obviously public endpoints: `github.com`, `pypi.org`, `npmjs.com`, `docker.io`, public S3 over `https://...s3.amazonaws.com` without a VPC-endpoint requirement, public REST APIs.
 - Reading docs, running tests that don't hit the network, local builds.
-- Local Docker traffic: the `docker0` bridge (`172.17.0.0/16`), `docker compose` project networks, and anything on `localhost` / `127.0.0.1` / `::1`.
-- `.local` / mDNS / Bonjour hostnames — those are LAN service discovery, not VPN territory.
+- Local Docker traffic: the `docker0` bridge (`172.17.0.0/16`), `docker compose` project networks, anything on `localhost` / `127.0.0.1` / `::1`.
+- `.local` / mDNS / Bonjour hostnames — LAN service discovery, not VPN territory.
 
-When uncertain, check the settings file's `trigger_patterns` and the project's CLAUDE.md for guidance. If still uncertain, ask the user rather than speculating.
+When uncertain, check `trigger_patterns` and the project's CLAUDE.md. If still uncertain, ask the user rather than speculating.
 
-## The core flow
+## Core flow — BYO mode (`profile_name`)
 
-Given a matching command, the flow is:
+Given a matching command:
 
-1. **Connect.** Call `vpn_connect(profile_name=<value from settings>)`. The tool is idempotent — if the session already exists, it returns `status: already_connected` immediately.
+1. **Connect.** `vpn_connect(profile_name=<value>)`. Idempotent — `already_connected` returns immediately.
+2. **If connect errors that the config is unknown** (message mentions "no openvpn3 config named" / "import it first" / similar), **stop**: tell the user to import the profile once, e.g.
+   `openvpn3 config-import --config /path/to/file.ovpn --name <profile_name> --persistent`.
+   Do **not** run any provisioning command in this mode.
+3. **Post-connect hook (fresh connects only).** If `vpn_connect` returned `status: connected` (not `already_connected`) and `post_connect_cmd` is set, run it via Bash. Typical uses: warming a DNS cache, probing a VPC endpoint, opening an ssh control master. A non-zero exit is surfaced but **not** fatal — do not tear down on post-connect failure. Skip when the tunnel was already up.
+4. **Run the user's command.** Reuse the tunnel for later VPN-gated commands in the same task.
+5. **Disconnect at end of task.** When the task is complete and no later step needs the VPN, `vpn_disconnect(profile_name=<value>)`. Idempotent — `not_connected` is fine.
+6. **Post-disconnect hook (fresh disconnects only).** If `vpn_disconnect` returned `status: disconnected` (not `not_connected`) and `post_disconnect_cmd` is set, run it via Bash. Failures here are informational. The Stop/SessionEnd safety-net hook also runs `post_disconnect_cmd` (5 s timeout, silent failure) whenever it actually disconnects the session.
 
-2. **If connect returns an error about a missing config** (`stderr` mentions "not found" / "no such config" / similar), run first-time provisioning:
-   - If the settings file declares `ovpn_provision_cmd`, run that shell command. It is responsible for producing a fresh `.ovpn` file. The command must print the absolute path of the generated file as its last non-empty stdout line, or explicitly set an `OUTPUT=…` path — adopt whichever convention the settings file uses.
-   - Call `vpn_config_import(ovpn_path=<path>, profile_name=<name>)` to register it.
-   - Retry `vpn_connect(profile_name)`.
-   - If `ovpn_provision_cmd` is not set, stop and tell the user: the profile needs to be imported manually (e.g. `openvpn3 config-import --config path/to/file.ovpn --name <name> --persistent`).
+Connect once, keep the tunnel up across the VPN-gated commands in a task, disconnect at the end. Do not disconnect between two VPN-gated commands in the same task.
 
-3. **Post-connect hook (fresh connects only).** If `vpn_connect` returned `status: connected` (i.e. *not* `already_connected`) and the settings file declares `post_connect_cmd`, run that shell command via Bash before proceeding. Typical uses: warming a DNS cache, probing a VPC endpoint to confirm routing, logging the connection. A non-zero exit is surfaced to the user but **not** fatal — do not tear down the session on post-connect failure. Skip this step when the tunnel was already up; the command is a one-time setup, not a per-turn heartbeat.
+## Core flow — ephemeral mode (`ovpn_provision_cmd`)
 
-4. **Run the user's command.** Proceed as normal.
+The profile name is internal: `N = "ovpn3-od-" + $CLAUDE_CODE_SESSION_ID`. Read `CLAUDE_CODE_SESSION_ID` from the environment. If it is unset or empty, **stop**: tell the user ephemeral mode needs `CLAUDE_CODE_SESSION_ID` (their Claude Code may be too old) and handle their request without VPN — do **not** invent a name.
 
-5. **Disconnect at end of task.** Once the user's task is complete and no subsequent step in the same task still needs VPN, call `vpn_disconnect(profile_name=<value>)`. Disconnecting is also idempotent — `status: not_connected` is fine.
+Given a matching command:
 
-6. **Post-disconnect hook (fresh disconnects only).** If `vpn_disconnect` returned `status: disconnected` (i.e. *not* `not_connected`) and the settings file declares `post_disconnect_cmd`, run that shell command via Bash. Typical uses: flushing DNS resolver caches, tearing down port-forwards set up by `post_connect_cmd`, logging session end. Failures here are informational only. The Stop/SessionEnd safety-net hook *also* runs `post_disconnect_cmd` (with a 5s timeout, silent failure) whenever it actually disconnects a session — so cleanup happens even when the model forgets step 5.
+1. **Compute `N`** as above.
+2. **Try connecting first.** `vpn_connect(profile_name=N)`.
+   - `already_connected` → an earlier VPN-gated command this turn already brought it up. Skip to step 5.
+   - `connected` → a config under `N` was still around; it's now consumed. Run the post-connect hook (step 4) and skip to step 5.
+   - `error` (no session, no config) → provision, step 3.
+3. **Provision → import → connect:**
+   1. `vpn_config_remove(profile_name=N)` — defensive cleanup of a stale config left under `N` by an earlier turn this session whose `NewTunnel` threw before consuming it. `already_removed` is the normal case; an `error` here isn't fatal.
+   2. Create a temp file: `tmp="$(mktemp --suffix=.ovpn)"`.
+   3. Run `ovpn_provision_cmd` with its **stdout redirected into `$tmp`** — e.g. `{ <the ovpn_provision_cmd value, verbatim> ; } > "$tmp"`. The requirement (not the exact mechanism): the command's standard output lands in `$tmp`, and its stdout bytes do **not** appear in your output / the conversation transcript; the command's stderr may (it's the command's diagnostics).
+   4. If the command exited non-zero, or `$tmp` is empty → tell the user provisioning failed (show its stderr), `rm -f "$tmp"`, and **stop** — do not connect.
+   5. `vpn_config_import(ovpn_path=<path to $tmp>, profile_name=N, single_use=True)`. On `status: error`, surface the `message`, `rm -f "$tmp"`, stop.
+   6. `rm -f "$tmp"` — the body is now inside openvpn3; the file is no longer needed.
+   7. `vpn_connect(profile_name=N)`. On `status: connected`, run the post-connect hook (step 4). On `status: error`, surface the `message` and stop.
+4. **Post-connect hook (fresh connects only).** If `post_connect_cmd` is set, run it via Bash. Non-zero exit is surfaced but not fatal; do not tear down.
+5. **Run the user's command.** Reuse the tunnel for later VPN-gated commands in the same task.
+6. **Disconnect at end of task.** `vpn_disconnect(profile_name=N)`; on a fresh disconnect, run `post_disconnect_cmd` if set. The Stop/SessionEnd safety-net hook disconnects `N` and removes its config as a backstop, and runs `post_disconnect_cmd` (5 s timeout, silent) if it disconnects something.
 
-Do not disconnect between two VPN-gated commands in the same task. Connect once, keep the tunnel up for the run, disconnect at the end.
+`ovpn_provision_cmd` runs on every turn that touches the VPN — that's by design (the profile is per-turn-disposable). Don't try to cache it across turns.
 
-## Resetting a profile (env switch, DNS workaround, stale credentials)
+## Refreshing the profile
 
-If the user indicates they're switching deployment environments, toggling a DNS workaround, or regenerating the `.ovpn` file for any other reason, the imported openvpn3 config still has the *old* contents — `vpn_connect` would reuse the stale profile. The reset cycle is:
-
-1. `vpn_disconnect(profile_name)` — openvpn3 refuses to remove a config that has an active session, so disconnect first. `status: not_connected` is fine.
-2. `vpn_config_remove(profile_name)` — drop the stale import. `status: already_removed` is fine.
-3. Next time a VPN-gated command fires, the normal flow (connect → "not imported" → `ovpn_provision_cmd` → `vpn_config_import` → retry connect) re-provisions cleanly.
-
-Do not run the reset cycle speculatively. Only do it when the user asks to switch envs / refresh the profile, or when a connect failure points at a stale config (e.g. auth errors immediately after the user ran their provision target manually).
+- **BYO mode:** the imported config is the user's. If they need to refresh it (rotated credentials, env switch), they re-import it themselves (`openvpn3 config-import --name <profile_name> --persistent --config …`); if asked, you can `vpn_disconnect(profile_name)` first so the re-import isn't blocked by an active session. The skill never auto-removes a BYO config.
+- **Ephemeral mode:** nothing to refresh — every VPN-gated turn re-runs `ovpn_provision_cmd` and re-imports, so the config is always fresh. If the user edits `ovpn_provision_cmd`, the next VPN-gated turn picks it up automatically.
 
 ## Interaction with the teardown hook
 
-The plugin ships Stop and SessionEnd hooks that disconnect the configured profile as a safety net. Those hooks are a backup for the case where the model forgot step 4 above; they are not an excuse to skip it. Explicit disconnect at task end is the expected behavior because:
+The plugin ships Stop and SessionEnd hooks that disconnect the configured profile as a safety net for when the model forgot the "disconnect at end of task" step — BYO mode: `profile_name`; ephemeral mode: `ovpn3-od-<CLAUDE_CODE_SESSION_ID>` (and it also removes that config). Don't lean on them:
 
-- Stop also fires between turns in a long conversation; letting the hook do the work means every follow-up turn pays a reconnect.
+- Stop also fires between turns in a long conversation; letting the hook do the disconnect means every follow-up turn pays a reconnect (and, in ephemeral mode, a re-provision).
 - Explicit disconnect produces cleaner transcripts (the user sees the intent).
 
 ## Tool reference
 
-The MCP server exposes these tools under the `openvpn3` prefix:
+The MCP server exposes these under the `openvpn3` prefix; all return a dict with a `status` field, and `status: "error"` is a hard failure — surface the `message`, don't silently retry:
 
-- `vpn_status()` — returns the list of active sessions. Useful for confirming state, debugging, or checking before a manual step.
-- `vpn_connect(profile_name)` — start a session. Idempotent.
-- `vpn_disconnect(profile_name)` — stop a session. Idempotent. `profile_name` is required; the server will not disconnect arbitrary sessions.
-- `vpn_config_import(ovpn_path, profile_name)` — register an `.ovpn` file as a named persistent config. Idempotent.
-- `vpn_config_remove(profile_name)` — drop an imported config so it can be re-provisioned. Idempotent. Requires the session to be disconnected first.
-
-All tools return a dict with a `status` field. Treat `status: "error"` as a hard failure and surface `stderr` / `stdout` to the user — do not silently retry.
+- `vpn_status()` — list active sessions (`{session_count, sessions: [...]}`). Useful for confirming state or debugging.
+- `vpn_connect(profile_name)` — start a session. Idempotent (`already_connected`).
+- `vpn_disconnect(profile_name)` — stop a session. Idempotent (`not_connected`). `profile_name` is required; the server won't disconnect arbitrary sessions.
+- `vpn_config_import(ovpn_path, profile_name, single_use=False)` — register an `.ovpn` file as a named config. Idempotent (`already_imported`). Pass `single_use=True` for ephemeral profiles: the config is memory-only and openvpn3 drops it once a tunnel is started from it.
+- `vpn_config_remove(profile_name)` — drop an imported config. Idempotent (`already_removed`). Requires the session disconnected first.
 
 ## Configuration file
 
-Per-project settings live in `.claude/openvpn3-on-demand.local.md` (git-ignored). Frontmatter fields:
+Per-project settings live in `.claude/openvpn3-on-demand.local.md` (git-ignored). Frontmatter:
 
-| Field                 | Required | Purpose                                                                 |
-|-----------------------|----------|-------------------------------------------------------------------------|
-| `profile_name`        | yes      | Name of the openvpn3 config to start. Matches the argument passed to `vpn_connect` and `vpn_disconnect`. |
-| `ovpn_provision_cmd`  | no       | Shell command that (re)generates the `.ovpn` file on first connect. Required only if `vpn_config_import` has never been run for this profile. |
-| `trigger_patterns`    | no       | Extra regex patterns to treat as VPN-requiring, beyond the defaults in this skill. |
-| `post_connect_cmd`    | no       | Shell command run after a fresh `vpn_connect` (not on `already_connected`). DNS warming, endpoint probes, opening ssh control masters. Non-fatal on failure. |
-| `post_disconnect_cmd` | no       | Shell command run after a fresh `vpn_disconnect` (not on `not_connected`). DNS/route cleanup, closing port-forwards. Also runs from the Stop/SessionEnd safety-net hook when it actually disconnects a session (5s timeout, silent failure). |
+| Field | Mode | Required | Purpose |
+|---|---|---|---|
+| `profile_name` | BYO | one-of | Name of an openvpn3 config the user already imported (`openvpn3 config-import --persistent`). The plugin only starts/stops it. |
+| `ovpn_provision_cmd` | ephemeral | one-of | Shell command whose **stdout is the `.ovpn` body** (e.g. `vault read -field=config secret/vpn`, `aws s3 cp s3://…/vpn.ovpn -`, `cat secrets/vpn.ovpn`). Re-run every VPN-gated turn. |
+| `trigger_patterns` | both | no | Extra regex patterns treated as VPN-requiring, on top of the built-in defaults. |
+| `post_connect_cmd` | both | no | Shell command run after a fresh `vpn_connect` (not on `already_connected`). DNS warming, endpoint probes, ssh control masters. Non-fatal on failure. |
+| `post_disconnect_cmd` | both | no | Shell command run after a fresh `vpn_disconnect` (not on `not_connected`). DNS/route cleanup, closing port-forwards. Also run by the Stop/SessionEnd hook when it disconnects (5 s timeout, silent failure) — keep it quick and idempotent. |
 
-See `references/example-local-settings.md` for a full commented template.
+Exactly one of `profile_name` / `ovpn_provision_cmd` — setting both, or neither, is a configuration error (see Preflight). See `references/example-local-settings.md` for full commented templates.
 
 ## Failure modes and how to handle them
 
-- **openvpn3 / dbus-python not installed.** All tools return `{"status": "error", "message": "openvpn3 Python module or dbus-python is not available. ..."}`. Tell the user to install the `openvpn3-client` and `python3-dbus` system packages and stop; do not attempt the command without VPN.
-- **Connect fails with auth error.** Surface the `message` to the user. The `.ovpn` file may need re-provisioning or the credentials have rotated. Note: this MCP server is non-interactive — profiles that prompt for a username/password must have credentials embedded (`auth-user-pass` inlined), and profiles that use an encrypted PKCS12 can't be used. A connect that returns `"Backend not ready (likely needs credentials embedded in the profile)"` means the profile asks for interactive input that the server can't supply. This is a `vpn_connect` failure mode, not a `vpn_config_import` one — import just hands the raw file to openvpn3's backend parser.
-- **`vpn_status()` shows the session but the command still fails to reach the host.** The tunnel may be up without routing. Confirm with `vpn_status()` and report both the session state and the original command's error — don't just re-run `vpn_connect`.
-- **Multiple simultaneous tasks share a profile.** The tunnel is a shared resource. If one task disconnects while another still needs it, the second will fail. Default to connecting at the start of the VPN-requiring block of work and disconnecting only when no further VPN-gated step is queued.
+- **Misconfigured mode** (both, or neither, of `profile_name` / `ovpn_provision_cmd`). Surface the config error to the user; call no `vpn_*` tool; proceed without VPN.
+- **`CLAUDE_CODE_SESSION_ID` unset (ephemeral mode).** Tell the user; proceed without VPN; do not guess a name.
+- **`ovpn_provision_cmd` fails or emits nothing.** Surface its stderr; `rm -f` the temp file; do not connect.
+- **openvpn3 / dbus-python not installed.** All tools return `{"status": "error", "message": "openvpn3 Python module or dbus-python is not available. ..."}`. Tell the user to install the `openvpn3-client` and `python3-dbus` system packages; stop.
+- **Connect fails with an auth error, or `"Backend not ready (likely needs credentials embedded in the profile)"`.** The MCP server is non-interactive — profiles that prompt for a username/password must have `auth-user-pass` inlined; encrypted PKCS#12 can't be used. Surface the `message`. In BYO mode the user re-imports a fixed profile; in ephemeral mode fix `ovpn_provision_cmd`'s output.
+- **`vpn_status()` shows the session but the command still can't reach the host.** Tunnel up without routing/DNS — confirm with `vpn_status()` and report both the session state and the original command's error; don't just re-run `vpn_connect`.
+- **Multiple simultaneous tasks share a profile.** The tunnel is a shared resource. Connect at the start of the VPN-requiring block of work and disconnect only when no further VPN-gated step is queued.
 
 ## Additional resources
 
-- `references/example-local-settings.md` — full commented template for the per-project settings file.
+- `references/example-local-settings.md` — full commented templates for both modes.

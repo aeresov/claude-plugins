@@ -1,78 +1,87 @@
 # Example `.claude/openvpn3-on-demand.local.md`
 
-Drop this at `.claude/openvpn3-on-demand.local.md` in the project root, edit the
-fields, and add `.claude/*.local.md` to `.gitignore`.
+Drop this at `.claude/openvpn3-on-demand.local.md` in the project root, fill in
+**one** of the two modes below, and add `.claude/*.local.md` to `.gitignore`.
+
+## BYO mode — use an openvpn3 config you've already imported
 
 ```markdown
 ---
-# REQUIRED. Name of the openvpn3 config to start/stop. This is the name you
-# passed to `openvpn3 config-import --name <name>` (or will pass via
-# ovpn_provision_cmd + vpn_config_import below).
+# REQUIRED in this mode. Name of an openvpn3 config you imported yourself, e.g.
+#   openvpn3 config-import --config /path/to/my-prod-vpn.ovpn \
+#                          --name my-prod-vpn --persistent
+# The plugin only starts/stops sessions for it — it never creates or removes
+# this config.
 profile_name: my-prod-vpn
 
-# OPTIONAL. Shell command that produces a fresh .ovpn file on first connect.
-# The skill runs this iff vpn_connect fails because the profile isn't imported
-# yet. Point it at a deterministic output path you also reference when calling
-# vpn_config_import. Example: a Makefile target that fetches the file from a secrets
-# manager or generates it on the fly.
-ovpn_provision_cmd: make get_vpn_client_config OUTPUT=~/.config/openvpn3/my-prod-vpn.ovpn
-
-# OPTIONAL. Extra regex patterns to treat as VPN-requiring, in addition to the
-# defaults listed in the vpn-on-demand skill (RDS/ElastiCache/MemoryDB hosts,
-# RFC1918 addresses, .internal / .corp / .local / .private / .vpc hostnames,
-# aws CLI against private services, kubectl against private clusters, etc).
-#
-# Each entry is matched against the full command string or target URL/host.
+# OPTIONAL (both modes). Extra regex patterns to treat as VPN-requiring, on top
+# of the vpn-on-demand skill's built-in defaults. Each entry is matched against
+# the full command string or the target URL/host.
 trigger_patterns:
   - "mysql .* -h [^ ]*\\.internal"
   - "kubectl --context prod-.*"
-  - "aws (rds|elasticache|memorydb|secretsmanager|ssm) "
 
-# OPTIONAL. Shell command run by the skill after a fresh `vpn_connect`
-# succeeds (i.e. `status: connected`, not `already_connected`, so it does
-# not repeat on every turn of a long conversation). Typical uses:
-# - Warming a DNS cache / probing the VPC resolver:
-#     dig +short internal-db.my-vpc.internal
-# - Opening an ssh control master so later ssh commands multiplex:
-#     ssh -fNMT my-bastion
-# - Logging the event for auditability.
-# A non-zero exit is surfaced to the user but does NOT tear down the
-# tunnel — treat this as supplementary.
+# OPTIONAL (both modes). Shell command run after a fresh vpn_connect
+# (status: connected, not already_connected). Typical uses: warming a DNS cache,
+# probing a VPC endpoint, opening an ssh control master, audit logging. A
+# non-zero exit is surfaced but does NOT tear down the tunnel.
 post_connect_cmd: dig +short internal-db.my-vpc.internal
 
-# OPTIONAL. Shell command run after a fresh `vpn_disconnect` succeeds
-# (not on `not_connected`). Typical uses:
-# - Tearing down something `post_connect_cmd` set up:
-#     ssh -O exit my-bastion
-# - Flushing a DNS resolver cache:
-#     sudo resolvectl flush-caches
-# Runs from BOTH paths: an explicit `vpn_disconnect` in the skill, and
-# the Stop / SessionEnd safety-net hook when it actually disconnects a
-# session. The hook gives it a 5s timeout and swallows failures, so
-# keep it quick and idempotent.
-post_disconnect_cmd: echo "vpn disconnected at $(date -Is)"
+# OPTIONAL (both modes). Shell command run after a fresh vpn_disconnect
+# (status: disconnected, not not_connected). Typical uses: flushing a DNS
+# resolver cache, closing port-forwards opened by post_connect_cmd. Also run by
+# the Stop/SessionEnd safety-net hook when it disconnects (5s timeout, failures
+# swallowed) — keep it quick and idempotent.
+post_disconnect_cmd: sudo resolvectl flush-caches
 ---
 
-# Project-specific VPN notes
+# Project-specific VPN notes for humans
 
-Document anything non-obvious about this project's VPN setup here — which
-account the profile corresponds to, how to rotate credentials, who to ping
-when it's broken. This body is not consumed by the plugin; it's for humans
-(and for Claude when reading CLAUDE.md-style context).
+Which account this profile is for, how to rotate its credentials, who to ping
+when it breaks. This body is not consumed by the plugin.
 ```
 
-## How the fields flow through the plugin
+## Ephemeral mode — generate a throwaway profile, regenerated every turn
 
-- `profile_name` is passed verbatim as the argument to `vpn_connect`, `vpn_disconnect`, and `vpn_config_import`. Keep it in kebab-case for consistency with openvpn3's own conventions.
-- `ovpn_provision_cmd` is invoked only when `vpn_connect` fails because no config with that name is registered. On success, the skill calls `vpn_config_import` and retries the connect. If this field is absent, the user must import the profile manually before the plugin is useful for them.
-- `trigger_patterns` *extend* the skill's built-in defaults. Use it for project-specific internal hostnames or wrapper scripts.
-- `post_connect_cmd` runs once per fresh connect, not on `already_connected`; intended for DNS warming, control masters, and logging. Non-fatal on failure.
-- `post_disconnect_cmd` runs once per fresh disconnect, not on `not_connected`; pair it with `post_connect_cmd` for teardown. The Stop/SessionEnd safety-net hook also runs it (5s timeout, silent failure) whenever it actually disconnects a session, so cleanup happens even if the model forgets to call `vpn_disconnect`.
+```markdown
+---
+# REQUIRED in this mode (mutually exclusive with profile_name). A shell command
+# whose STANDARD OUTPUT is the contents of a .ovpn file. The plugin captures
+# stdout into a private temp file, imports it as a single-use config under an
+# internal name you never see or pick, uses it, and lets openvpn3 drop it once
+# the tunnel starts. Re-run on every turn that needs the VPN.
+#
+# Examples (pick whatever fits how you store the profile):
+#   ovpn_provision_cmd: vault read -field=config secret/vpn/my-prod
+#   ovpn_provision_cmd: aws s3 cp s3://my-bucket/vpn/my-prod.ovpn -
+#   ovpn_provision_cmd: cat ~/.config/openvpn3/my-prod-vpn.ovpn
+#   ovpn_provision_cmd: make get_vpn_client_config OUTPUT=/dev/stdout
+ovpn_provision_cmd: vault read -field=config secret/vpn/my-prod
+
+# OPTIONAL fields below behave exactly as in BYO mode — see above for the full
+# descriptions.
+trigger_patterns:
+  - "aws (rds|elasticache|memorydb|secretsmanager|ssm) "
+post_connect_cmd: dig +short internal-db.my-vpc.internal
+post_disconnect_cmd: sudo resolvectl flush-caches
+---
+
+# Project-specific VPN notes for humans
+
+Where ovpn_provision_cmd pulls the profile from, what credentials it needs, who
+owns that secret. This body is not consumed by the plugin.
+```
+
+## Pick exactly one mode
+
+- `profile_name` **xor** `ovpn_provision_cmd`. Setting both, or neither, is a configuration error — the skill tells the user and skips the VPN entirely.
+- `profile_name` is for a config you manage yourself with `openvpn3 config-import --persistent`; the plugin never creates or deletes it.
+- `ovpn_provision_cmd` is for a throwaway profile regenerated on every VPN-gated turn; its **stdout must be the `.ovpn` body** — not a file path, not a status line.
 
 ## Gitignore
 
-The settings file contains environment-specific names and commands that might
-point at internal infrastructure. Treat it as local state:
+The settings file holds environment-specific names and commands that may point at
+internal infrastructure. Treat it as local state:
 
 ```gitignore
 .claude/*.local.md
