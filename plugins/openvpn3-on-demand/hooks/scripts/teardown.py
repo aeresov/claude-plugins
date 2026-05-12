@@ -68,11 +68,6 @@ def _frontmatter_fields(path: Path, *fields: str) -> dict[str, str]:
     return out
 
 
-def read_profile_name(path: Path) -> str | None:
-    """Backwards-compatible wrapper kept so existing callers remain stable."""
-    return _frontmatter_fields(path, "profile_name").get("profile_name")
-
-
 def _disconnect_via_dbus(profile: str) -> bool:
     """Disconnect the session for ``profile`` over D-Bus. Returns True if a
     session was actually torn down, False if nothing matched or the D-Bus

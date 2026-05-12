@@ -94,7 +94,7 @@ claude --plugin-dir /path/to/openvpn3-on-demand
   - `post_connect_cmd` runs after a fresh connect; the user's command runs; `vpn_disconnect` + `post_disconnect_cmd` at task end.
   - `ovpn_provision_cmd` re-runs on every turn that touches the VPN — the profile is per-turn-disposable by design.
 
-- The Stop and SessionEnd hooks run `teardown.py` as a safety net for when Claude forgot the disconnect step. In BYO mode it disconnects the named profile's session (and leaves the config alone); in ephemeral mode it disconnects `ovpn3-od-<session id>` **and** removes that config. Either way, if `post_disconnect_cmd` is set it runs it (5 s timeout, silent failure). The hook touches only the one profile this project is responsible for — never a blanket disconnect.
+- The Stop and SessionEnd hooks run `teardown.py` as a safety net for when Claude forgot the disconnect step. In BYO mode it disconnects the named profile's session (and leaves the config alone); in ephemeral mode it disconnects `ovpn3-od-<session id>` **and** removes that config. If `post_disconnect_cmd` is set, the hook runs it when it actually disconnects something (5 s timeout, silent failure). The hook touches only the one profile this project is responsible for — never a blanket disconnect.
 
 ## MCP tools
 
