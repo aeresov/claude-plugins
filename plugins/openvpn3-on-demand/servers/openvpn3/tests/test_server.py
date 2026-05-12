@@ -229,6 +229,32 @@ def test_vpn_config_import_already_imported(tmp_path):
     assert result == {"status": "already_imported", "profile_name": "x"}
 
 
+def test_vpn_config_import_single_use(tmp_path):
+    """single_use=True passes single_use=True, persistent=False to Import and echoes the flag back."""
+    ovpn = tmp_path / "eph.ovpn"
+    ovpn.write_text(
+        "client\ndev tun\n"
+        "<ca>\n-----BEGIN CERTIFICATE-----\nFAKE\n-----END CERTIFICATE-----\n</ca>\n"
+    )
+    cfg_mgr = MagicMock()
+    cfg_mgr.LookupConfigName.return_value = []
+    cfg_mgr.Import.return_value = MagicMock(
+        GetPath=MagicMock(return_value="/net/openvpn/v3/configuration/eph")
+    )
+    with patch.object(server, "_get_config_mgr", return_value=cfg_mgr):
+        result = server.vpn_config_import(
+            ovpn_path=str(ovpn), profile_name="eph-vpn", single_use=True
+        )
+    assert result["status"] == "imported"
+    assert result["single_use"] is True
+    cfg_mgr.Import.assert_called_once()
+    args, _ = cfg_mgr.Import.call_args
+    name, _body, single_use_arg, persistent = args
+    assert name == "eph-vpn"
+    assert single_use_arg is True
+    assert persistent is False
+
+
 # ---------- vpn_config_remove --------------------------------------------
 
 

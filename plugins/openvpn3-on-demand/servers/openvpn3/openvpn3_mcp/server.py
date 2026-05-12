@@ -279,12 +279,21 @@ def vpn_disconnect(profile_name: str) -> dict:
 
 
 @mcp.tool()
-def vpn_config_import(ovpn_path: str, profile_name: str) -> dict:
-    """Import a .ovpn file as a persistent OpenVPN3 config. Idempotent: returns early if a config with this name already exists.
+def vpn_config_import(
+    ovpn_path: str, profile_name: str, single_use: bool = False
+) -> dict:
+    """Import a .ovpn file as a named OpenVPN3 config. Idempotent: returns early if a config with this name already exists.
+
+    Note: ``single_use`` has no effect if a config with this name already exists — the
+    existing config is returned as-is (``status: already_imported``).
 
     Args:
         ovpn_path: Path to the .ovpn file to import (~ expansion supported).
         profile_name: Name to register the imported config under.
+        single_use: If True, register an ephemeral config — memory-only (not written to
+            openvpn3's on-disk config store) and dropped by openvpn3 once a tunnel is started
+            from it. Use for throwaway profiles. Default False (persistent, like the openvpn3
+            `config-import --persistent` CLI does).
     """
     err = _require_deps()
     if err:
@@ -320,8 +329,8 @@ def vpn_config_import(ovpn_path: str, profile_name: str) -> dict:
         cfg = _get_config_mgr().Import(
             profile_name,
             cfg_str,
-            False,  # single_use
-            True,   # persistent
+            single_use,         # single_use
+            not single_use,     # persistent — ephemeral configs aren't written to disk
         )
     except (dbus.exceptions.DBusException, RuntimeError) as exc:
         return {
@@ -334,6 +343,7 @@ def vpn_config_import(ovpn_path: str, profile_name: str) -> dict:
         "profile_name": profile_name,
         "ovpn_path": str(path),
         "config_path": str(cfg.GetPath()),
+        "single_use": single_use,
     }
 
 
