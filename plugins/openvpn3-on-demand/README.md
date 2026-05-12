@@ -16,6 +16,7 @@ Linux-only. Talks to `openvpn3-linux` over its D-Bus services via the
 | `skills/vpn-on-demand/` (skill)           | Policy layer. Tells Claude *when* to call the MCP tools, based on command heuristics + project settings.    |
 | `hooks/hooks.json` + `teardown.py`        | Stop + SessionEnd safety net. Disconnects the configured profile if Claude forgot to. Uses the same D-Bus API as the MCP server; silently no-ops if `python3-dbus`/`openvpn3-client` aren't installed. |
 | `.claude/openvpn3-on-demand.local.md`     | Per-project settings (user-owned, git-ignored). Picks one mode: `profile_name` (use an openvpn3 config you imported yourself) or `ovpn_provision_cmd` (generate a single-use throwaway config from the command's stdout each turn). Plus optional `trigger_patterns` / `post_connect_cmd` / `post_disconnect_cmd`. |
+| `commands/` (`/openvpn3-on-demand:setup`, `:doctor`) | `setup` is the interactive configurator (writes the settings file + `.gitignore`); `doctor` is a read-only health check. Both draw on `setup-checklist.md` (plugin root) so their checks can't drift. No code; neither runs anything privileged. |
 
 ## Prerequisites
 
@@ -40,6 +41,15 @@ claude --plugin-dir /path/to/openvpn3-on-demand
 ```
 
 ## Per-project setup
+
+**Quickest path:** run `/openvpn3-on-demand:setup` in the project. It checks the host
+prerequisites, asks which mode you want, writes `.claude/openvpn3-on-demand.local.md`, and adds
+it to `.gitignore`. Run `/openvpn3-on-demand:doctor` any time for a read-only health check
+(host packages, netcfg init, settings file present + valid, BYO profile imported, `.gitignore`).
+Neither command runs anything privileged — host `sudo` steps and the BYO `config-import` are
+shown for you to run.
+
+To configure by hand instead:
 
 1. Create `.claude/openvpn3-on-demand.local.md` in your project root and pick **one** mode.
 
@@ -144,6 +154,10 @@ root for the full text.
 
 ## Troubleshooting
 
+- **Not sure what's wrong** — run `/openvpn3-on-demand:doctor`. It reports, in one pass,
+  whether `openvpn3-client` and `python3-dbus` are installed, whether the host netcfg init has
+  been done, whether the settings file is present and valid, whether a BYO profile is imported,
+  and whether `.gitignore` covers the settings file — with the fix for each failing check.
 - **"openvpn3 Python module or dbus-python is not available"** — install
   both `openvpn3-client` and `python3-dbus` system packages, then restart
   Claude Code so the MCP server process picks them up. If the error

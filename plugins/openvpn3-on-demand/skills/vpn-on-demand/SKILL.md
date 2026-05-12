@@ -14,7 +14,7 @@ The project picks one of two modes in `.claude/openvpn3-on-demand.local.md`:
 
 ## Preflight: is this plugin active for this project, and in which mode?
 
-1. Check whether `.claude/openvpn3-on-demand.local.md` exists in the project root. If not, **stop** — do nothing, call no `vpn_*` tool, handle the user's request normally.
+1. Check whether `.claude/openvpn3-on-demand.local.md` exists in the project root. If not, **stop** — do nothing, call no `vpn_*` tool, handle the user's request normally. (If the user seems to actually want the tunnel, tell them the plugin isn't configured for this project and point them at `/openvpn3-on-demand:setup` — or offer to run it for them.)
 2. If it exists, read its YAML frontmatter. Relevant fields:
    - `profile_name` — selects BYO mode.
    - `ovpn_provision_cmd` — selects ephemeral mode.
@@ -24,7 +24,7 @@ The project picks one of two modes in `.claude/openvpn3-on-demand.local.md`:
 3. **Validate the mode.** Exactly one of `profile_name` / `ovpn_provision_cmd` must be present and non-empty:
    - Neither → tell the user the settings file must declare either `profile_name` (an already-imported config) or `ovpn_provision_cmd` (an ephemeral one).
    - Both → tell the user the two fields are mutually exclusive — `profile_name` for an existing config, `ovpn_provision_cmd` for an ephemeral one.
-   In either error case: surface the message, call **no** `vpn_*` tool, and proceed with the user's request as normal (their command may fail if it needed the tunnel — that's the misconfiguration's fault, not something to paper over).
+   In either error case: surface the message, call **no** `vpn_*` tool, and proceed with the user's request as normal (their command may fail if it needed the tunnel — that's the misconfiguration's fault, not something to paper over). Re-running `/openvpn3-on-demand:setup` rewrites the settings file cleanly; `/openvpn3-on-demand:doctor` shows the full state.
 4. **Host DNS integration check** (once per session, before the first `vpn_connect`, in either mode).
 
    Run `test -f /var/lib/openvpn3/netcfg.json` (no sudo needed — world-readable when present). If the file does **not** exist, stop and tell the user to run these once per machine:
@@ -144,11 +144,12 @@ Exactly one of `profile_name` / `ovpn_provision_cmd` — setting both, or neithe
 - **Misconfigured mode** (both, or neither, of `profile_name` / `ovpn_provision_cmd`). Surface the config error to the user; call no `vpn_*` tool; proceed without VPN.
 - **`CLAUDE_CODE_SESSION_ID` unset (ephemeral mode).** Tell the user; proceed without VPN; do not guess a name.
 - **`ovpn_provision_cmd` fails or emits nothing.** Surface its stderr; `rm -f` the temp file; do not connect.
-- **openvpn3 / dbus-python not installed.** All tools return `{"status": "error", "message": "openvpn3 Python module or dbus-python is not available. ..."}`. Tell the user to install the `openvpn3-client` and `python3-dbus` system packages; stop.
+- **openvpn3 / dbus-python not installed.** All tools return `{"status": "error", "message": "openvpn3 Python module or dbus-python is not available. ..."}`. Tell the user to install the `openvpn3-client` and `python3-dbus` system packages; stop. (`/openvpn3-on-demand:doctor` checks both, plus the netcfg init.)
 - **Connect fails with an auth error, or `"Backend not ready (likely needs credentials embedded in the profile)"`.** The MCP server is non-interactive — profiles that prompt for a username/password must have `auth-user-pass` inlined; encrypted PKCS#12 can't be used. Surface the `message`. In BYO mode the user re-imports a fixed profile; in ephemeral mode fix `ovpn_provision_cmd`'s output.
-- **`vpn_status()` shows the session but the command still can't reach the host.** Tunnel up without routing/DNS — confirm with `vpn_status()` and report both the session state and the original command's error; don't just re-run `vpn_connect`.
+- **`vpn_status()` shows the session but the command still can't reach the host.** Tunnel up without routing/DNS — confirm with `vpn_status()` and report both the session state and the original command's error; don't just re-run `vpn_connect`. Usually the host netcfg init (preflight step 4) was skipped — `/openvpn3-on-demand:doctor` flags that.
 - **Multiple simultaneous tasks share a profile.** The tunnel is a shared resource. Connect at the start of the VPN-requiring block of work and disconnect only when no further VPN-gated step is queued.
 
 ## Additional resources
 
 - `references/example-local-settings.md` — full commented templates for both modes.
+- `/openvpn3-on-demand:setup` — interactive configurator: picks BYO vs ephemeral, writes `.claude/openvpn3-on-demand.local.md`, adds it to `.gitignore`. `/openvpn3-on-demand:doctor` — read-only health check (host packages, netcfg init, settings file present + valid, BYO profile imported, `.gitignore`).
