@@ -33,6 +33,23 @@ post_connect_cmd: dig +short internal-db.my-vpc.internal
 # the Stop/SessionEnd safety-net hook when it disconnects (5s timeout, failures
 # swallowed) — keep it quick and idempotent.
 post_disconnect_cmd: sudo resolvectl flush-caches
+
+# OPTIONAL (both modes). openvpn3 config-manage overrides reapplied to the
+# configuration before each tunnel start. Keys are the hyphenated openvpn3
+# override names — what `openvpn3 config-manage --help` calls them. Values
+# preserve YAML types: bool stays bool, int stays int, anything else is a
+# string.
+#
+# The canonical case is dns-scope=tunnel for split-DNS coexistence: openvpn3
+# stops claiming the catch-all DNS domain (`~.`) and only handles the search
+# domains pushed by the .ovpn (`dhcp-option DOMAIN <name>`). Required when
+# Tailscale or another VPN is on the same host and you want each resolver to
+# own its own slice of the namespace.
+#
+# config_overrides:
+#   dns-scope: tunnel
+#   persist-tun: true
+#   log-level: 4
 ---
 
 # Project-specific VPN notes for humans
@@ -64,6 +81,8 @@ trigger_patterns:
   - "aws (rds|elasticache|memorydb|secretsmanager|ssm) "
 post_connect_cmd: dig +short internal-db.my-vpc.internal
 post_disconnect_cmd: sudo resolvectl flush-caches
+config_overrides:
+  dns-scope: tunnel
 ---
 
 # Project-specific VPN notes for humans

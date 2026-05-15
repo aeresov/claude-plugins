@@ -31,6 +31,7 @@ any file, do not run anything privileged, do not call any `vpn_*` MCP tool. Just
 
 4. End with a one-line summary:
    - all green → `OK — configured · <BYO|ephemeral> mode · <profile name + "imported" | provision cmd set> · host ready`
+     If the settings file declared `config_overrides`, append `· overrides: <k1>=<v1>, <k2>=<v2>` so the user can see what's pushed to openvpn3 before each tunnel start (the canonical case is `dns-scope=tunnel`).
    - settings file absent → `Not configured for this project — run /openvpn3-on-demand:setup`
    - otherwise → `<n> issue(s) — see the FAIL lines above` (and, if check 4/5 is among them, add `; /openvpn3-on-demand:setup can write/fix the settings file`)
 

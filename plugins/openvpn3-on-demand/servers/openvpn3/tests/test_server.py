@@ -106,6 +106,134 @@ def test_vpn_connect_happy_path():
     new_sess.Connect.assert_called_once()
 
 
+def test_vpn_connect_applies_overrides_before_new_tunnel():
+    """Each `overrides` entry hits Configuration.SetOverride before NewTunnel runs.
+
+    The connected payload echoes the applied overrides so the skill can show the user
+    what was actually pushed (split-DNS via dns-scope=tunnel is the canonical case).
+    """
+    cfg = MagicMock()
+    cfg_mgr = MagicMock()
+    cfg_mgr.LookupConfigName.return_value = ["/cfg/one"]
+    cfg_mgr.Retrieve.return_value = cfg
+
+    new_sess = _make_session("my-vpn")
+    new_sess.Ready.return_value = None
+
+    sess_mgr = MagicMock()
+    sess_mgr.LookupConfigName.return_value = []
+    sess_mgr.NewTunnel.return_value = new_sess
+
+    overrides = {"dns-scope": "tunnel", "persist-tun": True, "log-level": 4}
+
+    call_order: list[str] = []
+    cfg.SetOverride.side_effect = lambda *_a, **_kw: call_order.append("set_override")
+    sess_mgr.NewTunnel.side_effect = lambda *_a, **_kw: (
+        call_order.append("new_tunnel") or new_sess
+    )
+
+    # Reset the dbus type-wrapper mocks so we can inspect just this call's usage.
+    server.dbus.Boolean.reset_mock()
+    server.dbus.Int32.reset_mock()
+    server.dbus.String.reset_mock()
+
+    with (
+        patch.object(server, "_get_session_mgr", return_value=sess_mgr),
+        patch.object(server, "_get_config_mgr", return_value=cfg_mgr),
+    ):
+        result = server.vpn_connect(profile_name="my-vpn", overrides=overrides)
+
+    assert result["status"] == "connected"
+    assert result["overrides_applied"] == overrides
+    assert cfg.SetOverride.call_count == 3
+    # Pre-NewTunnel so the override is in effect at backend startup.
+    assert call_order == ["set_override", "set_override", "set_override", "new_tunnel"]
+    # Each value goes through the right DBus type wrapper. ``bool`` must be checked
+    # before ``int`` in _wrap_override_value because bool is an int subclass —
+    # marshalling persist-tun=True as Int32 would silently break the override.
+    server.dbus.Boolean.assert_called_once_with(True)
+    server.dbus.Int32.assert_called_once_with(4)
+    server.dbus.String.assert_called_once_with("tunnel")
+
+
+def test_vpn_connect_no_overrides_call_when_arg_omitted():
+    """Default path is unchanged — the new arg is optional and must not perturb existing callers."""
+    cfg = MagicMock()
+    cfg_mgr = MagicMock()
+    cfg_mgr.LookupConfigName.return_value = ["/cfg/one"]
+    cfg_mgr.Retrieve.return_value = cfg
+
+    new_sess = _make_session("my-vpn")
+    new_sess.Ready.return_value = None
+
+    sess_mgr = MagicMock()
+    sess_mgr.LookupConfigName.return_value = []
+    sess_mgr.NewTunnel.return_value = new_sess
+
+    with (
+        patch.object(server, "_get_session_mgr", return_value=sess_mgr),
+        patch.object(server, "_get_config_mgr", return_value=cfg_mgr),
+    ):
+        result = server.vpn_connect(profile_name="my-vpn")
+
+    assert result["status"] == "connected"
+    assert "overrides_applied" not in result
+    cfg.SetOverride.assert_not_called()
+
+
+def test_vpn_connect_set_override_failure_aborts_before_new_tunnel():
+    """A DBus error from SetOverride surfaces as status=error and NewTunnel never runs.
+
+    A half-applied override set followed by a successful tunnel start would mean the
+    user thinks they're getting split-DNS while the backend is still on the default —
+    much better to fail loudly.
+    """
+    cfg = MagicMock()
+    cfg.SetOverride.side_effect = dbus.exceptions.DBusException("unknown override 'nope'")
+    cfg_mgr = MagicMock()
+    cfg_mgr.LookupConfigName.return_value = ["/cfg/one"]
+    cfg_mgr.Retrieve.return_value = cfg
+
+    sess_mgr = MagicMock()
+    sess_mgr.LookupConfigName.return_value = []
+
+    with (
+        patch.object(server, "_get_session_mgr", return_value=sess_mgr),
+        patch.object(server, "_get_config_mgr", return_value=cfg_mgr),
+    ):
+        result = server.vpn_connect(
+            profile_name="my-vpn", overrides={"nope": "x"}
+        )
+
+    assert result["status"] == "error"
+    assert "SetOverride 'nope' failed" in result["message"]
+    sess_mgr.NewTunnel.assert_not_called()
+
+
+def test_vpn_connect_skips_overrides_when_already_connected():
+    """already_connected returns immediately — applying SetOverride to a live tunnel
+    wouldn't change the running session anyway, and silently no-op'ing matches the
+    shape callers already expect."""
+    sess_mgr = MagicMock()
+    sess_mgr.LookupConfigName.return_value = ["/net/openvpn/v3/sessions/existing"]
+    sess_mgr.Retrieve.return_value = _make_session("my-vpn")
+    cfg = MagicMock()
+    cfg_mgr = MagicMock()
+    cfg_mgr.LookupConfigName.return_value = ["/cfg/one"]
+    cfg_mgr.Retrieve.return_value = cfg
+
+    with (
+        patch.object(server, "_get_session_mgr", return_value=sess_mgr),
+        patch.object(server, "_get_config_mgr", return_value=cfg_mgr),
+    ):
+        result = server.vpn_connect(
+            profile_name="my-vpn", overrides={"dns-scope": "tunnel"}
+        )
+
+    assert result["status"] == "already_connected"
+    cfg.SetOverride.assert_not_called()
+
+
 def test_vpn_connect_bails_when_ready_keeps_failing():
     cfg = MagicMock()
     cfg_mgr = MagicMock()

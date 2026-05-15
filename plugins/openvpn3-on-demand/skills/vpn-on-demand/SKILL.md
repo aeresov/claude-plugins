@@ -21,6 +21,7 @@ The project picks one of two modes in `.claude/openvpn3-on-demand.local.md`:
    - `trigger_patterns` — optional list of regex strings; extends the built-in triggers below. (Both modes.)
    - `post_connect_cmd` — optional shell command run after a fresh `vpn_connect`. (Both modes.)
    - `post_disconnect_cmd` — optional shell command run after a fresh `vpn_disconnect`. (Both modes.)
+   - `config_overrides` — optional `{name: value}` map of openvpn3 `config-manage` overrides applied to the configuration before each tunnel start. Names are the hyphenated openvpn3 override names (`dns-scope`, `persist-tun`, `log-level`, …). Pass it to `vpn_connect` via the `overrides` arg. (Both modes.)
 3. **Validate the mode.** Exactly one of `profile_name` / `ovpn_provision_cmd` must be present and non-empty:
    - Neither → tell the user the settings file must declare either `profile_name` (an already-imported config) or `ovpn_provision_cmd` (an ephemeral one).
    - Both → tell the user the two fields are mutually exclusive — `profile_name` for an existing config, `ovpn_provision_cmd` for an ephemeral one.
@@ -67,7 +68,7 @@ When uncertain, check `trigger_patterns` and the project's CLAUDE.md. If still u
 
 Given a matching command:
 
-1. **Connect.** `vpn_connect(profile_name=<value>)`. Idempotent — `already_connected` returns immediately.
+1. **Connect.** `vpn_connect(profile_name=<value>, overrides=<config_overrides or omitted>)`. Idempotent — `already_connected` returns immediately (overrides are skipped on `already_connected`; they take effect at tunnel-start time, so reapplying them to a live session does nothing).
 2. **If connect errors that the config is unknown** (message mentions "no openvpn3 config named" / "import it first" / similar), **stop**: tell the user to import the profile once, e.g.
    `openvpn3 config-import --config /path/to/file.ovpn --name <profile_name> --persistent`.
    Do **not** run any provisioning command in this mode.
@@ -85,7 +86,7 @@ The profile name is internal: `N = "ovpn3-od-" + $CLAUDE_CODE_SESSION_ID`. Read 
 Given a matching command:
 
 1. **Compute `N`** as above.
-2. **Try connecting first.** `vpn_connect(profile_name=N)`.
+2. **Try connecting first.** `vpn_connect(profile_name=N, overrides=<config_overrides or omitted>)`.
    - `already_connected` → an earlier VPN-gated command this turn already brought it up. Skip to step 5.
    - `connected` → a config under `N` was still around; it's now consumed. Run the post-connect hook (step 4) and skip to step 5.
    - `error` (no session, no config) → provision, step 3.
@@ -96,7 +97,7 @@ Given a matching command:
    4. If the command exited non-zero, or `$tmp` is empty → tell the user provisioning failed (show its stderr), `rm -f "$tmp"`, and **stop** — do not connect.
    5. `vpn_config_import(ovpn_path=<path to $tmp>, profile_name=N, single_use=True)`. On `status: error`, surface the `message`, `rm -f "$tmp"`, stop.
    6. `rm -f "$tmp"` — the body is now inside openvpn3; the file is no longer needed.
-   7. `vpn_connect(profile_name=N)`. On `status: connected`, run the post-connect hook (step 4). On `status: error`, surface the `message` and stop.
+   7. `vpn_connect(profile_name=N, overrides=<config_overrides or omitted>)`. On `status: connected`, run the post-connect hook (step 4). On `status: error`, surface the `message` and stop.
 4. **Post-connect hook (fresh connects only).** If `post_connect_cmd` is set, run it via Bash. Non-zero exit is surfaced but not fatal; do not tear down.
 5. **Run the user's command.** Reuse the tunnel for later VPN-gated commands in the same task.
 6. **Disconnect at end of task.** `vpn_disconnect(profile_name=N)`; on a fresh disconnect, run `post_disconnect_cmd` if set. The Stop/SessionEnd safety-net hook disconnects `N` and removes its config as a backstop, and runs `post_disconnect_cmd` (5 s timeout, silent) if it disconnects something.
@@ -120,7 +121,7 @@ The plugin ships Stop and SessionEnd hooks that disconnect the configured profil
 The MCP server exposes these under the `openvpn3` prefix; all return a dict with a `status` field, and `status: "error"` is a hard failure — surface the `message`, don't silently retry:
 
 - `vpn_status()` — list active sessions (`{session_count, sessions: [...]}`). Useful for confirming state or debugging.
-- `vpn_connect(profile_name)` — start a session. Idempotent (`already_connected`).
+- `vpn_connect(profile_name, overrides=None)` — start a session. Idempotent (`already_connected`). Optional `overrides`: `{name: value}` map of openvpn3 config-manage overrides (e.g. `{"dns-scope": "tunnel"}`) applied to the configuration before NewTunnel; skipped on `already_connected`. Connected payload echoes them as `overrides_applied`.
 - `vpn_disconnect(profile_name)` — stop a session. Idempotent (`not_connected`). `profile_name` is required; the server won't disconnect arbitrary sessions.
 - `vpn_config_import(ovpn_path, profile_name, single_use=False)` — register an `.ovpn` file as a named config. Idempotent (`already_imported`). Pass `single_use=True` for ephemeral profiles: the config is memory-only and openvpn3 drops it once a tunnel is started from it.
 - `vpn_config_remove(profile_name)` — drop an imported config. Idempotent (`already_removed`). Requires the session disconnected first.
@@ -136,6 +137,7 @@ Per-project settings live in `.claude/openvpn3-on-demand.local.md` (git-ignored)
 | `trigger_patterns` | both | no | Extra regex patterns treated as VPN-requiring, on top of the built-in defaults. |
 | `post_connect_cmd` | both | no | Shell command run after a fresh `vpn_connect` (not on `already_connected`). DNS warming, endpoint probes, ssh control masters. Non-fatal on failure. |
 | `post_disconnect_cmd` | both | no | Shell command run after a fresh `vpn_disconnect` (not on `not_connected`). DNS/route cleanup, closing port-forwards. Also run by the Stop/SessionEnd hook when it disconnects (5 s timeout, silent failure) — keep it quick and idempotent. |
+| `config_overrides` | both | no | YAML map of openvpn3 `config-manage` overrides (hyphenated names: `dns-scope`, `persist-tun`, `log-level`, …) reapplied before each tunnel start. Canonical use: `dns-scope: tunnel` for clean split-DNS coexistence with another resolver (Tailscale's MagicDNS, corporate DNS). |
 
 Exactly one of `profile_name` / `ovpn_provision_cmd` — setting both, or neither, is a configuration error (see Preflight). See `references/example-local-settings.md` for full commented templates.
 

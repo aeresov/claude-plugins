@@ -162,12 +162,43 @@ def vpn_status() -> dict:
     return {"session_count": len(out), "sessions": out}
 
 
+def _wrap_override_value(value: Any) -> Any:
+    """Wrap a Python value for openvpn3 ``Configuration.SetOverride``.
+
+    The DBus signature is ``(s name, v value)`` and the openvpn3 Python wrapper
+    forwards the value untouched — its docstring spells out that the runtime
+    type must match the override's declared D-Bus type. ``openvpn3
+    config-manage`` exposes string overrides (``--dns-scope``,
+    ``--server-override``, ...), boolean overrides (``--persist-tun``,
+    ``--dns-fallback-google``, ...) and a few integer ones (``--log-level``).
+    Map by Python type so YAML true/false stays a DBus boolean instead of
+    silently falling through as a string ``"True"``.
+
+    ``bool`` is checked before ``int`` because ``bool`` is a subclass of ``int``
+    in Python — flipping the order would marshal every boolean as Int32.
+    """
+    if isinstance(value, bool):
+        return dbus.Boolean(value)
+    if isinstance(value, int):
+        return dbus.Int32(value)
+    return dbus.String(str(value))
+
+
 @mcp.tool()
-def vpn_connect(profile_name: str) -> dict:
+def vpn_connect(
+    profile_name: str, overrides: Optional[dict[str, Any]] = None
+) -> dict:
     """Start an OpenVPN3 session for the given imported profile. Idempotent: returns early if already connected.
 
     Args:
         profile_name: Name of a previously-imported OpenVPN3 config (the name passed to `vpn_config_import`).
+        overrides: Optional ``{name: value}`` map of openvpn3 config-manage overrides applied to the
+            configuration before the tunnel is started — equivalent to running
+            ``openvpn3 config-manage --config <profile> --<name> <value>`` for each entry. Names are the
+            hyphenated openvpn3 override names (e.g. ``"dns-scope"``, ``"persist-tun"``, ``"log-level"``).
+            Values are passed through with their Python type preserved (bool/int/str), so YAML scalars
+            from a settings file map directly. Skipped on ``already_connected`` — overrides take effect
+            at NewTunnel time, so re-applying them to a live session has no effect on the running tunnel.
     """
     err = _require_deps()
     if err:
@@ -186,6 +217,16 @@ def vpn_connect(profile_name: str) -> dict:
             "profile_name": profile_name,
             "message": f"No openvpn3 config named {profile_name!r}. Import it first.",
         }
+    if overrides:
+        for name, value in overrides.items():
+            try:
+                configs[0].SetOverride(name, _wrap_override_value(value))
+            except (dbus.exceptions.DBusException, RuntimeError) as exc:
+                return {
+                    "status": "error",
+                    "profile_name": profile_name,
+                    "message": f"SetOverride {name!r} failed: {_dbus_error_msg(exc)}",
+                }
     try:
         sess = _get_session_mgr().NewTunnel(configs[0])
     except (dbus.exceptions.DBusException, RuntimeError) as exc:
@@ -229,11 +270,14 @@ def vpn_connect(profile_name: str) -> dict:
             "profile_name": profile_name,
             "message": f"Connect failed: {_dbus_error_msg(exc)}",
         }
-    return {
+    out: dict[str, Any] = {
         "status": "connected",
         "profile_name": profile_name,
         "session": _session_as_dict(sess),
     }
+    if overrides:
+        out["overrides_applied"] = dict(overrides)
+    return out
 
 
 @mcp.tool()
@@ -384,7 +428,7 @@ def vpn_config_remove(profile_name: str) -> dict:
 def main() -> None:
     # AGPL-3.0 §5(d): make the copyright notice visible. The MCP stdio
     # protocol reserves stdout, so the banner goes to stderr.
-    print("openvpn3-mcp 0.6.0 — AGPL-3.0-only", file=sys.stderr)
+    print("openvpn3-mcp 0.7.0 — AGPL-3.0-only", file=sys.stderr)
     mcp.run()
 
 

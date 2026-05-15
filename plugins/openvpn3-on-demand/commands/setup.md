@@ -61,6 +61,11 @@ Ask with **AskUserQuestion** (multi-select) whether to add any of these — defa
 - `post_disconnect_cmd` — a shell command run after a fresh `vpn_disconnect` (flush resolver
   cache, close port-forwards). Also run by the teardown hook on disconnect (5 s timeout, silent) —
   keep it quick and idempotent. If chosen, ask for the command.
+- `config_overrides` — openvpn3 `config-manage` overrides reapplied to the configuration before
+  each tunnel start (hyphenated names: `dns-scope`, `persist-tun`, `log-level`, …). The common
+  case is `dns-scope: tunnel` for split-DNS coexistence with another VPN/resolver on the host
+  (Tailscale's MagicDNS, corporate DNS) — without it, openvpn3 claims the catch-all DNS domain
+  and races. If chosen, ask for the map.
 
 ### 6. Write `.claude/openvpn3-on-demand.local.md`
 Create the directory if needed, then write the file. Use this template — include only the chosen
@@ -83,6 +88,8 @@ profile_name: <value>
 #   - "<regex>"
 # post_connect_cmd: <command>
 # post_disconnect_cmd: <command>
+# config_overrides:
+#   dns-scope: tunnel
 ---
 
 # Project VPN notes (for humans — not read by the plugin)
