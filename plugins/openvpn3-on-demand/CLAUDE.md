@@ -1,40 +1,28 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working inside the `openvpn3-on-demand` plugin. See the repository-root `CLAUDE.md` for marketplace-wide conventions.
+Developer notes for working inside `openvpn3-on-demand`. User-facing docs: [`README.md`](README.md). Marketplace-wide conventions: repo-root `CLAUDE.md`.
 
-## What this plugin is
+## Layout
 
-Linux-only. Raises an OpenVPN3 tunnel on demand — right before a command that needs private-network access — and tears it down at session end as a safety net. It coordinates four layers around `openvpn3-linux`:
-
-- **MCP server** — `servers/openvpn3/` (a `uv` project; Python package `openvpn3_mcp`, console script `openvpn3-mcp`, requires Python ≥ 3.10). Wraps the openvpn3 D-Bus services (`net.openvpn.v3.configuration`, `net.openvpn.v3.sessions`) via the `openvpn3` Python module + `dbus-python` — **no CLI shell-out, no stdout parsing**. Tools: `vpn_status`, `vpn_connect`, `vpn_disconnect`, `vpn_config_import` (with a `single_use` flag for ephemeral profiles), `vpn_config_remove`; each returns a `{"status": ...}` dict and degrades to `{"status": "error", ...}` (never raises) when the system deps are missing. Wired up by `.mcp.json`, which runs it through `scripts/launch.sh`.
-- **Skill** — `skills/vpn-on-demand/SKILL.md`. The **policy layer**: decides *when* Claude calls the MCP tools (RDS/ElastiCache/MemoryDB hosts, RFC1918 + a remote-access verb, `.internal`/`.corp` hostnames, private kubectl, project-defined `trigger_patterns`, …) and which of the two modes the project uses — **BYO** (`profile_name` = an existing imported config) or **ephemeral** (`ovpn_provision_cmd` = a command whose stdout is the `.ovpn` body → a single-use config named `ovpn3-od-$CLAUDE_CODE_SESSION_ID`, re-provisioned every VPN-gated turn). Exactly one of the two fields; both/neither is a config error. Carries no code. Full settings templates at `skills/vpn-on-demand/references/example-local-settings.md`.
-- **Hooks** — `hooks/hooks.json` + `hooks/scripts/teardown.py`. Stop + SessionEnd safety net: disconnects the configured profile via the same D-Bus API if the model forgot to. Silent no-op when deps are missing; **scoped to the single profile named in the project settings file — never blanket-disconnects.**
-- **Commands** — `commands/setup.md` (`/openvpn3-on-demand:setup`) and `commands/doctor.md` (`/openvpn3-on-demand:doctor`), both auto-discovered (no `plugin.json` entry). `setup` is the interactive configurator: checks host prereqs, asks BYO vs ephemeral, writes `.claude/openvpn3-on-demand.local.md`, patches `.gitignore`. `doctor` is the read-only health check. Both read `${CLAUDE_PLUGIN_ROOT}/setup-checklist.md` (kept at the plugin root, *not* under `commands/`, so it isn't itself registered as a command) — the single source of truth for the 7 checks (deps · netcfg · settings file present · settings file valid · BYO profile imported · `.gitignore`) and their remediation text — so they can't drift. **Prose, no code; neither runs `sudo` or `vpn_*` tools** (host `sudo` steps and the BYO `config-import` are shown, not executed). Like SKILL.md, the command Markdown files carry no SPDX header (the AGPL-header rule is for Python/shell source). The skill's preflight points users at `:setup` when no settings file exists and at `:doctor` in its failure-mode notes.
-
-Per-project config: `.claude/openvpn3-on-demand.local.md` in the consuming project (git-ignored; YAML frontmatter — exactly one of `profile_name` / `ovpn_provision_cmd`; `trigger_patterns` / `post_connect_cmd` / `post_disconnect_cmd` optional). The skill re-reads it every turn and `teardown.py` re-reads it on every hook fire, so edits apply immediately — only `.mcp.json` / `hooks.json` changes need a Claude Code restart. `${CLAUDE_PLUGIN_ROOT}` resolves plugin-relative paths in `.mcp.json` / `hooks.json`; `CLAUDE_PROJECT_DIR` (set in the hook env) is how `teardown.py` finds the settings file.
+- `servers/openvpn3/` — MCP server (uv project; package `openvpn3_mcp`, script `openvpn3-mcp`, Python ≥ 3.10). Wraps openvpn3's D-Bus services via the `openvpn3` Python module + `dbus-python`. Four tools: `vpn_status`, `vpn_connect`, `vpn_connect_ephemeral`, `vpn_disconnect`. Launched by `.mcp.json` via `scripts/launch.sh`.
+- `skills/vpn-on-demand/SKILL.md` — policy layer. Decides *when* Claude calls the tools and which mode the project uses. Owns connect *and* disconnect — there is no safety-net hook; an orphaned tunnel after a crash needs `openvpn3 session-manage --disconnect --config <name>` by hand.
+- `commands/setup.md` + `commands/doctor.md` — `/openvpn3-on-demand:setup` (interactive configurator) and `/openvpn3-on-demand:doctor` (read-only health check). Both read `setup-checklist.md` for the 7 checks so they can't drift. Prose, no code; neither runs `sudo` or `vpn_*` tools.
+- `.claude/openvpn3-on-demand.local.md` (in the consuming project) — per-project settings. Frontmatter: exactly one of `profile_name` (BYO) / `ovpn_provision_cmd` (ephemeral); optional `trigger_patterns`, `post_connect_cmd`, `post_disconnect_cmd`, `config_overrides`. Re-read every turn — edits apply immediately.
 
 ## Commands
 
 ```bash
-# MCP server test suite (uv required) — run from servers/openvpn3/
 cd servers/openvpn3
 uv sync --group dev
-uv run pytest -q
-uv run pytest -q tests/test_server.py::test_vpn_connect_happy_path   # single test
-
-# Run the server standalone (stdio; expects an MCP client on the other end)
-uv run openvpn3-mcp
-
-# Load the plugin into a live Claude Code session for manual testing
-claude --plugin-dir <absolute path to this directory>
+uv run ruff check && uv run ruff format --check && uv run ty check
+uv run pytest -q                                         # unit tests; D-Bus / openvpn3 are stubbed in `tests/conftest.py`
+uv run openvpn3-mcp                                      # stdio server (expects an MCP client)
+claude --plugin-dir /absolute/path/to/openvpn3-on-demand # load into a live session
 ```
-
-Tests stub the `dbus` / `openvpn3` modules in `tests/conftest.py`, so the suite runs anywhere — CI does not install `openvpn3-client` or `python3-dbus`.
 
 ## Gotchas
 
-- **`scripts/launch.sh` is load-bearing — don't reduce it to a plain `uv run`.** The server imports `dbus` / `openvpn3` from the **system** site-packages (`/usr/lib/python3/dist-packages/...`), so the venv must be created with `--system-site-packages` *and* pinned to `/usr/bin/python3` — `uv venv`'s default managed interpreter can't see those packages (this was the 0.4.0–0.4.2 bug). The launcher detects a venv that doesn't satisfy both and recreates it.
-- **Never pre-parse `.ovpn` files with `openvpn3.ConfigParser`.** It's argparse-backed with a directive whitelist and rejects valid real-world configs (e.g. AWS Client VPN's `remote-random-hostname`) — that regression shipped in 0.4.0. Hand the raw file contents to `ConfigurationManager.Import` over D-Bus; openvpn3's own parser is authoritative. Guarded by `test_vpn_config_import_passes_raw_ovpn_contents`.
-- **A version bump touches several files:** `.claude-plugin/plugin.json`, this plugin's entry in the repo-root `.claude-plugin/marketplace.json`, `servers/openvpn3/pyproject.toml`, the `openvpn3-mcp` package entry in `servers/openvpn3/uv.lock`, and the stderr banner string in `server.py`'s `main()`. (The `0.4.0–0.4.2` / `≥0.4.3` strings in the README's Troubleshooting and in `launch.sh` comments are historical references — leave them.)
-- **AGPL-3.0-only**, because the MCP server and `teardown.py` link the AGPL `openvpn3` Python module. New Python/shell files start with `# SPDX-License-Identifier: AGPL-3.0-only`. `NOTICE` must travel with redistributions; `server.py`'s `main()` prints the AGPL notice to **stderr** (stdout is reserved for the MCP stdio protocol).
-- **`python3-dbus` is not auto-installed by `openvpn3-client`** — minimal containers need it explicitly. Both missing deps surface as `{"status": "error", ...}`, never a crash.
+- **Don't reduce `scripts/launch.sh` to a plain `uv run`.** The server imports `dbus` / `openvpn3` from system site-packages (`/usr/lib/python3/dist-packages/...`). The venv has to be created with `uv venv --python /usr/bin/python3 --system-site-packages`; uv's default managed interpreter can't see those packages. The launcher creates the venv that way on first run and does not auto-heal stale ones — if a `.venv` predates this layout, `rm -rf .venv`.
+- **Never pre-parse `.ovpn` files with `openvpn3.ConfigParser`.** It's argparse-backed with a directive whitelist and rejects valid real-world configs (AWS Client VPN's `remote-random-hostname` is the canonical case). Hand raw bytes to `ConfigurationManager.Import` over D-Bus — openvpn3's own parser is authoritative. This shipped broken in 0.4.0.
+- **AGPL-3.0-only.** The server links the AGPL `openvpn3` Python module. New Python/shell files start with `# SPDX-License-Identifier: AGPL-3.0-only`. `server.py`'s `main()` prints the AGPL §5(d) notice to **stderr** — stdout is reserved for the MCP stdio protocol.
+- **Version bumps touch four files:** `.claude-plugin/plugin.json`, the repo-root `.claude-plugin/marketplace.json` entry, `servers/openvpn3/pyproject.toml`, and the `openvpn3-mcp` entry in `servers/openvpn3/uv.lock` (regenerated by `uv sync`). The stderr banner reads `importlib.metadata.version("openvpn3-mcp")` so it tracks pyproject automatically.
