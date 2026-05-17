@@ -69,13 +69,13 @@ Connect once at the start of the VPN-needing block, disconnect at the end. Don't
 
 ## Ephemeral flow
 
-Profile name is internal: `N = "ovpn3-od-" + $CLAUDE_CODE_SESSION_ID`. You don't construct it for connect (the server does), only for disconnect. If `CLAUDE_CODE_SESSION_ID` is unset, **stop**: tell the user (their Claude Code may be too old) and handle the request without VPN.
+Profile name is internal: `N = "ovpn3-od-" + $CLAUDE_CODE_SESSION_ID`. You pass `$CLAUDE_CODE_SESSION_ID` to `vpn_connect_ephemeral` as the `session_id` arg — Claude Code doesn't propagate that env var to the MCP server itself (the server is a singleton across `/resume`/`/fork-session`), so the skill is the only place that has it. You construct `N` yourself only for disconnect. If `CLAUDE_CODE_SESSION_ID` is unset in your Bash env, **stop**: tell the user (their Claude Code may be too old) and handle the request without VPN.
 
 1. **Provision → connect:**
    1. `tmp="$(mktemp --suffix=.ovpn)"`.
    2. Run `ovpn_provision_cmd` with stdout redirected into `$tmp` — e.g. `{ <provision-cmd> ; } > "$tmp"`. The command's stdout bytes must **not** appear in your output (the `.ovpn` is sensitive); stderr may.
    3. If it exited non-zero or `$tmp` is empty → tell the user (show stderr), `rm -f "$tmp"`, **stop**.
-   4. `vpn_connect_ephemeral(ovpn_path=<$tmp>, overrides=<config_overrides or omitted>)`. The server reads the file, cleans up any stale config under `N`, imports single-use, and connects atomically.
+   4. `vpn_connect_ephemeral(ovpn_path=<$tmp>, session_id="$CLAUDE_CODE_SESSION_ID", overrides=<config_overrides or omitted>)`. The server reads the file, cleans up any stale config under `N`, imports single-use, and connects atomically.
    5. `rm -f "$tmp"` — regardless of outcome.
 2. **Post-connect hook** — only on `status: connected`. Same rules as BYO.
 3. **Run the user's command.** Reuse the tunnel within the task.
@@ -89,7 +89,7 @@ All tools return `{"status": ...}`; `status: "error"` is a hard failure — surf
 
 - `vpn_status()` — list active sessions.
 - `vpn_connect(profile_name, overrides=None)` — BYO. Idempotent (`already_connected`). Server applies `dns-scope=tunnel` baseline; `overrides` entries layer on top (caller wins).
-- `vpn_connect_ephemeral(ovpn_path, overrides=None)` — provision-and-connect. Reads the file, removes any stale config under `ovpn3-od-$CLAUDE_CODE_SESSION_ID`, imports single-use, connects. Response includes the derived `profile_name`.
+- `vpn_connect_ephemeral(ovpn_path, session_id, overrides=None)` — provision-and-connect. `session_id` is `$CLAUDE_CODE_SESSION_ID` from your Bash env (the MCP server can't see that var itself). Reads the file, removes any stale config under `ovpn3-od-{session_id}`, imports single-use, connects. Response includes the derived `profile_name`.
 - `vpn_disconnect(profile_name)` — required; the server won't disconnect arbitrary sessions. Idempotent (`not_connected`).
 
 ## Failure modes

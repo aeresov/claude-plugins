@@ -10,7 +10,6 @@
 
 from __future__ import annotations
 
-import os
 import sys
 import time
 from contextlib import suppress
@@ -259,15 +258,26 @@ def vpn_connect_ephemeral(
         Field(
             description=(
                 "Path to a .ovpn file (~ expansion supported). Imported as single-use under "
-                "`ovpn3-od-$CLAUDE_CODE_SESSION_ID`, then connected. Callers should write it via `mktemp` "
+                "`ovpn3-od-{session_id}`, then connected. Callers should write it via `mktemp` "
                 "and `rm` after the call so contents stay out of the conversation transcript."
+            )
+        ),
+    ],
+    session_id: Annotated[
+        str,
+        Field(
+            description=(
+                "Per-task tag used to derive the ephemeral profile name (`ovpn3-od-{session_id}`). The skill reads "
+                "`$CLAUDE_CODE_SESSION_ID` and forwards it; the MCP server can't read that env var itself because "
+                "Claude Code doesn't propagate it to MCP subprocesses (the server is a singleton across "
+                "`/resume`/`/fork-session`)."
             )
         ),
     ],
     overrides: Annotated[dict[str, Any] | None, Field(description=_OVERRIDES_FIELD_DESCRIPTION)] = None,
 ) -> VpnConnectResult:
-    if not (session_id := os.environ.get("CLAUDE_CODE_SESSION_ID", "").strip()):
-        return VpnError(message="Ephemeral mode requires CLAUDE_CODE_SESSION_ID to be set in the environment.")
+    if not (session_id := session_id.strip()):
+        return VpnError(message="session_id is required (pass $CLAUDE_CODE_SESSION_ID from the skill).")
     profile_name = _ephemeral_profile_name(session_id)
 
     if existing := _sessions_for(profile_name):

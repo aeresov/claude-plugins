@@ -86,35 +86,31 @@ def test_vpn_disconnect_success_waits_for_clear(server, monkeypatch, no_sleep):
 # vpn_connect_ephemeral -------------------------------------------------------
 
 
-def test_vpn_connect_ephemeral_requires_session_id(server, monkeypatch):
-    monkeypatch.delenv("CLAUDE_CODE_SESSION_ID", raising=False)
-    result = server.vpn_connect_ephemeral("/tmp/x.ovpn")
+def test_vpn_connect_ephemeral_rejects_empty_session_id(server):
+    result = server.vpn_connect_ephemeral("/tmp/x.ovpn", session_id="")
     assert isinstance(result, server.VpnError)
-    assert "CLAUDE_CODE_SESSION_ID" in result.message
+    assert "session_id is required" in result.message
 
 
-def test_vpn_connect_ephemeral_returns_already_connected(server, monkeypatch, patch_lookups):
-    monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "sess-1")
+def test_vpn_connect_ephemeral_returns_already_connected(server, patch_lookups):
     existing = FakeSession(path="/p/old", properties={"config_name": "ovpn3-od-sess-1"})
     patch_lookups(sessions={"ovpn3-od-sess-1": [existing]})
 
-    result = server.vpn_connect_ephemeral("/tmp/does-not-matter.ovpn")
+    result = server.vpn_connect_ephemeral("/tmp/does-not-matter.ovpn", session_id="sess-1")
     assert isinstance(result, server.VpnAlreadyConnected)
     assert result.profile_name == "ovpn3-od-sess-1"
 
 
-def test_vpn_connect_ephemeral_file_not_found(server, monkeypatch, patch_lookups, tmp_path):
-    monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "sess-2")
+def test_vpn_connect_ephemeral_file_not_found(server, patch_lookups, tmp_path):
     patch_lookups()
     missing = tmp_path / "missing.ovpn"
-    result = server.vpn_connect_ephemeral(str(missing))
+    result = server.vpn_connect_ephemeral(str(missing), session_id="sess-2")
     assert isinstance(result, server.VpnError)
     assert "File not found" in result.message
     assert result.profile_name == "ovpn3-od-sess-2"
 
 
 def test_vpn_connect_ephemeral_removes_stale_config(server, monkeypatch, patch_lookups, wire_managers, tmp_path, no_sleep):
-    monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "sess-3")
     stale = FakeConfig(name="ovpn3-od-sess-3")
     new_cfg = FakeConfig(name="ovpn3-od-sess-3")
     cfg_mgr = FakeConfigManager()
@@ -129,7 +125,7 @@ def test_vpn_connect_ephemeral_removes_stale_config(server, monkeypatch, patch_l
     ovpn = tmp_path / "x.ovpn"
     ovpn.write_text("client\nremote example.com 1194\n")
 
-    result = server.vpn_connect_ephemeral(str(ovpn))
+    result = server.vpn_connect_ephemeral(str(ovpn), session_id="sess-3")
     assert isinstance(result, server.VpnConnectedOk)
     assert stale.removed is True
     assert cfg_mgr.import_calls == [
@@ -142,15 +138,14 @@ def test_vpn_connect_ephemeral_removes_stale_config(server, monkeypatch, patch_l
     ]
 
 
-def test_vpn_connect_ephemeral_import_failure(server, monkeypatch, patch_lookups, wire_managers, tmp_path):
-    monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "sess-4")
+def test_vpn_connect_ephemeral_import_failure(server, patch_lookups, wire_managers, tmp_path):
     patch_lookups()  # no sessions, no stale configs
     cfg_mgr = FakeConfigManager(raise_on_import=True)
     wire_managers(config_mgr=cfg_mgr)
 
     ovpn = tmp_path / "x.ovpn"
     ovpn.write_text("client\n")
-    result = server.vpn_connect_ephemeral(str(ovpn))
+    result = server.vpn_connect_ephemeral(str(ovpn), session_id="sess-4")
     assert isinstance(result, server.VpnError)
     assert "Import failed" in result.message
     assert result.profile_name == "ovpn3-od-sess-4"
@@ -159,7 +154,6 @@ def test_vpn_connect_ephemeral_import_failure(server, monkeypatch, patch_lookups
 def test_vpn_connect_ephemeral_does_not_pre_parse_with_configparser(server, monkeypatch, wire_managers, tmp_path, no_sleep):
     """Regression guard: ConfigParser whitelist rejects valid directives like AWS Client VPN's `remote-random-hostname`.
     Server must hand raw bytes to ConfigurationManager.Import — no pre-parse."""
-    monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "sess-5")
     cfg_mgr = FakeConfigManager()
     wire_managers(config_mgr=cfg_mgr, session_mgr=FakeSessionManager(new_tunnel_session=FakeSession()))
 
@@ -172,7 +166,7 @@ def test_vpn_connect_ephemeral_does_not_pre_parse_with_configparser(server, monk
     ovpn = tmp_path / "aws-cvpn.ovpn"
     ovpn.write_text(raw)
 
-    result = server.vpn_connect_ephemeral(str(ovpn))
+    result = server.vpn_connect_ephemeral(str(ovpn), session_id="sess-5")
     assert isinstance(result, server.VpnConnectedOk)
     # The exact bytes from disk must reach Import unchanged.
     assert cfg_mgr.import_calls[0]["cfg"] == raw

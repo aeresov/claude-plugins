@@ -48,10 +48,10 @@ See [`skills/vpn-on-demand/references/example-local-settings.md`](skills/vpn-on-
 |-------------------------|-------------------------------|----------------------------------------------------------|
 | `vpn_status`            | —                             | `{status: ok, session_count, sessions: [...]}`           |
 | `vpn_connect`           | `profile_name`, `overrides?`  | `{status: connected \| already_connected \| error, ...}` |
-| `vpn_connect_ephemeral` | `ovpn_path`, `overrides?`     | `{status: connected \| already_connected \| error, ...}` |
+| `vpn_connect_ephemeral` | `ovpn_path`, `session_id`, `overrides?` | `{status: connected \| already_connected \| error, ...}` |
 | `vpn_disconnect`        | `profile_name`                | `{status: disconnected \| not_connected \| error, ...}`  |
 
-`vpn_connect` is for BYO profiles (already imported). `vpn_connect_ephemeral` reads a freshly-written `.ovpn` file and imports it as single-use. Both apply `dns-scope=tunnel` as a baseline (split-DNS, so the VPN coexists with Tailscale's MagicDNS / mDNS); pass `overrides` to override.
+`vpn_connect` is for BYO profiles (already imported). `vpn_connect_ephemeral` reads a freshly-written `.ovpn` file and imports it as single-use; the skill passes `$CLAUDE_CODE_SESSION_ID` as `session_id` (the MCP server can't see that env var itself — it's a singleton across `/resume`/`/fork-session`). Both apply `dns-scope=tunnel` as a baseline (split-DNS, so the VPN coexists with Tailscale's MagicDNS / mDNS); pass `overrides` to override.
 
 ## Security
 
