@@ -174,17 +174,16 @@ def _format_status(st: dict[str, Any]) -> str:
 
 
 def _await_connected(sess: Any, profile_name: str) -> VpnError | None:
-    """Poll session status after `Connect()` until CONN_CONNECTED, a terminal failure, the session vanishes,
-    or `_CONNECT_TIMEOUT_SECS` elapses. Without this, openvpn3 core rejections (e.g. UNUSED_OPTIONS_ERROR
-    from a malformed `.ovpn`) surface as a transient `CONN_CONNECTING` snapshot and the caller never learns
-    the tunnel actually died."""
+    """Poll status after `Connect()` until CONN_CONNECTED, terminal failure, vanish, or timeout.
+    Async openvpn3 core rejections (e.g. UNUSED_OPTIONS_ERROR from a malformed `.ovpn`) would
+    otherwise look like a transient `CONN_CONNECTING` and never surface."""
     deadline = time.monotonic() + _CONNECT_TIMEOUT_SECS
     last_status = "<no status yet>"
     while time.monotonic() < deadline:
         try:
             st = sess.GetStatus()
         except _DBUS_ERRORS as exc:
-            # Single-use configs whose tunnel-start fails get reaped, taking the session with them.
+            # Single-use configs whose tunnel-start fails are reaped with their session.
             return VpnError(
                 profile_name=profile_name,
                 message=f"Connect failed — session vanished (last status: {last_status}; {_dbus_error_msg(exc)}).",
@@ -218,10 +217,8 @@ def vpn_status() -> VpnStatusResult:
 
 
 def _wrap_override_value(value: Any) -> Any:
-    # openvpn3's SetOverride only accepts bool/string variants — Int32 ('i') gets rejected with
-    # "Unsupported override data type: i". Bools take dbus.Boolean (e.g. `persist-tun`); everything else
-    # (including ints like `log-level`) is stringified. `bool()` must precede the catch-all because
-    # bool is an int subclass.
+    # openvpn3's SetOverride only accepts bool/string variants (Int32 → "Unsupported override data type: i").
+    # `bool()` must precede the catch-all because bool is an int subclass.
     match value:
         case bool():
             return dbus.Boolean(value)
@@ -231,15 +228,15 @@ def _wrap_override_value(value: Any) -> Any:
 
 _OVERRIDES_FIELD_DESCRIPTION = (
     "Optional {name: value} map of openvpn3 config-manage overrides applied before NewTunnel (e.g. 'dns-scope', "
-    "'persist-tun', 'log-level'). Bools marshal as D-Bus bool; everything else (including ints) is stringified — "
-    "the openvpn3 daemon's SetOverride only accepts bool/string variants. Server baseline `dns-scope=tunnel` "
-    "is always applied; entries here override on collision. Skipped on `already_connected`."
+    "'persist-tun', 'log-level'). Bools marshal as D-Bus bool; everything else stringifies (the daemon's "
+    "SetOverride only accepts bool/string). Baseline `dns-scope=tunnel` is applied automatically; caller "
+    "entries win. Skipped on `already_connected`."
 )
 
 _VPN_CONNECT_EPHEMERAL_DESCRIPTION = (
     "Import a fresh single-use config from a .ovpn file and start the session under "
-    "`ovpn3-od-$CLAUDE_CODE_SESSION_ID`. Idempotent — returns `already_connected` "
-    "(without re-importing) if that name's session is already up. For BYO profiles use `vpn_connect`."
+    "`ovpn3-od-{session_id}`. Idempotent — returns `already_connected` (without re-importing) "
+    "if that name's session is already up. For BYO profiles use `vpn_connect`."
 )
 
 
@@ -317,10 +314,9 @@ def vpn_connect_ephemeral(
         str,
         Field(
             description=(
-                "Per-task tag used to derive the ephemeral profile name (`ovpn3-od-{session_id}`). The skill reads "
-                "`$CLAUDE_CODE_SESSION_ID` and forwards it; the MCP server can't read that env var itself because "
-                "Claude Code doesn't propagate it to MCP subprocesses (the server is a singleton across "
-                "`/resume`/`/fork-session`)."
+                "Per-task tag for the ephemeral profile name (`ovpn3-od-{session_id}`). The skill forwards "
+                "`$CLAUDE_CODE_SESSION_ID`; the server can't read it itself (Claude Code doesn't propagate it "
+                "to MCP subprocesses since the server outlives `/resume`/`/fork-session`)."
             )
         ),
     ],

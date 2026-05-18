@@ -38,6 +38,7 @@ Note that the profile must be non-interactive (`auth-user-pass` inlined, no encr
 - `make get_vpn_client_config OUTPUT=/dev/stdout`
 
 Stress: stdout must be the `.ovpn` body — not a file path, not a status line.
+Keep the command task-agnostic; Claude prepends per-task vars (`ENV=…`, `AWS_PROFILE=…`) at call time from the project's CLAUDE.md. Hard-coding them here locks the settings file to one task.
 
 ### 5. Optional fields
 **AskUserQuestion** (multi-select), default none:
@@ -45,7 +46,7 @@ Stress: stdout must be the `.ovpn` body — not a file path, not a status line.
 - `trigger_patterns` — extra regex patterns treated as VPN-requiring. If chosen, ask for the list.
 - `post_connect_cmd` — shell command run after a fresh `vpn_connect`. Non-fatal on failure.
 - `post_disconnect_cmd` — shell command run after a fresh `vpn_disconnect` (not on `not_connected`). Non-fatal on failure.
-- `config_overrides` — openvpn3 `config-manage` overrides reapplied before each tunnel start (hyphenated names: `dns-scope`, `persist-tun`, `log-level`, …). The server applies `dns-scope=tunnel` as a baseline; only override if you need fully tunnel-routed DNS or other overrides. If chosen, ask for the map.
+- `config_overrides` — openvpn3 `config-manage` overrides reapplied before each tunnel start (hyphenated: `dns-scope`, `persist-tun`, `log-level`, …). The server applies `dns-scope=tunnel` as baseline; override only if you need fully tunnel-routed DNS or other tweaks. If chosen, ask for the map.
 
 ### 6. Write `.claude/openvpn3-on-demand.local.md`
 Create the directory if needed. Use this template — include the chosen mode's required field and whichever optionals the user picked; comment out the other mode's line:

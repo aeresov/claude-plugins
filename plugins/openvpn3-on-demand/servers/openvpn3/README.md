@@ -21,9 +21,8 @@ Tools: `vpn_status`, `vpn_connect` (BYO), `vpn_connect_ephemeral` (provision-and
 
 ```bash
 cd servers/openvpn3
-# Pin the venv to /usr/bin/python3: --system-site-packages exposes the parent
-# interpreter's site-packages, and uv's default managed Python doesn't include
-# /usr/lib/python3/dist-packages where openvpn3-client and python3-dbus install.
+# Pin to /usr/bin/python3 with --system-site-packages: uv's managed Python can't
+# see /usr/lib/python3/dist-packages where openvpn3-client and python3-dbus live.
 uv venv --python /usr/bin/python3 --system-site-packages
 uv sync
 uv run openvpn3-mcp            # stdio server, expects an MCP client

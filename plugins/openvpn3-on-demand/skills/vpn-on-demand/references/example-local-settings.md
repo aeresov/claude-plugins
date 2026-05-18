@@ -56,12 +56,19 @@ post_connect_cmd: dig +short internal-db.my-vpc.internal
 post_disconnect_cmd: sudo resolvectl flush-caches
 ---
 
+
 # Project VPN notes (for humans)
 
 Where ovpn_provision_cmd pulls from, what credentials it needs, who owns the secret.
 ```
 
-`ovpn_provision_cmd`'s **stdout** must be the `.ovpn` body — not a file path, not a status line. The plugin captures stdout into a mode-600 temp file, imports it as a single-use config, and deletes the temp file. Contents never enter the conversation transcript.
+`ovpn_provision_cmd`'s **stdout** must be the `.ovpn` body — not a file path, not a status line. The plugin pipes stdout into a mode-600 temp file, imports it single-use, and deletes the file. Contents never enter the conversation transcript.
+
+Keep settings files **task-agnostic**: per-task env vars (`ENV`, `AWS_PROFILE`, region, vault namespace, …) are supplied by Claude at call time from the project's `CLAUDE.md`, not hard-coded here. A Makefile-based provisioner stays as
+```markdown
+ovpn_provision_cmd: make infra-vpn-config OUTPUT=/dev/stdout
+```
+even though `make infra-vpn-config` needs `ENV=<env>` and `AWS_PROFILE=<…>` — the agent prepends those each turn.
 
 ## Fields
 

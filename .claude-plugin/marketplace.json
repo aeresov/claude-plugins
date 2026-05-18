@@ -11,7 +11,7 @@
       "name": "openvpn3-on-demand",
       "source": "./plugins/openvpn3-on-demand",
       "description": "Bring up an OpenVPN3 tunnel on demand before Claude runs commands against private network resources, and tear it down at task end.",
-      "version": "0.8.2",
+      "version": "0.8.3",
       "license": "AGPL-3.0-only",
       "homepage": "https://github.com/aeresov/claude-plugins/tree/main/plugins/openvpn3-on-demand",
       "repository": "https://github.com/aeresov/claude-plugins"

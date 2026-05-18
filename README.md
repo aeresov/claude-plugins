@@ -22,7 +22,7 @@ Then install individual plugins:
 
 | Plugin | Description |
 |--------|-------------|
-| [`openvpn3-on-demand`](plugins/openvpn3-on-demand/) | Raise an OpenVPN3 tunnel on demand before VPN-gated commands; tear it down at session end. |
+| [`openvpn3-on-demand`](plugins/openvpn3-on-demand/) | Provides MCP tools to bring an OpenVPN3 tunnel up/down on demand. |
 
 ## Repo layout
 

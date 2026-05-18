@@ -7,7 +7,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 A personal Claude Code plugin **marketplace**. The repo root holds `.claude-plugin/marketplace.json` (consumed by `/plugin marketplace add`); every plugin is self-contained under `plugins/<name>/` with its own `.claude-plugin/plugin.json` — and, where it has one, its own `CLAUDE.md`. **Read `plugins/<name>/CLAUDE.md` before working inside that plugin.**
 
 Plugins:
-- [`openvpn3-on-demand`](plugins/openvpn3-on-demand/CLAUDE.md) — raise an OpenVPN3 tunnel on demand before VPN-gated commands; tear it down at session end.
+- [`openvpn3-on-demand`](plugins/openvpn3-on-demand/CLAUDE.md) — Provides MCP tools to bring an OpenVPN3 tunnel up/down on demand.
 
 ## Adding / changing a plugin
 

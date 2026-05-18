@@ -1,7 +1,6 @@
 # openvpn3-on-demand
 
-A Claude Code plugin that raises an OpenVPN3 tunnel right before a command that needs private-network access and tears it down at task end. No always-on VPN, no per-command `Bash(openvpn3 *)` permission grants.
-
+A Claude Code plugin that brings an OpenVPN3 tunnel up/down on demand — no always-on VPN, no `Bash(openvpn3 *)` permission grants.
 **Linux only.** Talks to `openvpn3-linux` over its D-Bus services via the `openvpn3` Python module shipped with `openvpn3-client`.
 
 ## Quick start
@@ -51,14 +50,14 @@ See [`skills/vpn-on-demand/references/example-local-settings.md`](skills/vpn-on-
 | `vpn_connect_ephemeral` | `ovpn_path`, `session_id`, `overrides?` | `{status: connected \| already_connected \| error, ...}` |
 | `vpn_disconnect`        | `profile_name`                | `{status: disconnected \| not_connected \| error, ...}`  |
 
-`vpn_connect` is for BYO profiles (already imported). `vpn_connect_ephemeral` reads a freshly-written `.ovpn` file and imports it as single-use; the skill passes `$CLAUDE_CODE_SESSION_ID` as `session_id` (the MCP server can't see that env var itself — it's a singleton across `/resume`/`/fork-session`). Both apply `dns-scope=tunnel` as a baseline (split-DNS, so the VPN coexists with Tailscale's MagicDNS / mDNS); pass `overrides` to override.
+`vpn_connect` is for already-imported BYO profiles. `vpn_connect_ephemeral` reads a freshly-written `.ovpn` and imports it single-use; the skill forwards `$CLAUDE_CODE_SESSION_ID` as `session_id` because the MCP server (a singleton across `/resume`/`/fork-session`) can't see that env var itself. Both apply `dns-scope=tunnel` as a baseline (split-DNS so the tunnel coexists with Tailscale / mDNS); pass `overrides` to override.
 
 ## Security
 
 - The `.ovpn` body is written to a mode-600 `mktemp` file, handed to openvpn3 over D-Bus, and deleted. Its bytes never enter the conversation transcript.
 - `.claude/openvpn3-on-demand.local.md` may contain internal hostnames and provisioning commands — `/openvpn3-on-demand:setup` adds it to `.gitignore`.
 - The MCP server exits 1 if `dbus` or `openvpn3` aren't importable. It never installs anything and never runs as root.
-- The skill targets only the profile named in the settings file — never a blanket disconnect. If Claude Code crashes mid-task the tunnel stays up; clean it up with `openvpn3 session-manage --disconnect --config <profile_name>` (BYO) or `openvpn3 session-manage --disconnect --config "ovpn3-od-$CLAUDE_CODE_SESSION_ID"` (ephemeral).
+- The skill targets only the profile in the settings file — never a blanket disconnect. After a crash mid-task the tunnel stays up; clean it with `openvpn3 session-manage --disconnect --config <profile_name>` (BYO) or `… --config "ovpn3-od-$CLAUDE_CODE_SESSION_ID"` (ephemeral).
 
 ## Troubleshooting
 
