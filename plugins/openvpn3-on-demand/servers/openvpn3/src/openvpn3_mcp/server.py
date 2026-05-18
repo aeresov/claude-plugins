@@ -45,6 +45,12 @@ _DBUS_ERRORS = (dbus.exceptions.DBusException, RuntimeError)
 # How long vpn_disconnect waits for the session to clear before reporting `session_cleared=False`.
 _DISCONNECT_TIMEOUT_SECS: float = 5.0
 
+# How long we poll session status after `Connect()` waiting for CONN_CONNECTED before giving up.
+_CONNECT_TIMEOUT_SECS: float = 10.0
+
+# StatusMinor names that mean the tunnel won't come up — fail fast instead of waiting for the timeout.
+_CONNECT_FAILURE_MINORS: frozenset[str] = frozenset({"CONN_FAILED", "CONN_AUTH_FAILED", "CONN_DISCONNECTED"})
+
 
 # Tagged-union result models, discriminated on `status`; FastMCP emits each tool's union as its outputSchema.
 
@@ -160,6 +166,46 @@ def _wait_session_cleared(profile: str, timeout: float = _DISCONNECT_TIMEOUT_SEC
     return not _sessions_for(profile)
 
 
+def _format_status(st: dict[str, Any]) -> str:
+    major = getattr(st.get("major"), "name", "?")
+    minor = getattr(st.get("minor"), "name", "?")
+    message = str(st.get("message", "") or "")
+    return f"{major}/{minor}" + (f": {message}" if message else "")
+
+
+def _await_connected(sess: Any, profile_name: str) -> VpnError | None:
+    """Poll session status after `Connect()` until CONN_CONNECTED, a terminal failure, the session vanishes,
+    or `_CONNECT_TIMEOUT_SECS` elapses. Without this, openvpn3 core rejections (e.g. UNUSED_OPTIONS_ERROR
+    from a malformed `.ovpn`) surface as a transient `CONN_CONNECTING` snapshot and the caller never learns
+    the tunnel actually died."""
+    deadline = time.monotonic() + _CONNECT_TIMEOUT_SECS
+    last_status = "<no status yet>"
+    while time.monotonic() < deadline:
+        try:
+            st = sess.GetStatus()
+        except _DBUS_ERRORS as exc:
+            # Single-use configs whose tunnel-start fails get reaped, taking the session with them.
+            return VpnError(
+                profile_name=profile_name,
+                message=f"Connect failed — session vanished (last status: {last_status}; {_dbus_error_msg(exc)}).",
+            )
+        last_status = _format_status(st)
+        minor_name = getattr(st.get("minor"), "name", "?")
+        if minor_name == "CONN_CONNECTED":
+            return None
+        if minor_name in _CONNECT_FAILURE_MINORS:
+            with suppress(*_DBUS_ERRORS):
+                sess.Disconnect()
+            return VpnError(profile_name=profile_name, message=f"Connect failed ({last_status}).")
+        time.sleep(0.2)
+    with suppress(*_DBUS_ERRORS):
+        sess.Disconnect()
+    return VpnError(
+        profile_name=profile_name,
+        message=f"Connect did not reach CONN_CONNECTED within {_CONNECT_TIMEOUT_SECS:g}s; last status: {last_status}.",
+    )
+
+
 @mcp.tool(annotations=ToolAnnotations(readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=False))
 def vpn_status() -> VpnStatusResult:
     """List active OpenVPN3 sessions with config names and statuses."""
@@ -172,19 +218,21 @@ def vpn_status() -> VpnStatusResult:
 
 
 def _wrap_override_value(value: Any) -> Any:
-    # `bool()` first because bool is an int subclass — flipping the order would marshal every boolean as Int32.
+    # openvpn3's SetOverride only accepts bool/string variants — Int32 ('i') gets rejected with
+    # "Unsupported override data type: i". Bools take dbus.Boolean (e.g. `persist-tun`); everything else
+    # (including ints like `log-level`) is stringified. `bool()` must precede the catch-all because
+    # bool is an int subclass.
     match value:
         case bool():
             return dbus.Boolean(value)
-        case int():
-            return dbus.Int32(value)
         case _:
             return dbus.String(str(value))
 
 
 _OVERRIDES_FIELD_DESCRIPTION = (
     "Optional {name: value} map of openvpn3 config-manage overrides applied before NewTunnel (e.g. 'dns-scope', "
-    "'persist-tun', 'log-level'). Values keep their Python type (bool/int/str). Server baseline `dns-scope=tunnel` "
+    "'persist-tun', 'log-level'). Bools marshal as D-Bus bool; everything else (including ints) is stringified — "
+    "the openvpn3 daemon's SetOverride only accepts bool/string variants. Server baseline `dns-scope=tunnel` "
     "is always applied; entries here override on collision. Skipped on `already_connected`."
 )
 
@@ -232,6 +280,8 @@ def _start_session(profile_name: str, overrides: dict[str, Any] | None) -> VpnCo
         sess.Connect()
     except _DBUS_ERRORS as exc:
         return VpnError(profile_name=profile_name, message=f"Connect failed: {_dbus_error_msg(exc)}")
+    if err := _await_connected(sess, profile_name):
+        return err
     return VpnConnectedOk(
         profile_name=profile_name,
         session=_session_view(sess),

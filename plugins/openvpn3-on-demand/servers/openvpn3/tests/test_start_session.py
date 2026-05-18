@@ -48,7 +48,8 @@ def test_caller_overrides_win_over_baseline(server, patch_lookups, no_sleep):
 
     assert isinstance(result, server.VpnConnectedOk)
     assert ("dns-scope", Wrapped("String", "global")) in cfg.overrides_set
-    assert ("log-level", Wrapped("Int32", 4)) in cfg.overrides_set
+    # ints stringify — openvpn3's SetOverride only accepts bool/string variants.
+    assert ("log-level", Wrapped("String", "4")) in cfg.overrides_set
     assert result.overrides_applied == {"dns-scope": "global", "log-level": 4}
 
 
@@ -104,6 +105,51 @@ def test_success_populates_session_view(server, patch_lookups, no_sleep):
     assert result.profile_name == "demo"
     assert result.session.path == "/p/new"
     assert sess.connect_calls == 1
+
+
+def _status(major: str, minor: str, message: str = "") -> dict[str, object]:
+    return {
+        "major": type("E", (), {"name": major})(),
+        "minor": type("E", (), {"name": minor})(),
+        "message": message,
+    }
+
+
+def test_start_session_surfaces_terminal_failure_status(server, patch_lookups, no_sleep):
+    # openvpn3 core rejects the config a few ms after Connect() — we must surface that, not lie about success.
+    patch_lookups(configs={"demo": [FakeConfig(name="demo")]})
+    sess = FakeSession(status=_status("CONNECTION", "CONN_FAILED", "UNUSED_OPTIONS_ERROR: Got unused options: foo"))
+    server._get_session_mgr = lambda: FakeSessionManager(new_tunnel_session=sess)  # type: ignore[assignment]
+
+    result = server._start_session("demo", overrides=None)
+    assert isinstance(result, server.VpnError)
+    assert "Connect failed" in result.message
+    assert "CONN_FAILED" in result.message
+    assert "UNUSED_OPTIONS_ERROR" in result.message
+    assert sess.disconnect_calls == 1
+
+
+def test_start_session_times_out_if_status_stays_connecting(server, patch_lookups, no_sleep, fast_clock):
+    patch_lookups(configs={"demo": [FakeConfig(name="demo")]})
+    sess = FakeSession(status=_status("CONNECTION", "CONN_CONNECTING", "TUN/TAP setup"))
+    server._get_session_mgr = lambda: FakeSessionManager(new_tunnel_session=sess)  # type: ignore[assignment]
+
+    result = server._start_session("demo", overrides=None)
+    assert isinstance(result, server.VpnError)
+    assert "did not reach CONN_CONNECTED" in result.message
+    assert "CONN_CONNECTING" in result.message
+    assert sess.disconnect_calls == 1
+
+
+def test_start_session_errors_when_session_vanishes_mid_handshake(server, patch_lookups, no_sleep):
+    # Single-use configs whose tunnel-start fails are reaped together with their session — GetStatus throws.
+    patch_lookups(configs={"demo": [FakeConfig(name="demo")]})
+    sess = FakeSession(raise_on_status=True)
+    server._get_session_mgr = lambda: FakeSessionManager(new_tunnel_session=sess)  # type: ignore[assignment]
+
+    result = server._start_session("demo", overrides=None)
+    assert isinstance(result, server.VpnError)
+    assert "vanished" in result.message
 
 
 @pytest.fixture(autouse=True)

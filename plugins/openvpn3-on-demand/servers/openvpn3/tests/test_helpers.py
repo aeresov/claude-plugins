@@ -18,8 +18,9 @@ def test_ephemeral_profile_name_format(server):
     [
         (True, "Boolean", True),
         (False, "Boolean", False),
-        (4, "Int32", 4),
-        (0, "Int32", 0),
+        # openvpn3's SetOverride rejects Int32 ('i') with "Unsupported override data type: i" — ints stringify.
+        (4, "String", "4"),
+        (0, "String", "0"),
         ("tunnel", "String", "tunnel"),
         (3.14, "String", "3.14"),
         (None, "String", "None"),
@@ -32,9 +33,9 @@ def test_wrap_override_value_dispatch(server, value, expected_kind, expected_val
     assert out.value == expected_value
 
 
-def test_wrap_override_value_bool_before_int_trap(server):
-    # bool is an int subclass; if the match order ever flips, True/False marshal as Int32 and
-    # openvpn3 silently rejects the override. Regression guard.
+def test_wrap_override_value_bool_before_catchall_trap(server):
+    # bool is an int subclass; if the catch-all ran first True/False would stringify to "True"/"False"
+    # and the daemon would coerce them oddly. Regression guard.
     assert server._wrap_override_value(True).kind == "Boolean"
     assert server._wrap_override_value(False).kind == "Boolean"
 
