@@ -22,20 +22,20 @@ Checks 1–3 and 6 are static and read-only. Checks 4–5 are **live**: they run
 
 - Parse the YAML frontmatter; look at `connection_cmd`.
 - PASS if `connection_cmd` is present and non-empty.
-- FAIL → "`.claude/mysql-client.local.md` has no usable `connection_cmd`. The frontmatter needs exactly that one field — a shell command whose stdout is the body of a `[client]`-section INI. Re-run `/mysql-client:setup`, or see `skills/mysql-client/references/local-settings.md`."
+- FAIL → "`.claude/mysql-client.local.md` has no usable `connection_cmd`. The frontmatter needs exactly that one field — a shell command whose stdout is a `mysql://` (or `mariadb://`) URL. Re-run `/mysql-client:setup`, or see `skills/mysql-client/references/local-settings.md`."
 
-### 4. `connection_cmd` resolves (live; only if 3 passed)
+### 4. `connection_cmd` resolves to a usable URL (live; only if 3 passed)
 
-- Capture stdout to a mode-600 tempfile and stderr to a second tempfile:
+- Run `connection_cmd` and pipe its output through the bundled converter:
   ```bash
   umask 077
-  cnf="$(mktemp --suffix=.cnf)"
-  err="$(mktemp --suffix=.err)"
-  { <connection_cmd> ; } > "$cnf" 2> "$err"
+  cnf="$(mktemp --suffix=.cnf)"; err="$(mktemp --suffix=.err)"
+  set -o pipefail
+  { <connection_cmd> 2>"$err" ; } | python3 "${CLAUDE_PLUGIN_ROOT}/scripts/mysql-url-to-cnf/src/mysql_url_to_cnf/__init__.py" >"$cnf" 2>>"$err"
   ```
-- PASS if the command exits 0, `$cnf` is non-empty, and its content contains a `[client]` line.
+- PASS if the pipeline exits 0 and `$cnf` is non-empty. (The converter writes a `[client]` INI on success and exits non-zero on anything that isn't a `mysql://` URL.)
 - **Never print `$cnf`'s content** — it holds a password. `$err` is safe to surface.
-- FAIL → show the captured stderr, then: "`connection_cmd` failed or produced unusable output. Common causes: an expired auth token, a wrong secret path, a `jq` filter that doesn't match the secret's JSON shape, or the secret-store CLI not being logged in. Fix the command in `.claude/mysql-client.local.md` (or re-run `/mysql-client:setup`)."
+- FAIL → show the captured `$err`, then: "`connection_cmd` did not produce a usable `mysql://` URL. Common causes: an expired auth token, a wrong secret path, the secret-store CLI not being logged in, or the command printing something other than a bare URL (a make recipe echo, a status line). Fix the command in `.claude/mysql-client.local.md` (or re-run `/mysql-client:setup`)."
 - Keep `$cnf` for check 5. Delete `$cnf` and `$err` once check 5 is done — or immediately, if check 5 is skipped.
 
 ### 5. Connection probe (live; only if 4 passed)

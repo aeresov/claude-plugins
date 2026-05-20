@@ -1,0 +1,19 @@
+[project]
+name = "mysql-url-to-cnf"
+version = "0.4.0"
+description = "Convert a mysql:// URL into a MySQL [client] option-file block. Part of the mysql-client Claude Code plugin."
+readme = "README.md"
+requires-python = ">=3.10"
+license = "AGPL-3.0-only"
+authors = [{ name = "aeresov" }]
+keywords = ["mysql", "mariadb", "dsn", "url"]
+
+[project.scripts]
+mysql-url-to-cnf = "mysql_url_to_cnf:main"
+
+[dependency-groups]
+dev = ["pytest>=9.0"]
+
+[build-system]
+requires = ["uv_build>=0.11.7,<0.12"]
+build-backend = "uv_build"

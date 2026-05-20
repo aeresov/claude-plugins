@@ -27,19 +27,19 @@ See [`skills/mysql-client/references/connecting.md`](skills/mysql-client/referen
 
 ## Connection discovery (optional)
 
-`/mysql-client:setup` configures this interactively — it picks the secret-store flavor, assembles the command, writes `.claude/mysql-client.local.md`, and updates `.gitignore`. Or drop the file in by hand: a `connection_cmd` frontmatter field, and the skill fetches credentials per turn — vault, AWS Secrets Manager, RDS IAM auth tokens, SOPS, 1Password, etc. The command's stdout must be a `[client]`-section INI body; the skill writes it to a mode-600 tempfile, runs `mysql --defaults-file=<tmp>`, deletes after the turn. Stdout never enters the conversation transcript.
+`/mysql-client:setup` configures this interactively — it asks where the project's connection URL comes from, writes `.claude/mysql-client.local.md`, and updates `.gitignore`. Or drop the file in by hand: a `connection_cmd` frontmatter field whose stdout is a `mysql://` (or `mariadb://`) URL — a build target, a vault read, AWS Secrets Manager, SOPS, 1Password. The plugin runs the command, converts the URL to a `[client]` INI with its bundled converter, writes a mode-600 tempfile, runs `mysql --defaults-file=<tmp>`, and deletes it after the turn. The URL — password and all — never enters the conversation transcript.
 
 Minimum file:
 
 ~~~markdown
 ---
-connection_cmd: vault read -field=mysql_client_ini secret/db/prod-reader
+connection_cmd: make infra-mysql-url ENV=dev
 ---
 ~~~
 
 Add `.claude/*.local.md` to `.gitignore`.
 
-Field reference and a catalogue of `connection_cmd` examples for each secret-store flavour: [`skills/mysql-client/references/local-settings.md`](skills/mysql-client/references/local-settings.md).
+URL format, `connection_cmd` examples, and how the converter works: [`skills/mysql-client/references/local-settings.md`](skills/mysql-client/references/local-settings.md).
 
 ## What triggers the skill
 
@@ -95,7 +95,7 @@ Loaded on demand by Claude as each step requires:
 - The skill **runs a "where am I" probe before any query** and surfaces the answer (`@@hostname`, `@@read_only`, `USER()`, …) so you can spot a misrouted connection before it does damage.
 - The skill **sets `--safe-updates` / `sql_safe_updates` on every session.** Even if you somehow bypassed the read-only stance, accidental WHERE-less `UPDATE`/`DELETE` is server-rejected.
 - The subagent's allowlist forbids writes at the harness level — no `Edit`, no `Write`, no `Agent` recursion.
-- When `.claude/mysql-client.local.md` is in play, the `connection_cmd` output is captured into a mode-600 tempfile via `>` redirection and **never enters the conversation transcript**. The tempfile is deleted at the end of every turn.
+- When `.claude/mysql-client.local.md` is in play, `connection_cmd`'s output (a URL) is piped through the bundled converter into a mode-600 tempfile and **never enters the conversation transcript**. The tempfile is deleted at the end of every turn.
 
 ## Troubleshooting
 

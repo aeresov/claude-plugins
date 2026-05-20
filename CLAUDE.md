@@ -23,7 +23,7 @@ claude plugin validate .                  # validate marketplace.json
 claude plugin validate plugins/<name>     # validate a plugin's plugin.json
 ```
 
-CI additionally runs every in-tree `plugins/*/servers/*/` Python test suite via `uv`. Per-plugin test/run commands live in that plugin's `CLAUDE.md`.
+CI additionally runs every in-tree Python test suite under `plugins/` — any `pyproject.toml` with a sibling `tests/` directory — via `uv`. Per-plugin test/run commands live in that plugin's `CLAUDE.md`.
 
 ## Repo-wide conventions
 

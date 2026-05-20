@@ -39,12 +39,11 @@ jobs:
       - name: Set up uv
         uses: astral-sh/setup-uv@v5
 
-      - name: Run MCP server test suites
+      - name: Run plugin test suites
         run: |
           set -euo pipefail
-          shopt -s nullglob
           found=0
-          for proj in plugins/*/servers/*/pyproject.toml; do
+          while IFS= read -r proj; do
             found=1
             dir=$(dirname "$proj")
             if [ -d "$dir/tests" ]; then
@@ -54,7 +53,7 @@ jobs:
             else
               echo "Skipping $dir — no tests/ directory."
             fi
-          done
+          done < <(find plugins -name pyproject.toml -not -path '*/.venv/*' | sort)
           if [ "$found" -eq 0 ]; then
-            echo "No in-tree server projects found."
+            echo "No in-tree Python projects found."
           fi

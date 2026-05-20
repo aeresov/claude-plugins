@@ -11,24 +11,27 @@ The default stance is **read-only investigation**. Schema changes, migrations, a
 
 ## Connection discovery
 
-Before asking the user how to connect, check `.claude/mysql-client.local.md` in the project root. If it exists, its YAML frontmatter has a `connection_cmd` field whose stdout is the body of a `[client]`-section INI — the skill provisions a mode-600 tempfile from it and uses `mysql --defaults-file=<tmp>` for every call this turn. Examples (vault, AWS Secrets Manager, RDS IAM auth, SOPS, 1Password): [`references/local-settings.md`](references/local-settings.md).
+Before asking the user how to connect, check `.claude/mysql-client.local.md` in the project root. Its YAML frontmatter has one field, `connection_cmd` — a command whose stdout is a `mysql://` (or `mariadb://`) URL. The skill runs it, converts the URL to a `[client]` INI with the bundled converter, and uses `mysql --defaults-file=<tmp>` for every call this turn. File format and `connection_cmd` examples: [`references/local-settings.md`](references/local-settings.md).
+
+The converter ships at `scripts/mysql-url-to-cnf/src/mysql_url_to_cnf/__init__.py` — `../../scripts/mysql-url-to-cnf/src/mysql_url_to_cnf/__init__.py` relative to this skill's directory. It's pure stdlib — run it with plain `python3`, no venv. Resolve it to an absolute path before use.
 
 Flow when the file is present:
 
-1. **Parse the frontmatter.** Verify `connection_cmd` is set and non-empty. Missing or malformed → tell the user and stop. Do not guess.
+1. **Read the frontmatter.** Verify `connection_cmd` is set and non-empty. Missing or malformed → tell the user and stop. Do not guess.
 2. **Provision lazily** (first time mysql is needed this turn):
    ```bash
    umask 077
-   tmp="$(mktemp --suffix=.cnf)"
-   { <connection_cmd> ; } > "$tmp" 2> /tmp/mysql-client-cmderr.$$
+   tmp="$(mktemp --suffix=.cnf)"; err="$(mktemp --suffix=.err)"
+   set -o pipefail
+   { <connection_cmd> 2>"$err" ; } | python3 <plugin>/scripts/mysql-url-to-cnf/src/mysql_url_to_cnf/__init__.py >"$tmp" 2>>"$err"
    ```
-   The stdout bytes **must not** appear in your output — they contain a password. Do not `cat "$tmp"`. Stderr is fine to surface.
-3. **Non-zero exit or empty `$tmp`** → show the stderr from `/tmp/mysql-client-cmderr.$$`, `rm -f "$tmp" /tmp/mysql-client-cmderr.$$`, **stop**.
+   `connection_cmd`'s stdout (a URL with a password) and the converter's output (the INI) **must not** appear in your output. Do not `cat "$tmp"`. The captured `$err` is safe to surface — neither `connection_cmd` nor the converter echoes the URL.
+3. **Pipeline exit non-zero, or `$tmp` empty** → show `$err`, `rm -f "$tmp" "$err"`, **stop**. A non-URL from `connection_cmd` (recipe echo, an error line, empty output) makes the converter exit non-zero here — that's the intended guard.
 4. **Use the tempfile** for every mysql call this turn: `mysql --defaults-file="$tmp" --safe-updates -e '...'`. Combine with the safety perimeter below.
-5. **Dispatching `mysql-investigator` in settings-file mode** → pass the tempfile path to the agent as the connection method (e.g. "use `mysql --defaults-file=/tmp/abc.cnf`"). The skill — not the agent — owns the tempfile's lifecycle.
-6. **Cleanup at end of turn:** `rm -f "$tmp" /tmp/mysql-client-cmderr.$$`, whether you dispatched the agent or not.
+5. **Dispatching `mysql-investigator`** → pass the tempfile path to the agent as the connection method (e.g. "use `mysql --defaults-file=/tmp/abc.cnf`"). The skill — not the agent — owns the tempfile's lifecycle.
+6. **Cleanup at end of turn:** `rm -f "$tmp" "$err"`, whether you dispatched the agent or not.
 
-If `.claude/mysql-client.local.md` is absent, either ask the user for a connection method (a login-path name, a `--defaults-file` path, or a full `mysql` command prefix — see [`references/connecting.md`](references/connecting.md)), or suggest `/mysql-client:setup` to generate the settings file interactively.
+If `.claude/mysql-client.local.md` is absent, either ask the user for a connection method (a login-path name, a `--defaults-file` path, or a full `mysql` command prefix — see [`references/connecting.md`](references/connecting.md)), or suggest `/mysql-client:setup` to generate the settings file.
 
 ## Safety perimeter (non-negotiable)
 
@@ -68,7 +71,7 @@ See [`references/output-formats.md`](references/output-formats.md) for the full 
 Load the file matching the current step; ignore the rest.
 
 - [`references/connecting.md`](references/connecting.md) — login-paths, `~/.my.cnf`, `--defaults-file`, sockets vs TCP, SSL, verify-connection snippet, RDS/Aurora/MariaDB quirks.
-- [`references/local-settings.md`](references/local-settings.md) — `.claude/mysql-client.local.md` format and `connection_cmd` examples (vault, AWS Secrets Manager, RDS IAM auth, SOPS, 1Password).
+- [`references/local-settings.md`](references/local-settings.md) — `.claude/mysql-client.local.md` format; `connection_cmd` emits a `mysql://` URL; examples (make target, vault, AWS Secrets Manager, SOPS, 1Password) and the URL→INI converter.
 - [`references/safety-perimeter.md`](references/safety-perimeter.md) — deep version of the five rules above; `--safe-updates` semantics; session vars; what "read-only" still affects.
 - [`references/output-formats.md`](references/output-formats.md) — every output flag, pager, encoding, `mysqlsh --json`.
 - [`references/schema-introspection.md`](references/schema-introspection.md) — INFORMATION_SCHEMA cookbook + `SHOW` shortcuts; FK graph, indexes, partitions, views, routines, triggers.

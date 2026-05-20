@@ -13,11 +13,11 @@ You are running `/mysql-client:doctor`: a health check. Write no files, dispatch
    - 1 `mysql` client installed
    - 2 settings file present — **absent is not a failure**; connection discovery is optional
    - 3 settings file valid (SKIP if 2 absent)
-   - 4 `connection_cmd` resolves — live (SKIP if 3 failed or skipped)
+   - 4 `connection_cmd` resolves to a usable URL — live (SKIP if 3 failed or skipped)
    - 5 connection probe — live (SKIP if 4 failed or skipped)
    - 6 `.gitignore` covers the settings file (SKIP if 2 absent)
 
-   Use Read to parse the settings file's YAML frontmatter for checks 3–4. For checks 4–5, capture `connection_cmd` stdout into a `umask 077` `mktemp` file, use it via `mysql --defaults-file=<file>`, and `rm -f` it (plus any stderr capture file) when done. **Never** echo the tempfile's contents — it holds a password.
+   Use Read to parse the settings file's YAML frontmatter for checks 3–4. For checks 4–5, run `connection_cmd` and pipe its output through `${CLAUDE_PLUGIN_ROOT}/scripts/mysql-url-to-cnf/src/mysql_url_to_cnf/__init__.py` into a `umask 077` `mktemp` `.cnf` file, use that via `mysql --defaults-file=<file>`, and `rm -f` it (plus the stderr capture file) when done. **Never** echo the tempfile's contents — it holds a password.
 
 3. Print one line per check. When no settings file exists:
    ```
