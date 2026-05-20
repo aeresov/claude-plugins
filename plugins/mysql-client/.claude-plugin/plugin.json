@@ -1,0 +1,11 @@
+{
+  "name": "mysql-client",
+  "version": "0.2.0",
+  "description": "Drive the `mysql` CLI safely against MySQL or MariaDB databases — read-only-first, with a subagent for multi-step investigations.",
+  "author": {
+    "name": "aeresov"
+  },
+  "homepage": "https://github.com/aeresov/claude-plugins/tree/main/plugins/mysql-client",
+  "repository": "https://github.com/aeresov/claude-plugins",
+  "keywords": ["mysql", "mariadb", "database", "cli", "read-only", "investigation"]
+}

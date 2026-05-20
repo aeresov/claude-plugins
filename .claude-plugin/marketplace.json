@@ -15,6 +15,15 @@
       "license": "AGPL-3.0-only",
       "homepage": "https://github.com/aeresov/claude-plugins/tree/main/plugins/openvpn3-on-demand",
       "repository": "https://github.com/aeresov/claude-plugins"
+    },
+    {
+      "name": "mysql-client",
+      "source": "./plugins/mysql-client",
+      "description": "Drive the `mysql` CLI safely against MySQL or MariaDB databases — read-only-first, with a subagent for multi-step investigations.",
+      "version": "0.2.0",
+      "license": "AGPL-3.0-only",
+      "homepage": "https://github.com/aeresov/claude-plugins/tree/main/plugins/mysql-client",
+      "repository": "https://github.com/aeresov/claude-plugins"
     }
   ]
 }

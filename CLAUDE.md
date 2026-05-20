@@ -8,6 +8,7 @@ A personal Claude Code plugin **marketplace**. The repo root holds `.claude-plug
 
 Plugins:
 - [`openvpn3-on-demand`](plugins/openvpn3-on-demand/CLAUDE.md) — Provides MCP tools to bring an OpenVPN3 tunnel up/down on demand.
+- [`mysql-client`](plugins/mysql-client/CLAUDE.md) — Read-only-first use of the `mysql` CLI for MySQL/MariaDB investigation, plus a `mysql-investigator` subagent.
 
 ## Adding / changing a plugin
 
