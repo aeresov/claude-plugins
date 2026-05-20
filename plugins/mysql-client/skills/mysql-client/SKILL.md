@@ -28,7 +28,7 @@ Flow when the file is present:
 5. **Dispatching `mysql-investigator` in settings-file mode** → pass the tempfile path to the agent as the connection method (e.g. "use `mysql --defaults-file=/tmp/abc.cnf`"). The skill — not the agent — owns the tempfile's lifecycle.
 6. **Cleanup at end of turn:** `rm -f "$tmp" /tmp/mysql-client-cmderr.$$`, whether you dispatched the agent or not.
 
-If `.claude/mysql-client.local.md` is absent, ask the user for a connection method (a login-path name, a `--defaults-file` path, or a full `mysql` command prefix) — see [`references/connecting.md`](references/connecting.md).
+If `.claude/mysql-client.local.md` is absent, either ask the user for a connection method (a login-path name, a `--defaults-file` path, or a full `mysql` command prefix — see [`references/connecting.md`](references/connecting.md)), or suggest `/mysql-client:setup` to generate the settings file interactively.
 
 ## Safety perimeter (non-negotiable)
 

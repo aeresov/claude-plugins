@@ -4,7 +4,7 @@ Developer notes for working inside `mysql-client`. User-facing docs: [`README.md
 
 ## What this plugin is
 
-A skill + subagent bundle that makes Claude an effective and *safe* user of the Linux `mysql` (mysql-client) CLI against MySQL or MariaDB servers. It is **read-only-first** by design — it teaches investigation, not modification. No MCP server, no commands, no per-project settings file. Claude drives `mysql` via Bash; the plugin contributes the policy and methodology.
+A bundle that makes Claude an effective and *safe* user of the Linux `mysql` (mysql-client) CLI against MySQL or MariaDB servers. It is **read-only-first** by design — it teaches investigation, not modification. No MCP server; Claude drives `mysql` via Bash. The plugin contributes a skill, a subagent, the `/mysql-client:setup` and `/mysql-client:doctor` commands, and an optional per-project settings file.
 
 ## Layout
 
@@ -18,6 +18,8 @@ A skill + subagent bundle that makes Claude an effective and *safe* user of the 
   - `explain-reading.md` — `EXPLAIN` / `EXPLAIN FORMAT=JSON` / `EXPLAIN ANALYZE`; type-hierarchy ladder; `Extra` cheat sheet; antipatterns; optimizer trace; `EXPLAIN FOR CONNECTION`.
   - `perf-and-processes.md` — processlist, `performance_schema` digests, lock waits, metadata locks, `sys` schema, slow log discovery, replication-state reads, InnoDB engine status.
 - `agents/mysql-investigator.md` — context-isolated read-only investigator. Tools: `Bash`, `Read`, `Grep`, `Glob` (no `Edit` / `Write` / `NotebookEdit` / `Agent` — write-refusal is enforced at the allowlist level). Same safety perimeter as the skill, duplicated rather than referenced (subagents don't share the parent's skill context). The agent **does not** read `.claude/mysql-client.local.md` — the calling Claude resolves `connection_cmd` and passes the agent a `--defaults-file=<tmp>` path.
+- `commands/setup.md` + `commands/doctor.md` — `/mysql-client:setup` (interactive configurator: picks a secret-store flavor, writes the settings file, fixes `.gitignore`) and `/mysql-client:doctor` (health check). Both read `setup-checklist.md` for the 6 checks so they can't drift. Neither is privileged — `setup` never connects; `doctor` runs the live checks 4–5.
+- `setup-checklist.md` — shared checklist (6 checks + remediation text) at the plugin root, so it isn't itself a slash command. `doctor` reports all 6; `setup` runs the static ones it owns (1, 2, 6). Checks 4–5 are live: they run `connection_cmd` and open a DB connection.
 - `.claude/mysql-client.local.md` (in the *consuming* project, never in this repo) — optional per-project settings. Frontmatter has one field, `connection_cmd`, whose stdout is the body of a `[client]`-section INI. Skill flow lives in `SKILL.md` § Connection discovery; format/examples in `references/local-settings.md`.
 
 ## Validation

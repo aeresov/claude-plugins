@@ -7,9 +7,12 @@ A Claude Code plugin that makes Claude an effective, safe user of the Linux `mys
 ```bash
 /plugin marketplace add aeresov/claude-plugins
 /plugin install mysql-client@aeresov-claude-plugins
+/mysql-client:setup     # optional — configure connection discovery (see below)
 ```
 
 Then ask Claude to do something against a MySQL/MariaDB database. As long as the request fits "connect, look, summarise" (rather than "alter, migrate, drop"), the skill picks it up.
+
+Run `/mysql-client:doctor` any time for a read-only health check of the setup.
 
 ## Prerequisites
 
@@ -24,7 +27,7 @@ See [`skills/mysql-client/references/connecting.md`](skills/mysql-client/referen
 
 ## Connection discovery (optional)
 
-Drop a `.claude/mysql-client.local.md` in the project root with a `connection_cmd` frontmatter field and the skill will fetch credentials per turn — vault, AWS Secrets Manager, RDS IAM auth tokens, SOPS, 1Password, etc. The command's stdout must be a `[client]`-section INI body; the skill writes it to a mode-600 tempfile, runs `mysql --defaults-file=<tmp>`, deletes after the turn. Stdout never enters the conversation transcript.
+`/mysql-client:setup` configures this interactively — it picks the secret-store flavor, assembles the command, writes `.claude/mysql-client.local.md`, and updates `.gitignore`. Or drop the file in by hand: a `connection_cmd` frontmatter field, and the skill fetches credentials per turn — vault, AWS Secrets Manager, RDS IAM auth tokens, SOPS, 1Password, etc. The command's stdout must be a `[client]`-section INI body; the skill writes it to a mode-600 tempfile, runs `mysql --defaults-file=<tmp>`, deletes after the turn. Stdout never enters the conversation transcript.
 
 Minimum file:
 
@@ -96,6 +99,7 @@ Loaded on demand by Claude as each step requires:
 
 ## Troubleshooting
 
+- **Connection trouble, or first-time setup.** Run `/mysql-client:doctor` — it checks the client install, the settings file, that `connection_cmd` resolves, and that a probe actually connects, printing a fix for each failure.
 - **The skill didn't fire when I expected.** Re-phrase the request to include a concrete MySQL trigger phrase (`mysql`, `EXPLAIN`, `SELECT`, schema name). The skill's description prioritises specificity over breadth.
 - **The skill fired on something I wanted handled in plain Bash.** Tell Claude to skip the skill for this turn ("just run the literal command I wrote, don't engage the mysql-client skill").
 - **`mysql_config_editor: command not found`.** You're on a MariaDB-only system (MariaDB ships no equivalent). Use `~/.my.cnf` with `chmod 600` instead.
