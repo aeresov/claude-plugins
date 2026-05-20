@@ -25,10 +25,10 @@ What this points at, which secret store, who to ping when it breaks.
 ### A make / build target that prints a URL
 
 ```yaml
-connection_cmd: AWS_PROFILE=su-build make infra-mysql-url --no-print-directory ENV="${MYSQL_TARGET:-dev}"
+connection_cmd: AWS_PROFILE=su-build make infra-mysql-url --no-print-directory ENV=dev
 ```
 
-`--no-print-directory` keeps make's chatter off stdout; make sure the recipe itself is silent (`@`-prefixed) so **only** the URL is printed. Per-environment switching rides on an env var the command reads — `ENV="${MYSQL_TARGET:-dev}"` — so Claude can prepend `MYSQL_TARGET=staging` per turn from the project's `CLAUDE.md`. Baking the environment into the command locks the settings file to one target.
+`--no-print-directory` keeps make's chatter off stdout; make sure the recipe itself is silent (`@`-prefixed) so **only** the URL is printed. Record the command exactly as you run it — concrete `ENV=dev` and all. The settings file is gitignored and per-developer, and the plugin re-reads it every turn, so switching to another environment is just editing this one line.
 
 ### A literal URL
 

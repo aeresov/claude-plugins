@@ -11,7 +11,7 @@ How to authenticate to MySQL/MariaDB without ever putting a password on the comm
 3. **`~/.my.cnf`** — per-user default. Sections: `[client]` (read by every client), `[mysql]` (the CLI only), `[mysqldump]`, etc.
 4. **`/etc/mysql/my.cnf` and friends** — system-wide. Usually empty of credentials.
 
-`-p<password>` on the command line is **never** acceptable. It's visible to anyone who can `ps`, gets logged by audit systems, and ends up in shell history. Treat anyone suggesting it as wrong.
+`-p<password>` on the command line is **never** acceptable — visible to anyone who can `ps`, logged by audit systems, saved in shell history.
 
 ## Login-paths (MySQL only)
 

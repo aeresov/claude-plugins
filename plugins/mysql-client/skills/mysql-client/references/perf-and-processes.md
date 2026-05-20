@@ -31,8 +31,6 @@ Key columns:
 
 ## `performance_schema` — what's worth querying read-only
 
-The schema's many tables fall into three groups. Useful ones:
-
 ### Top digests by total time (the slow-query proxy)
 
 ```sql
@@ -203,7 +201,7 @@ SELECT @@global.gtid_executed AS executed,
 
 Useful for "can replica X catch up from binlog?" — if `gtid_purged` on the source moved past where the replica is, the replica needs a fresh dump.
 
-## InnoDB engine status (large, dense, useful)
+## InnoDB engine status
 
 ```sql
 SHOW ENGINE INNODB STATUS\G

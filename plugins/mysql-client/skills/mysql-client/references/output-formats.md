@@ -1,6 +1,6 @@
 # Output formats
 
-`mysql` has five output modes. Pick the one whose audience matches: humans read tables, scripts parse TSV, wide rows need vertical, large result sets need streaming. Wrong pick wastes tokens or breaks parsers.
+`mysql` has five output modes; pick the one whose audience matches. Wrong pick wastes tokens or breaks parsers.
 
 ## Mode chooser
 
@@ -88,7 +88,7 @@ pager=less -SFXR
 
 Pager is a CLI feature; it does nothing in `--execute` / `--batch` mode.
 
-## Streaming large result sets (`--quick`)
+## Streaming large result sets (`--quick` / `-q`)
 
 By default `mysql` buffers the whole result set client-side before printing the first row. Two problems with that on big results: client OOMs, and you can't tail-pipe.
 
@@ -99,8 +99,6 @@ mysql --login-path=prod-reader --batch --quick \
 ```
 
 `--quick` keeps server-side cursor active for the duration of the read; you can't run another query on the same session until the current cursor drains. Don't combine `--quick` with `--vertical` for huge sets — vertical mode triples line count.
-
-`--unbuffered` (`-q` is the short alias for `--quick`, *not* `--unbuffered`; the latter is older / less useful).
 
 ## Heredoc + script patterns
 

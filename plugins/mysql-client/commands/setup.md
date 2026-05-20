@@ -29,7 +29,7 @@ Open `${CLAUDE_PLUGIN_ROOT}/skills/mysql-client/references/local-settings.md` an
 Enforce while assembling:
 
 - The command's **stdout must be a single `mysql://` or `mariadb://` URL** — nothing else. No INI body, no log lines. For a build target, make sure the recipe is silent and add `--no-print-directory` (or the tool's equivalent) so only the URL is printed.
-- Keep it task-agnostic. Per-target switches (dev/staging/prod) belong in an env var the command reads — `make infra-mysql-url ENV="${MYSQL_TARGET:-dev}"` — not hard-coded. Claude prepends `MYSQL_TARGET=…` per turn from the project's `CLAUDE.md`.
+- Record the command **verbatim** — exactly as the user runs it to get their URL, concrete environment values and all (`ENV=dev`, `AWS_PROFILE=…`). Don't parametrize it or invent env-var placeholders. The settings file is gitignored, per-developer, and re-read every turn, so pointing at a different environment later is just editing this one line.
 - Don't worry about the password in the URL — the plugin pipes the URL straight through its bundled converter into a mode-600 tempfile; it never reaches a command line or the transcript.
 
 ### 5. Write `.claude/mysql-client.local.md`

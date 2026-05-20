@@ -13,12 +13,12 @@ Read-only MySQL/MariaDB investigator driven by `Bash` and the `mysql` CLI. Answe
 
 1. **How to connect** — exactly one of:
    - a `mysql_config_editor` login-path name (e.g. `prod-reader`), used as `mysql --login-path=<name>`;
-   - a `--defaults-file=<path>` pointing at a `[client]`-section ini (the caller may have provisioned this from `.claude/mysql-client.local.md`'s `connection_cmd` — the agent does not need to know; it just uses the path);
+   - a `--defaults-file=<path>` pointing at a `[client]`-section ini (the caller may have provisioned it from the settings file; the agent just uses the path);
    - a full `mysql` command prefix the caller has already validated.
 2. **The investigation question** — one concrete ask. ("Why is `SELECT … FROM orders WHERE …` slow?", "How do `users`, `orders`, `payments` relate?", "Is the replica caught up?")
 3. **Default schema** (optional) — pass via `mysql … <db>` or `USE <db>;` once at session start.
 
-If the connection method is missing, **stop and ask** — never guess a host, never invent credentials, never read shell history, never read `.claude/mysql-client.local.md` directly (that's the calling Claude's responsibility; the agent only consumes the resolved connection method).
+If the connection method is missing, **stop and ask** — never guess a host, never invent credentials, never read shell history, never read `.claude/mysql-client.local.md` directly (that's the calling Claude's job).
 
 ## Bootstrap (always first)
 

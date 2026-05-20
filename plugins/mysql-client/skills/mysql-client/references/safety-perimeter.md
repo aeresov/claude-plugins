@@ -29,8 +29,6 @@ SET SESSION max_join_size = 100000000;    -- justified join over 100M row produc
 SET SESSION sql_safe_updates = 1;
 ```
 
-`--safe-updates` is a client-side flag that *sets* these session variables on connect. Re-applying them via `SET SESSION` from inside a script achieves the same thing if you couldn't pass the flag.
-
 ## 3. Probe before you query
 
 Before any other SQL, run:
@@ -105,7 +103,7 @@ Even on a `@@read_only = 1` server, with `--safe-updates` on, your session can s
 
 ## Long-lived investigation sessions
 
-By default `wait_timeout` is 28800s (8h). You don't need to touch this for normal work. If you need to keep an interactive session open across a long investigation:
+`wait_timeout` defaults to 28800s (8h). To keep an interactive session open across a long investigation:
 
 ```sql
 SET SESSION wait_timeout = 7200;   -- 2 hours
@@ -119,6 +117,4 @@ Don't set the *global* `wait_timeout` — that's a `SET GLOBAL` write.
 
 ## Behind a connection pooler
 
-ProxySQL, RDS Proxy, and similar can recycle the underlying connection between client requests and may drop session-scoped state. Symptoms: your `SET SESSION sql_safe_updates = 1` evaporates after an idle gap, and you're suddenly running without the guard.
-
-If you see surprising results after a quiet interval, re-run the bootstrap probe and re-apply session vars. Better: have the pooler configured to forward session state if your workload depends on it (out of scope for this skill).
+ProxySQL / RDS Proxy can recycle the underlying connection and drop session-scoped state — your `SET SESSION sql_safe_updates = 1` silently evaporates after an idle gap. If results look off after a quiet interval, re-run the bootstrap probe and re-apply the session vars.
