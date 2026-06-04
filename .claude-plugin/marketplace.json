@@ -24,6 +24,15 @@
       "license": "AGPL-3.0-only",
       "homepage": "https://github.com/aeresov/claude-plugins/tree/main/plugins/mysql-client",
       "repository": "https://github.com/aeresov/claude-plugins"
+    },
+    {
+      "name": "pytest-httpchain",
+      "source": "./plugins/pytest-httpchain",
+      "description": "Author, validate, and maintain pytest-httpchain JSON HTTP-API test scenarios — ships the authoring skill, a static-validating subagent, and /setup + /doctor.",
+      "version": "0.1.0",
+      "license": "AGPL-3.0-only",
+      "homepage": "https://github.com/aeresov/claude-plugins/tree/main/plugins/pytest-httpchain",
+      "repository": "https://github.com/aeresov/claude-plugins"
     }
   ]
 }

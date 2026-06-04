@@ -1,0 +1,11 @@
+{
+  "name": "pytest-httpchain",
+  "version": "0.1.0",
+  "description": "Author, validate, and maintain pytest-httpchain JSON HTTP-API test scenarios — ships the authoring skill, a static-validating subagent, and /setup + /doctor.",
+  "author": {
+    "name": "aeresov"
+  },
+  "homepage": "https://github.com/aeresov/claude-plugins/tree/main/plugins/pytest-httpchain",
+  "repository": "https://github.com/aeresov/claude-plugins",
+  "keywords": ["pytest", "httpchain", "http", "api-testing", "integration-testing", "json"]
+}
