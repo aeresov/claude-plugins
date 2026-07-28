@@ -36,6 +36,29 @@ jobs:
             echo "No plugins found under plugins/ — skipping per-plugin validation."
           fi
 
+      - name: Check version sync (plugin.json ↔ marketplace.json ↔ pyproject.toml)
+        run: |
+          set -euo pipefail
+          fail=0
+          for p in plugins/*/; do
+            manifest="$p.claude-plugin/plugin.json"
+            name=$(jq -r .name "$manifest")
+            pv=$(jq -r .version "$manifest")
+            mv=$(jq -r --arg n "$name" '.plugins[] | select(.name == $n) | .version' .claude-plugin/marketplace.json)
+            if [ "$pv" != "$mv" ]; then
+              echo "::error::$name: plugin.json version ($pv) != marketplace.json entry ($mv)"
+              fail=1
+            fi
+            while IFS= read -r proj; do
+              tv=$(grep -m1 -E '^version *= *"' "$proj" | sed -E 's/^version *= *"([^"]*)".*/\1/')
+              if [ "$tv" != "$pv" ]; then
+                echo "::error::$name: $proj version ($tv) != plugin.json version ($pv)"
+                fail=1
+              fi
+            done < <(find "$p" -name pyproject.toml -not -path '*/.venv/*' | sort)
+          done
+          exit "$fail"
+
       - name: Set up uv
         uses: astral-sh/setup-uv@v5
 
