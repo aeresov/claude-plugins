@@ -13,7 +13,7 @@ Plugins:
 
 ## Adding / changing a plugin
 
-Drop it at `plugins/<name>/` with a `.claude-plugin/plugin.json`, then add a matching entry to the `plugins` array in `.claude-plugin/marketplace.json`. The two manifests duplicate `name` / `description` / `version` / `license` — keep them in sync (a version bump touches both). CI enforces the version part: each `plugin.json` must match its `marketplace.json` entry and any in-tree `pyproject.toml` under that plugin.
+Drop it at `plugins/<name>/` with a `.claude-plugin/plugin.json`, then add a matching entry to the `plugins` array in `.claude-plugin/marketplace.json`. The two manifests duplicate `name` / `description` / `version` / `license` — keep them in sync (a version bump touches both). `scripts/check-version-sync.sh` enforces the version part: each `plugin.json` must match its `marketplace.json` entry and any in-tree `pyproject.toml` under that plugin.
 
 ## Commands
 
@@ -22,6 +22,7 @@ No build or lint step. The gates (mirrored by `.github/workflows/validate.yml` o
 ```bash
 claude plugin validate .                  # validate marketplace.json
 claude plugin validate plugins/<name>     # validate a plugin's plugin.json
+scripts/check-version-sync.sh             # plugin.json ↔ marketplace.json ↔ pyproject.toml versions
 ```
 
 CI additionally runs every in-tree Python test suite under `plugins/` — any `pyproject.toml` with a sibling `tests/` directory — via `uv`. Per-plugin test/run commands live in that plugin's `CLAUDE.md`.
