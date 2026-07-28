@@ -58,6 +58,18 @@ def test_raw_at_in_password():
     assert cnf["host"] == "h"
 
 
+def test_ipv6_host_with_port():
+    cnf = parse(url_to_cnf("mysql://u:pw@[::1]:3307/db"))
+    assert cnf["host"] == "::1"
+    assert cnf["port"] == "3307"
+
+
+def test_ipv6_host_default_port():
+    cnf = parse(url_to_cnf("mysql://u:pw@[2001:db8::5]/db"))
+    assert cnf["host"] == "2001:db8::5"
+    assert cnf["port"] == "3306"
+
+
 def test_mariadb_scheme():
     assert parse(url_to_cnf("mariadb://u:pw@10.0.0.5/db"))["host"] == "10.0.0.5"
 
@@ -107,6 +119,9 @@ def test_surrounding_whitespace_stripped():
     "mysql://h/db",
     "mysql://u:pw@/db",
     "mysql://:pw@h/db",
+    "mysql://u:pw@[::1/db",
+    "mysql://u:pw@[::1]3306/db",
+    "mysql://u:pw@[]/db",
 ])
 def test_rejects_bad_input(bad):
     with pytest.raises(ValueError):

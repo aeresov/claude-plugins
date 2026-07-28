@@ -47,7 +47,16 @@ def url_to_cnf(raw):
         raise ValueError("URL has no user")
 
     hostport = hostpart.split("/", 1)[0].split("?", 1)[0]
-    host, _, port = hostport.partition(":")
+    if hostport.startswith("["):
+        # Bracketed IPv6 literal: [::1] or [::1]:3306. mysql option files take the
+        # address unbracketed (host=::1).
+        bracketed, sep, port = hostport.partition("]")
+        if not sep or (port and not port.startswith(":")):
+            raise ValueError("malformed bracketed IPv6 host")
+        host = bracketed[1:]
+        port = port.lstrip(":")
+    else:
+        host, _, port = hostport.partition(":")
     if not host:
         raise ValueError("URL has no host")
 
