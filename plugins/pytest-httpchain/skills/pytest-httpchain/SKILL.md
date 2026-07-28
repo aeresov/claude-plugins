@@ -303,7 +303,7 @@ For a deeper check that imports your `module:func` references (confirming they r
 uv run pytest-httpchain validate --deep --syspath . test_<name>.http.json
 ```
 
-Fix every reported issue and re-validate until clean. Then run the suite yourself (`uv run pytest -k <name>`) — making the live HTTP calls is the user's call, not this skill's. For a whole-suite health check, use `/pytest-httpchain:doctor`.
+Fix every reported issue and re-validate until clean. Then hand the user the run command (`uv run pytest -k <name>`) — do **not** run the suite yourself; firing the live HTTP calls is the user's call, not this skill's. For a whole-suite health check, use `/pytest-httpchain:doctor`.
 
 Note: the HTTP response is **not** ambient in `{{ }}` templates — `save` what you need from a response first, then reference the saved variable.
 
