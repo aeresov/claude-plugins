@@ -70,7 +70,7 @@ gl api PUT /projects/:project/merge_requests/<iid>/discussions/<id> resolved:=tr
 Gather before proposing anything: branch pushed? target branch? title? description? draft? labels? reviewers? Then — **confirm first**:
 
 ```bash
-gl api POST /projects/:project/merge_requests source_branch=feature/x target_branch=main title='Draft: Add X' description='…' remove_source_branch:=true squash:=true labels=backend,needs-review reviewer_ids:=[12]
+gl api POST /projects/:project/merge_requests source_branch=feature/x target_branch=main title='Draft: Add X' description='…' remove_source_branch:=true squash:=true labels=backend,needs-review reviewer_ids:='[12]'
 ```
 
 - Draft is the **`Draft:` title prefix** — there is no boolean, and `WIP:` is gone (removed 14.8).
@@ -90,13 +90,13 @@ gl api POST /projects/:project/merge_requests source_branch=feature/x target_bra
 gl api PUT /projects/:project/merge_requests/<iid> title='…'
 gl api PUT /projects/:project/merge_requests/<iid> description='…'
 gl api PUT /projects/:project/merge_requests/<iid> add_labels=x remove_labels=y
-gl api PUT /projects/:project/merge_requests/<iid> reviewer_ids:=[12]
+gl api PUT /projects/:project/merge_requests/<iid> reviewer_ids:='[12]'
 gl api PUT /projects/:project/merge_requests/<iid> state_event=close   # or reopen
 gl api PUT /projects/:project/merge_requests/<iid> target_branch=main
 ```
 
 - Use `add_labels`/`remove_labels`, **never `labels=`** — it replaces the whole set.
-- `reviewer_ids:=[]` **unsets all** reviewers; omit the field to keep them.
+- `reviewer_ids:='[]'` **unsets all** reviewers; omit the field to keep them.
 - Mark ready = a title update that removes the `Draft:` prefix.
 
 ## Pipelines for an MR

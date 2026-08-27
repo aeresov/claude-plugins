@@ -14,7 +14,7 @@ A bundle that makes Claude an effective, *safe* user of a self-managed GitLab 15
 - `agents/pipeline-debugger.md` — context-isolated failed-pipeline triage subagent; read-only, returns a short report.
 - `skills/gitlab-client/SKILL.md` — entry point. Owns the write-policy classes (refused / confirm / go-and-report), discovery (`gl version` once per turn), project resolution, context economy, and the inline-vs-dispatch rule.
 - `skills/gitlab-client/references/{local-settings,repo-browsing,merge-requests,pipelines,safety-perimeter,v15-compat}.md` — reference-style docs (purpose → command → gotcha), loaded on demand, each self-sufficient.
-- `scripts/gl` — bash launcher; runs the package from source with `python3`, works from any cwd.
+- `scripts/gl` — bash launcher; runs the package from source with `python3`, works from any cwd. Deliberately not `python3 -m`: it replaces `sys.path[0]` (which `-m` would set to the *current directory*) with the plugin's `src/`, so a checkout containing a decoy `gitlab_client/` can't hijack the CLI (`tests/test_launcher.py`).
 - `scripts/gitlab-client/pyproject.toml` · `uv.lock` — uv project for `gl` (dev dep `pytest`; zero runtime deps).
 - `scripts/gitlab-client/src/gitlab_client/`:
   - `__init__.py` — `__version__`
@@ -27,7 +27,7 @@ A bundle that makes Claude an effective, *safe* user of a self-managed GitLab 15
   - `diff.py` — `file_status` · `render_file` · `render_diffs` · `render_files` · `render_compare` · `mr_diffs` · `commit_diff` · `compare`
   - `artifacts.py` — `encode_artifact_path` · `download_archive` · `fetch_file` · `list_archive` · `extract_archive` · cache paths
   - `cli.py` — `Context` · `build_parser` · `cmd_api`/`cmd_project`/`cmd_version`/`cmd_log`/`cmd_diff`/`cmd_artifacts` · `main`
-- `scripts/gitlab-client/tests/` — `conftest.py` (`StubOpener` · `FakeResponse` · `client` fixture · `run_gl` helper); `test_version.py` · `test_settings.py` · `test_http.py` · `test_project.py` · `test_cli.py` · `test_log.py` · `test_diff.py` · `test_artifacts.py`; the trace and artifact-zip fixtures are built in-test (no `fixtures/` directory on disk).
+- `scripts/gitlab-client/tests/` — `conftest.py` (`StubOpener` · `FakeResponse` · `client` fixture · `run_gl` helper); `test_version.py` · `test_settings.py` · `test_http.py` · `test_project.py` · `test_cli.py` · `test_log.py` · `test_diff.py` · `test_artifacts.py` · `test_launcher.py` (runs `scripts/gl` in a subprocess) · `test_live.py` (opt-in, needs `GITLAB_CLIENT_LIVE=1`); the trace and artifact-zip fixtures are built in-test (no `fixtures/` directory on disk).
 
 ## Commands
 
@@ -35,7 +35,7 @@ A bundle that makes Claude an effective, *safe* user of a self-managed GitLab 15
 claude plugin validate .                              # marketplace
 claude plugin validate plugins/gitlab-client          # this plugin
 cd scripts/gitlab-client && uv sync --group dev && uv run pytest -q   # unit tests (stub transport, no GitLab)
-GITLAB_CLIENT_LIVE=1 GITLAB_CLIENT_URL=… GITLAB_CLIENT_TOKEN=… uv run pytest -q tests/test_live.py   # optional live smoke (added in Task 14)
+GITLAB_CLIENT_LIVE=1 GITLAB_CLIENT_URL=… GITLAB_CLIENT_TOKEN=… uv run pytest -q tests/test_live.py   # opt-in live smoke: GET /metadata + /user
 ./scripts/gl version                                  # run the CLI without a venv
 ```
 
@@ -44,9 +44,22 @@ CI runs the validations and the pytest suite on push/PR via `.github/workflows/v
 ## Gotchas
 
 - **The token never touches a command line.** `settings.resolve_token` runs `token_cmd` in-process; error paths show stderr only. Don't add a `--token` flag.
-- **The write allow-list lives in two places.** `http.WRITE_ALLOW` (enforced) and `references/safety-perimeter.md` (documented). Change both; `tests/test_http.py::ALLOWED/REFUSED` pins the code side.
+- **The write allow-list lives in two places.** `http.WRITE_ALLOW` (enforced) and `references/safety-perimeter.md` (documented). Change both; `tests/test_http.py::ALLOWED/REFUSED` pins the code side. `check_write_policy` also refuses paths that wouldn't round-trip (`#`, whitespace, non-ASCII, dot segments) on *every* verb — urllib truncates at `#`, so `PUT /projects/1#/merge_requests/5` would otherwise match the allow-list and hit `PUT /projects/1`. The `sudo` parameter is refused in `cli.cmd_api` for params, a query string inside PATH, and `--json` bodies.
 - **`/repository/tree` is keyset-only** since 15.0 — `Client.paginate` switches automatically on that path; don't add `page=` there.
-- **Cross-host redirects drop auth.** `AuthStrippingRedirectHandler` — artifact/trace downloads 302 to object storage. Keep `stream_to` downloads going through `Client.request`.
+- **Redirects and Link URLs never carry the token off-origin.** `AuthStrippingRedirectHandler` drops auth unless the target has the API's scheme *and* host (object-storage 302s, and an https→http downgrade behind a misconfigured proxy); `Client.same_origin` re-anchors every `Link: rel="next"` URL on our scheme + host before `paginate` follows it. Keep `stream_to` downloads going through `Client.request`.
 - **References target 15.11.** `v15-compat.md` is the list of things not to add; when the instance is upgraded, re-verify Appendix A of the spec before editing the references.
 - **Subagent rules are duplicated, not linked.** `agents/pipeline-debugger.md` repeats the perimeter because subagents don't inherit skill context.
+- **A project-level `.claude/gitlab-client.local.md` can override `url` and `token_cmd`** (spec §3). That's convenient for a repo on a second instance, but it also means a hostile checkout could point `gl` at another host or run its own `token_cmd` — the same trust model as `mysql-client`'s `connection_cmd`. If that ever matters, restrict the project file to `project:` in `settings.load_settings`.
 - **Version bumps touch four files:** `.claude-plugin/plugin.json`, the repo-root `marketplace.json` entry, `scripts/gitlab-client/pyproject.toml`, `uv.lock` — plus `src/gitlab_client/__init__.py::__version__` (pinned to pyproject by `tests/test_version.py`).
+
+## Not yet verified on the instance
+
+Spec Appendix B lists seven probes against the real 15.11 instance; none has been run yet. Until they are, the references assume the documented behaviour. To record them: run each with `gl` from a clone of a real project and add the answer here.
+
+1. `gl version` and `gl api GET /personal_access_tokens/self --fields scopes` with a `read_api`-only token — do either 401/403?
+2. `Range: bytes=-1024` on `GET /jobs/<id>/trace` (with `curl`, not `gl`) — 206 or 200?
+3. `gl api GET /projects/:project/search scope=blobs search=<known word> --fields path,startline` — results, 400, or empty without Elasticsearch?
+4. `POST …/jobs/<successful id>/retry` and `POST …/jobs/<non-manual id>/play` — exact status and message.
+5. `PUT …/merge_requests/<iid> reviewer_ids:='[<id1>,<id2>]'` on this license — accepted, truncated, or 400?
+6. `PUT …/merge_requests/<iid> add_labels=zz-probe-label` — is an unknown label created or ignored?
+7. `gl artifacts <job with artifacts> --list` — confirms the object-storage redirect path end to end.

@@ -44,9 +44,11 @@ def test_precedence_flag_env_project_user(tmp_path, capsys):
     s = load_settings(cwd=cwd, home=home, env={})
     assert (s.url, s.token_cmd, s.project) == ("https://proj.example", "echo u", "grp/proj")
     assert s.sources == {"url": "project file", "token_cmd": "user file", "project": "project file"}
-    assert s.user_file == home / ".claude/gitlab-client.local.md"
-    assert s.project_file == cwd / ".claude/gitlab-client.local.md"
-    assert "unknown setting 'bogus'" in capsys.readouterr().err
+    assert "unknown setting 'bogus'" in capsys.readouterr().err  # default warn → stderr
+
+    warnings = []
+    load_settings(cwd=cwd, home=home, env={}, warn=warnings.append)
+    assert len(warnings) == 1 and "unknown setting 'bogus'" in warnings[0] and capsys.readouterr().err == ""
 
     s = load_settings(cwd=cwd, home=home, env={ENV_URL: "https://env.example/"})
     assert s.url == "https://env.example"  # trailing slash stripped

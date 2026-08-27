@@ -105,6 +105,10 @@ def test_resolve_from_settings_file(client, opener, tmp_path):
     opener.add(200, PROJECT_JSON)
     s = base_settings(project="group/proj", sources={"project": "project file"})
     assert resolve_project(client, s, remote="origin", cwd=tmp_path, run=git_run("ignored")).resolved_from == "settings"
+    opener.add(200, PROJECT_JSON)
+    s = base_settings(project="https://gitlab.example.com/group/proj/-/pipelines", sources={"project": "project file"})
+    assert resolve_project(client, s, remote="origin", cwd=tmp_path, run=git_run("ignored")).path == "group/proj"
+    assert opener.last.full_url.endswith("/projects/group%2Fproj")  # a URL in project: is parsed like --project
 
 
 def test_resolve_errors(client, opener, tmp_path):

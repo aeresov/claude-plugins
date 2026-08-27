@@ -21,11 +21,11 @@ Checks 1–3 and 8 are static and read-only. Checks 4–7 are **live**: they run
 
 ### 3. Settings valid (only if 2 passed; `n/a` when env-only)
 
-- **Never `Read` or `cat` the settings files** — a hand-written `token_cmd` may contain the token itself, and `Read` output lands in the transcript. Use silent greps:
-  - `grep -qE '^url: *https?://' ~/.claude/gitlab-client.local.md .claude/gitlab-client.local.md 2>/dev/null` → url present in either file
-  - `grep -qE '^token_cmd: *[^ ]' ~/.claude/gitlab-client.local.md .claude/gitlab-client.local.md 2>/dev/null` → token_cmd present in either file
-  - `grep -ohE '^[A-Za-z_]+:' ~/.claude/gitlab-client.local.md .claude/gitlab-client.local.md 2>/dev/null | sort -u` → the key names in use (prints only names, never values)
-- PASS if the first two greps exit 0 and the key names are a subset of `url:`, `token_cmd:`, `project:`.
+- **Never `Read` or `cat` the settings files** — a hand-written `token_cmd` may contain the token itself, and `Read` output lands in the transcript. Use silent greps over the **frontmatter only** (`gl` ignores the Markdown body, so free-form notes there must not fail the check). For each file that exists (`~/.claude/gitlab-client.local.md`, then `.claude/gitlab-client.local.md`):
+  - `sed -n '2,/^---$/p' FILE | grep -qE '^url: *["'"'"']?https?://'` → url present
+  - `sed -n '2,/^---$/p' FILE | grep -qE '^token_cmd: *[^ ]'` → token_cmd present
+  - `sed -n '2,/^---$/p' FILE | grep -oE '^[A-Za-z_]+:' | sort -u` → the key names in use (prints only names, never values)
+- PASS if `url` and `token_cmd` are each present in at least one file and every key name is one of `url:`, `token_cmd:`, `project:`.
 - FAIL → "`~/.claude/gitlab-client.local.md` needs `url: https://…` and `token_cmd: <command printing the token>` in its frontmatter. Re-run `/gitlab-client:setup`, or see `skills/gitlab-client/references/local-settings.md`." (For an unknown key: "unknown key `<k>` in a gitlab-client settings file — only `url`, `token_cmd`, `project` are read.")
 
 ### 4. `token_cmd` resolves (live; only if 3 passed or is `n/a`)
@@ -45,6 +45,7 @@ Checks 1–3 and 8 are static and read-only. Checks 4–7 are **live**: they run
 
 - Run: `"${CLAUDE_PLUGIN_ROOT}/scripts/gl" api GET /personal_access_tokens/self --fields name,scopes,expires_at,active,revoked`
 - PASS if `active` is true, `revoked` is false, and `scopes` contains `api` or `read_api`.
+- FAIL if `scopes` has neither `api` nor `read_api` → "The token can't use the REST API (scopes: `<list>`). Create a token with `read_api` (reads) or `api` (reads + writes) and update the secret behind `token_cmd`." (`read_repository` alone only unlocks the files endpoints.)
 - WARN if `scopes` has `read_api` but not `api` → "Token is read-only (`read_api`): browsing, logs, and diffs work; creating MRs, commenting, retrying jobs and triggering pipelines will fail with 403. Create a token with the `api` scope if you want writes."
 - WARN if `expires_at` is within 14 days → "Token expires on `<date>` — rotate it soon and update `token_cmd`'s secret."
 - WARN if the call itself 403s/404s (check 5 already proved the token works) → "Could not introspect the token (`/personal_access_tokens/self` needs GitLab ≥ 15.5 and may need `read_api`). Check the token's scopes in GitLab → User settings → Access tokens: `read_api` for reads, `api` for writes."
@@ -56,7 +57,7 @@ Checks 1–3 and 8 are static and read-only. Checks 4–7 are **live**: they run
 - PASS if exit 0; note `path_with_namespace` and `resolved_from`.
 - Exit 2 — map `gl`'s message:
   - "…`git remote get-url origin` gave nothing" → `n/a` — "not in a GitLab clone; pass `--project group/name` when calling `gl`, or set `project:` in `.claude/gitlab-client.local.md`".
-  - "…doesn't look like a GitLab project path" → FAIL → "The `origin` remote isn't a GitLab project URL. Set `project: group/name` in `.claude/gitlab-client.local.md` (`/gitlab-client:setup` can write it) or pass `--project`."
+  - "…doesn't look like a GitLab project path" → `n/a` — "the `origin` remote isn't a GitLab project URL (not a GitLab clone); pass `--project group/name` when calling `gl`, or set `project:` in `.claude/gitlab-client.local.md`" — a non-GitLab checkout is not a setup problem.
   - "…not found or not visible" → FAIL → "The remote's path doesn't match a project this token can see. Either the project path differs from the git remote (set `project: group/name` in `.claude/gitlab-client.local.md` — `/gitlab-client:setup` can write it) or the token's user isn't a member."
 - Exit 1 → FAIL with `gl`'s stderr (an API error other than 404; see check 5's causes).
 

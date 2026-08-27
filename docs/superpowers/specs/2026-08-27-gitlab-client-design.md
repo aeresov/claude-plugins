@@ -135,7 +135,7 @@ Global flags on every subcommand: `--url`, `--project`, `--remote`, `-q/--quiet`
   POST /projects/:id/jobs/:jid/artifacts/keep
   ```
 
-  Explicitly outside the list (and therefore refused): `…/merge`, `…/approve`, `…/unapprove`, `…/approvals`, `…/rebase`, `…/jobs/:id/erase`, `…/repository/*` writes (branches, tags, files, commits — git does those locally), project/group/member/variable/hook/protected-branch settings, `/users`, `/personal_access_tokens`, anything under `/admin`, and the `sudo` parameter (refused in code on every verb, including in `--json` bodies). The policy check runs on the raw path *before* project resolution, so a refused call never runs `token_cmd` or touches the network. There is no override flag; if the user wants more, that's a plugin change.
+  Explicitly outside the list (and therefore refused): `…/merge`, `…/approve`, `…/unapprove`, `…/approvals`, `…/rebase`, `…/jobs/:id/erase`, `…/repository/*` writes (branches, tags, files, commits — git does those locally), project/group/member/variable/hook/protected-branch settings, `/users`, `/personal_access_tokens`, anything under `/admin`, and the `sudo` parameter (refused in code on every verb, including in `--json` bodies). The policy check runs on the raw path *before* project resolution, so a refused call never runs `token_cmd` or touches the network; it also refuses, on every verb, paths that wouldn't round-trip through urllib (`#`, whitespace, control or non-ASCII characters, `.`/`..` segments), so the path matched is exactly the path sent. There is no override flag; if the user wants more, that's a plugin change.
 
 ### 4.4 `gl log`
 
@@ -148,7 +148,7 @@ Output always starts with one header line: `job <id> <name> · stage <stage> · 
 - `--sections`: one line per `section_start:<ts>:<name>` … `section_end` pair — `<name> · <lines> lines · <duration>s`; unterminated sections are marked. `--section NAME` prints that section's body (still subject to `--tail`/`--head` if given).
 - `--raw`: skip ANSI stripping (still tailed).
 
-No heuristic "find the failing part"; that's the subagent's job, using `--sections` and `--grep`. The full log is never printed without an explicit `--tail`/`--head`/`--section` bound; an unbounded request (`--tail 0`) is allowed but prints a stderr warning with the byte count first.
+No heuristic "find the failing part"; that's the subagent's job, using `--sections` and `--grep`. The full log is never printed without an explicit `--tail`/`--head`/`--section` bound; an unbounded request (`--tail 0` or `--head 0`) is allowed but prints a stderr warning with the byte count first.
 
 ### 4.5 `gl diff`
 

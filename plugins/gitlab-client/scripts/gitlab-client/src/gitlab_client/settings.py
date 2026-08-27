@@ -56,13 +56,20 @@ def parse_frontmatter(text: str) -> dict[str, str]:
     return out
 
 
-def read_file_settings(path: Path) -> dict[str, str]:
+Warn = Callable[[str], None]
+
+
+def _stderr_warn(message: str) -> None:
+    print(message, file=sys.stderr)
+
+
+def read_file_settings(path: Path, warn: Warn = _stderr_warn) -> dict[str, str]:
     if not path.is_file():
         return {}
     data = parse_frontmatter(path.read_text(encoding="utf-8"))
     for key in data:
         if key not in KNOWN_KEYS:
-            print(f"gl: warning: {path}: unknown setting '{key}' ignored", file=sys.stderr)
+            warn(f"gl: warning: {path}: unknown setting '{key}' ignored")
     return {k: v for k, v in data.items() if k in KNOWN_KEYS and v}
 
 
@@ -73,8 +80,6 @@ class Settings:
     project: str | None = None
     token: str | None = None  # from GITLAB_CLIENT_TOKEN; when set, token_cmd is never run
     sources: dict[str, str] = field(default_factory=dict)
-    user_file: Path | None = None
-    project_file: Path | None = None
 
 
 def load_settings(
@@ -84,12 +89,13 @@ def load_settings(
     env: Mapping[str, str],
     url_flag: str | None = None,
     project_flag: str | None = None,
+    warn: Warn = _stderr_warn,
 ) -> Settings:
     user_path = home / USER_FILE
     project_path = cwd / PROJECT_FILE
     layers = [
-        ("user file", read_file_settings(user_path)),
-        ("project file", read_file_settings(project_path)),
+        ("user file", read_file_settings(user_path, warn)),
+        ("project file", read_file_settings(project_path, warn)),
         ("env", {"url": env[ENV_URL]} if env.get(ENV_URL) else {}),
         ("flag", {k: v for k, v in (("url", url_flag), ("project", project_flag)) if v}),
     ]
@@ -120,8 +126,6 @@ def load_settings(
         project=merged.get("project") or None,
         token=token,
         sources=sources,
-        user_file=user_path if user_path.is_file() else None,
-        project_file=project_path if project_path.is_file() else None,
     )
 
 

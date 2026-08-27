@@ -23,6 +23,7 @@ POST /projects/:id/jobs/:jid/artifacts/keep
 ```
 
 - `DELETE` and `PATCH` do not exist in `gl` at all — the parser accepts only `GET | POST | PUT`.
+- The path is matched exactly as it will be sent: anything that wouldn't round-trip — a `#`, whitespace, control or non-ASCII characters, or a `.`/`..` segment — is refused on every verb. URL-encode file paths and branch names (`%2F`, `%20`) instead.
 - A `sudo` parameter is refused in code on **every** verb, whether passed as `sudo=…`, in a GET query, or inside a `--json` body.
 - There is no override flag. Don't work around a refusal with `curl`; name the operation and hand it back to the user.
 

@@ -43,7 +43,7 @@ gl diff MR_IID [--files] [--file PATH] · gl diff --commit SHA · gl diff --rang
 gl artifacts JOB_ID [--list|--extract DIR|--file PATH [--out FILE]] · gl artifacts --ref REF --job NAME …
 ```
 
-Params: `key=value` is a string, `key:=<json>` is typed (`squash:=true`, `reviewer_ids:=[12]`, `variables:='[{"key":"ENV","value":"staging"}]'`), `key[]=v` repeats. GET params become the query string; POST/PUT params become a JSON body. Exit codes: 0 ok · 1 HTTP/network · 2 config/usage · 3 refused by the write policy.
+Params: `key=value` is a string, `key:=<json>` is typed (`squash:=true`, `reviewer_ids:='[12]'`, `variables:='[{"key":"ENV","value":"staging"}]'`), `key[]=v` repeats. GET params become the query string; POST/PUT params become a JSON body. Exit codes: 0 ok · 1 HTTP/network · 2 config/usage · 3 refused by the write policy.
 
 ## Write policy (non-negotiable)
 

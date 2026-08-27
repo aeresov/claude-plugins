@@ -55,6 +55,15 @@ def test_api_refuses_sudo_parameter(run_gl, opener):
     assert code == 3 and "sudo" in err and opener.requests == []
     code, _, err = run_gl("api", "POST", "/projects/1/merge_requests/2/notes", "--json", '{"body": "x", "sudo": 7}')
     assert code == 3 and "sudo" in err and opener.requests == []
+    code, _, err = run_gl("api", "GET", "/user?sudo=alice")  # query string embedded in PATH
+    assert code == 3 and "sudo" in err and opener.requests == []
+    code, _, err = run_gl("api", "POST", "/projects/1/jobs/5/retry?x=1&sudo[]=alice")
+    assert code == 3 and "sudo" in err and opener.requests == []
+
+
+def test_api_refuses_hash_in_path_before_network(run_gl, opener):
+    code, _, err = run_gl("api", "PUT", "/projects/1#/merge_requests/5", "title=x")
+    assert code == 3 and "write policy" in err and opener.requests == []
 
 
 def test_api_delete_is_usage_error(run_gl):
@@ -82,6 +91,9 @@ def test_api_non_json_response_printed_verbatim(run_gl, opener):
     code, out, _ = run_gl("api", "GET", "/projects/1/repository/files/README.md/raw", "ref=main")
     assert code == 0 and out == "plain text file\n"
     assert opener.last.get_header("Accept") is None  # raw routes don't ask for JSON
+    opener.add(200, b'{"a":1,"b":[1,2]}')  # a .json file: printed byte-for-byte, not re-serialised
+    code, out, _ = run_gl("api", "GET", "/projects/1/repository/files/cfg.json/raw", "ref=main", "--fields", "a")
+    assert code == 0 and out == '{"a":1,"b":[1,2]}'
     opener.add(200, {"id": 1})
     run_gl("api", "GET", "/projects/1")
     assert opener.last.get_header("Accept") == "application/json"

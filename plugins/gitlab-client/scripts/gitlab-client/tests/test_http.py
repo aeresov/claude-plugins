@@ -5,8 +5,17 @@ import urllib.request
 import pytest
 
 from gitlab_client import __version__
-from gitlab_client.errors import GlError, HttpError
-from gitlab_client.http import AuthStrippingRedirectHandler, Client, describe_error
+from gitlab_client.errors import ConfigError, GlError, HttpError, PolicyError
+from gitlab_client.http import (
+    AuthStrippingRedirectHandler,
+    Client,
+    check_write_policy,
+    describe_error,
+    encode_path_segment,
+    parse_params,
+    project_fields,
+    substitute_project,
+)
 
 
 def test_request_sets_headers_and_builds_url(client, opener):
@@ -111,22 +120,20 @@ def test_redirect_handler_strips_auth_cross_host_only():
     cross = handler.redirect_request(req, None, 302, "Found", {}, "https://s3.storage.example/bucket/obj?X-Amz-Signature=abc")
     assert cross.get_header("Private-token") is None and cross.get_header("Authorization") is None
     assert cross.get_header("Accept") == "*/*"
+    downgrade = handler.redirect_request(req, None, 302, "Found", {}, "http://gitlab.example.com/api/v4/y")
+    assert downgrade.get_header("Private-token") is None  # same host, but https→http
+
+
+def test_client_wires_scheme_into_redirect_handler():
+    client = Client("http://gitlab.internal:8080", "tok")
+    assert (client.host, client.scheme) == ("gitlab.internal:8080", "http")
+    handler = next(h for h in client._opener.handlers if isinstance(h, AuthStrippingRedirectHandler))
+    assert (handler.api_host, handler.scheme) == ("gitlab.internal:8080", "http")
 
 
 def test_describe_error_plain_text():
     assert describe_error(502, b"<html>Bad Gateway</html>") == "<html>Bad Gateway</html>"
     assert describe_error(500, b"") == "(empty body)"
-
-
-# ---- Task 4: params, policy, pagination, fields -------------------------------------------
-from gitlab_client.errors import ConfigError, PolicyError  # noqa: E402
-from gitlab_client.http import (  # noqa: E402
-    check_write_policy,
-    encode_path_segment,
-    parse_params,
-    project_fields,
-    substitute_project,
-)
 
 
 def test_parse_params():
@@ -203,6 +210,24 @@ def test_write_policy_refuses(method, path):
         check_write_policy(method, path)
 
 
+@pytest.mark.parametrize(
+    "path",
+    [
+        "/projects/1#/merge_requests/5",  # urllib truncates at '#': would send PUT /projects/1
+        "/projects/1/merge_requests/5 ",  # trailing space
+        "/projects/1/merge_requests/5\n",  # control character
+        "/projects/1/merge_requests/５",  # fullwidth digit: \d matches it, http.client would reject it
+        "/projects/../merge_requests",
+        "/projects/%2e%2e/merge_requests",
+    ],
+)
+def test_write_policy_refuses_paths_that_do_not_round_trip(path):
+    with pytest.raises(PolicyError, match="write policy"):
+        check_write_policy("PUT", path)
+    with pytest.raises(PolicyError, match="write policy"):
+        check_write_policy("GET", path)  # the canonical-path rule applies to every verb
+
+
 def test_write_policy_other_verbs():
     check_write_policy("get", "/anything/at/all")
     with pytest.raises(PolicyError, match="DELETE"):
@@ -242,6 +267,14 @@ def test_paginate_keyset_for_tree(client, opener):
     assert "pagination=keyset" in first and "recursive=true" in first
     assert "&page=" not in first and "?page=" not in first
     assert opener.requests[1].full_url == nxt
+
+
+def test_paginate_reanchors_link_urls_on_our_origin(client, opener):
+    opener.add(200, [1], {"Link": '<http://gitlab.example.com/api/v4/x?page=2>; rel="next"'}).add(200, [2], {"Link": '<https://evil.example/steal?page=3>; rel="next"'}).add(200, [], {})
+    assert client.paginate("/x", None) == [1, 2]
+    assert opener.requests[1].full_url == "https://gitlab.example.com/api/v4/x?page=2"  # scheme restored
+    assert opener.requests[2].full_url == "https://gitlab.example.com/steal?page=3"  # host restored
+    assert all(r.get_header("Private-token") == "tok" for r in opener.requests)
 
 
 def test_paginate_max_cap_warns(client, opener):

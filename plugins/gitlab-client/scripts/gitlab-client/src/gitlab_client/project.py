@@ -92,7 +92,7 @@ class Project:
 def resolve_project(client: Client, settings: Settings, *, remote: str, cwd: Path, run: Runner = subprocess.run) -> Project:
     if settings.project:
         source = "flag" if settings.sources.get("project") == "flag" else "settings"
-        path = parse_project_ref(settings.project, settings.url) if source == "flag" else _clean(settings.project)
+        path = parse_project_ref(settings.project, settings.url)  # a URL works in the settings file too
     else:
         remote_url = git_remote_url(cwd, remote, run)
         if not remote_url:

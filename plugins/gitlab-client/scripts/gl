@@ -2,7 +2,9 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 #
 # Launch the bundled gitlab_client package with the system python3 — no venv.
+# Not `python3 -m`: that puts the *current directory* first on sys.path, so a checkout
+# containing a decoy gitlab_client/ package could hijack the CLI. sys.path[0] is replaced
+# with the plugin's src/ instead.
 set -euo pipefail
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-export PYTHONPATH="$here/gitlab-client/src${PYTHONPATH:+:$PYTHONPATH}"
-exec python3 -m gitlab_client "$@"
+exec python3 -c 'import sys; sys.path[0] = sys.argv.pop(1); from gitlab_client.cli import main; sys.exit(main())' "$here/gitlab-client/src" "$@"

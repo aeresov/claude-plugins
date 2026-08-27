@@ -58,6 +58,6 @@ Must be gitignored — `/gitlab-client:setup` adds `.claude/*.local.md` to `.git
 
 - `read_api` — everything read-only, including job logs and artifacts.
 - `api` — required for any write (MRs, comments, retry/cancel/play/trigger).
-- `read_repository` alone is **not** enough: it covers git-over-HTTP, not the REST API.
+- `read_repository` alone is **not** enough: it unlocks only the repository files/tree endpoints — MRs, pipelines, jobs and logs still 403 with `insufficient_scope`.
 
 `/gitlab-client:doctor` shows the token's scopes and expiry (via `GET /personal_access_tokens/self`) and warns when expiry is near. Tokens created without an expiry get one forced at GitLab 16.0 — expect previously immortal tokens to start expiring after an upgrade.

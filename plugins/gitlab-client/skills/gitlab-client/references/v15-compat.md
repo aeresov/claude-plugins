@@ -17,7 +17,7 @@ Each arrived after 15.11 — the route 404s (`{"error": …}`) or the parameter 
 | `search_recent_successful_pipelines` on artifacts-by-ref | 18.7 | the job-id routes: `gl artifacts <job_id> …` |
 | `draft=` MR list filter | 19.0 | `wip=yes` / `wip=no` |
 | `name=` pipeline list filter | behind a disabled feature flag on 15.11 | filter on `ref=`, `status=`, `source=`, `sha=` |
-| `source=parent_pipeline` pipeline filter | 17.0 | `gl api GET /projects/:project/pipelines/<id>/bridges` → `downstream_pipeline.id` |
+| `source=parent_pipeline` to list child pipelines | accepted on 15.11 but returns `[]` — child pipelines are excluded from the list until 17.0 | `gl api GET /projects/:project/pipelines/<id>/bridges` → `downstream_pipeline.id` |
 | `HEAD` as a ref shortcut on file endpoints | after 15.11 | pass the branch name (`ref=main`) |
 
 ## Deprecated but present — read the new field
@@ -30,7 +30,7 @@ Both old and new appear in 15.11 responses; the old ones are already deprecated 
 | `merged_by` | `merge_user` |
 | `work_in_progress` | `draft` |
 | `reference` | `references` |
-| `GET …/merge_requests/<iid>/changes` | `GET …/merge_requests/<iid>/diffs` (paginated). Call `/changes?access_raw_diffs=true` only to detect `overflow` |
+| `GET …/merge_requests/<iid>/changes` | `GET …/merge_requests/<iid>/diffs` (paginated). Plain `/changes` (deprecated 15.7) is the one response that carries `overflow: true` when the instance diff limits truncated it; `access_raw_diffs=true` is the opposite lever — it pulls the *unlimited* diff from Gitaly (slow, can be huge) — use it only for a file `/diffs` returned empty, and stream it with `--out` |
 | MR `pipeline` field | `head_pipeline` — the full pipeline object, including `status` and `web_url` |
 | `tag_list` | `topics` |
-| `confidential` param on notes | `internal` (renamed in 16.0; both accepted on 15.11) |
+| `confidential` / `internal` on notes | neither exists on **MR** notes in 15.11 (they're issue/epic-only, out of scope here); `POST …/merge_requests/<iid>/notes` takes `body` only — don't send either |

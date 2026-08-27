@@ -130,5 +130,9 @@ def test_gl_log_cli(run_gl, opener):
     assert code == 0 and "printing the whole log" in err
 
     opener.add(200, PROJECT_JSON).add(200, JOB)
+    code, out, err = run_gl("log", "5", "--project", "group/proj", "--head", "0")
+    assert code == 0 and "printing the whole log" in err and out.splitlines()[1:] == CLEAN
+
+    opener.add(200, PROJECT_JSON).add(200, JOB)
     code, out, err = run_gl("log", "5", "--project", "group/proj", "--section", "nope")
     assert code == 1 and "no section named 'nope'" in err

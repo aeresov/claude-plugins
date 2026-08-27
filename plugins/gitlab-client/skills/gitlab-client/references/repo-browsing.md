@@ -43,6 +43,8 @@ gl api GET /projects/:project/repository/files/src%2Fapp.py/raw ref=main
 gl api GET /projects/:project/repository/files/src%2Fapp.py/raw ref=main --out /tmp/app.py   # large: then Read the file
 ```
 
+An LFS-tracked file comes back as the pointer text (`version https://git-lfs…`, `oid sha256:…`, `size N`) — and `size` on the JSON route is the pointer's size. Add `lfs:=true` to get the content (ignored for non-LFS files).
+
 By blob sha (skips path encoding once `blob_id` is known):
 
 ```bash
@@ -52,7 +54,7 @@ gl api GET /projects/:project/repository/blobs/<sha>/raw
 Blame — always pass the range (docs are contradictory on whether it's optional):
 
 ```bash
-gl api GET /projects/:project/repository/files/src%2Fapp.py/blame ref=main range[start]=1 range[end]=80
+gl api GET /projects/:project/repository/files/src%2Fapp.py/blame ref=main 'range[start]=1' 'range[end]=80'
 ```
 
 ## Commits

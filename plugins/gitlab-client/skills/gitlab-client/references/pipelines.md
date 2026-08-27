@@ -26,7 +26,7 @@ gl api GET /projects/:project/pipelines/<id> --fields id,status,ref,sha,duration
 gl api GET /projects/:project/pipelines/<id>/jobs --all --fields id,name,stage,status,allow_failure,duration,web_url
 ```
 
-- Failed only: add `scope[]=failed`. Superseded attempts: add `include_retried:=true`.
+- Failed only: add `'scope[]=failed'`. Superseded attempts: add `include_retried:=true`.
 - There is no stages endpoint — group the jobs by `stage` yourself (they come back ordered by id desc, not stage order).
 
 Bridges (trigger jobs → child / multi-project pipelines):
@@ -59,7 +59,7 @@ gl api POST /projects/:project/pipelines/<id>/retry
 gl api POST /projects/:project/pipelines/<id>/cancel
 ```
 
-- Job retry creates a **new job id** (report it); the old job's status becomes `retried`. Bridge jobs can't be retried on 15.11 — retry the pipeline instead.
+- Job retry creates a **new job id** (report it); the old job keeps its status (`failed`) and disappears from the pipeline's job list unless `include_retried:=true`. Bridge jobs can't be retried on 15.11 — retry the pipeline instead.
 - `play` works on manual jobs only; `job_variables_attributes` is optional.
 - Pipeline retry reruns the failed/canceled jobs and **keeps the same pipeline id**.
 - Pipeline cancel may return 200 with nothing actually cancelled — re-fetch the status before reporting.

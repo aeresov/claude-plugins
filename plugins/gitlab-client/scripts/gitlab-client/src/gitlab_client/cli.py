@@ -1,9 +1,9 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 """argparse front-end for `gl`.
 
-Subcommands: api, project, version (this task); log, diff, artifacts (Tasks 7–9).
-All network access goes through `Context.client`; all inputs (cwd, home, env, the client
-factory, stdio) are injectable so tests never touch the real environment.
+Subcommands: api (any REST v4 call, writes allow-listed), project, version, log, diff, artifacts.
+All network access goes through `Context.client`; cwd, home, env, the client factory and stdio
+are injectable so tests never touch the real environment (git is the one thing they still call).
 """
 from __future__ import annotations
 
@@ -36,7 +36,6 @@ class Context:
         self.home = home
         self.env = env
         self.stderr = stderr
-        self.root = git_toplevel(cwd) or cwd
         self._client_factory = client_factory
         self._settings: Settings | None = None
         self._client: Client | None = None
@@ -45,9 +44,11 @@ class Context:
     @property
     def settings(self) -> Settings:
         if self._settings is None:
+            root = git_toplevel(self.cwd) or self.cwd  # the project-level settings file lives at the repo root
             self._settings = load_settings(
-                cwd=self.root, home=self.home, env=self.env,
+                cwd=root, home=self.home, env=self.env,
                 url_flag=getattr(self.args, "url", None), project_flag=getattr(self.args, "project", None),
+                warn=self.warn,
             )
         return self._settings
 
@@ -104,7 +105,9 @@ def cmd_api(ctx: Context, args: argparse.Namespace, out: TextIO) -> int:
     elif method != "GET":
         body = params
     query = params if method == "GET" else None
-    if "sudo" in params or (isinstance(body, dict) and "sudo" in body):
+    path_query = urllib.parse.parse_qs(urllib.parse.urlsplit(args.path).query, keep_blank_values=True)
+    body_keys = list(body) if isinstance(body, dict) else []
+    if any(k.rstrip("[]") == "sudo" for k in [*params, *path_query, *body_keys]):
         raise PolicyError("refused by gitlab-client write policy: the sudo parameter (impersonation) is not allowed")
 
     path = substitute_project(args.path, ctx.project.path) if ":project" in args.path else args.path
@@ -120,6 +123,9 @@ def cmd_api(ctx: Context, args: argparse.Namespace, out: TextIO) -> int:
         data = ctx.client.paginate(path, query, max_items=args.max, warn=ctx.warn)
     else:
         resp = ctx.client.request(method, path, query=query, json_body=body, accept_json=accept_json)
+        if not accept_json:  # raw/trace/artifact bodies are printed byte-for-byte, never re-serialised
+            out.write(resp.body.decode("utf-8", errors="replace"))
+            return 0
         try:
             data = resp.json()
         except ValueError:
@@ -162,11 +168,12 @@ def cmd_log(ctx: Context, args: argparse.Namespace, out: TextIO) -> int:
     if args.grep:
         out.write("".join(s + "\n" for s in log.grep(lines, args.grep, args.context)))
         return 0
+    bound = args.head if args.head is not None else args.tail
+    if bound == 0:
+        ctx.warn(f"gl: warning: printing the whole log ({len(lines)} lines, {size} bytes)")
     if args.head is not None:
         lines = log.head(lines, args.head)
     elif args.tail is not None:
-        if args.tail == 0:
-            ctx.warn(f"gl: warning: printing the whole log ({len(lines)} lines, {size} bytes)")
         lines = log.tail(lines, args.tail)
     elif not args.section:
         lines = log.tail(lines, log.DEFAULT_TAIL)
@@ -224,7 +231,8 @@ def cmd_artifacts(ctx: Context, args: argparse.Namespace, out: TextIO) -> int:
         else:
             size = dest.stat().st_size
     else:  # by ref: "latest successful" moves, so never cache
-        dest = ctx.cache_dir / f"ref-{args.ref.replace('/', '%2F')}-{args.job}-artifacts.zip"
+        ref, job = (urllib.parse.quote(v, safe="") for v in (args.ref, args.job))  # one path component each
+        dest = ctx.cache_dir / f"ref-{ref}-{job}-artifacts.zip"
         size = artifacts.download_archive(ctx.client, pid, dest, **selector)
     out.write(f"{dest} ({size} bytes)\n")
     if args.list:

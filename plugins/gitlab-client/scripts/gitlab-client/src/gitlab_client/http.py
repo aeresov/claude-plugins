@@ -82,7 +82,6 @@ class Response:
     status: int
     headers: dict[str, str]  # lower-cased keys
     body: bytes
-    url: str
     bytes_written: int = 0
 
     def json(self) -> Any:
@@ -93,19 +92,21 @@ class Response:
 
 
 class AuthStrippingRedirectHandler(urllib.request.HTTPRedirectHandler):
-    """Follow redirects, but drop auth headers when the target host differs from the API host.
+    """Follow redirects, but drop auth headers unless the target is the API origin (scheme + host).
 
     GitLab 302s artifact/trace downloads to pre-signed object-storage URLs; the token must
-    not travel there.
+    not travel there — nor over a same-host https→http downgrade.
     """
 
-    def __init__(self, api_host: str):
+    def __init__(self, api_host: str, scheme: str = "https"):
         super().__init__()
         self.api_host = api_host.lower()
+        self.scheme = scheme.lower()
 
     def redirect_request(self, req, fp, code, msg, headers, newurl):
         new = super().redirect_request(req, fp, code, msg, headers, newurl)
-        if new is not None and urllib.parse.urlsplit(newurl).netloc.lower() != self.api_host:
+        target = urllib.parse.urlsplit(newurl)
+        if new is not None and (target.netloc.lower(), target.scheme.lower()) != (self.api_host, self.scheme):
             for name in AUTH_HEADERS:
                 new.remove_header(name)
         return new
@@ -122,10 +123,12 @@ class Client:
     def __init__(self, base_url: str, token: str, *, opener: Any = None, sleep: Callable[[float], None] = time.sleep):
         self.base_url = base_url.rstrip("/")
         self.api = self.base_url + "/api/v4"
-        self.host = urllib.parse.urlsplit(self.base_url).netloc
+        origin = urllib.parse.urlsplit(self.base_url)
+        self.host = origin.netloc
+        self.scheme = origin.scheme
         self._token = token
         self._sleep = sleep
-        self._opener = opener or urllib.request.build_opener(AuthStrippingRedirectHandler(self.host))
+        self._opener = opener or urllib.request.build_opener(AuthStrippingRedirectHandler(self.host, self.scheme))
 
     def url_for(self, path: str, query: Mapping[str, Any] | None = None) -> str:
         url = self.api + (path if path.startswith("/") else "/" + path)
@@ -133,6 +136,15 @@ class Client:
         if qs:
             url += ("&" if "?" in url else "?") + qs
         return url
+
+    def same_origin(self, url: str) -> str:
+        """Re-anchor a server-supplied URL (a Link header) on our scheme + host.
+
+        The token is attached to every request, so a proxy that rewrites Link URLs to http://
+        or to another host must not be able to redirect it.
+        """
+        parts = urllib.parse.urlsplit(url)
+        return urllib.parse.urlunsplit((self.scheme, self.host, parts.path, parts.query, ""))
 
     def request(
         self,
@@ -142,7 +154,6 @@ class Client:
         query: Mapping[str, Any] | None = None,
         json_body: Any = None,
         accept_json: bool = True,
-        timeout: float | None = None,
         stream_to: Any = None,
         absolute_url: str | None = None,
     ) -> Response:
@@ -157,19 +168,19 @@ class Client:
             headers["Content-Type"] = "application/json"
         req = urllib.request.Request(url, data=data, method=method, headers=headers)
         req.add_header("PRIVATE-TOKEN", self._token)
-        timeout = timeout or (DOWNLOAD_TIMEOUT if stream_to is not None else JSON_TIMEOUT)
+        timeout = DOWNLOAD_TIMEOUT if stream_to is not None else JSON_TIMEOUT
 
         for attempt in (1, 2):
             try:
                 with self._opener.open(req, timeout=timeout) as resp:
                     hdrs = {k.lower(): v for k, v in resp.headers.items()}
                     if stream_to is None:
-                        return Response(resp.status, hdrs, resp.read(), url)
+                        return Response(resp.status, hdrs, resp.read())
                     written = 0
                     while chunk := resp.read(CHUNK):
                         stream_to.write(chunk)
                         written += len(chunk)
-                    return Response(resp.status, hdrs, b"", url, bytes_written=written)
+                    return Response(resp.status, hdrs, b"", bytes_written=written)
             except urllib.error.HTTPError as e:
                 body = e.fp.read() if e.fp is not None else b""
                 if e.code == 429 and attempt == 1:
@@ -243,9 +254,20 @@ WRITE_ALLOW = [
 ]
 
 
+# Anything outside printable ASCII, plus '#': urllib would send a different path than the one we
+# matched (it truncates at '#'; whitespace/control characters break the request line).
+_UNSAFE_PATH = re.compile(r"[^\x21-\x7e]|#")
+
+
 def check_write_policy(method: str, path: str) -> None:
-    """GET always passes; POST/PUT must match WRITE_ALLOW; every other verb is refused."""
+    """Refuse paths that wouldn't round-trip; GET then passes; POST/PUT must match WRITE_ALLOW."""
     method = method.upper()
+    if _UNSAFE_PATH.search(path):
+        raise PolicyError(
+            f"refused by gitlab-client write policy: path must be URL-encoded printable ASCII without '#': {path!r}"
+        )
+    if any(urllib.parse.unquote(seg) in (".", "..") for seg in path.split("?", 1)[0].split("/")):
+        raise PolicyError(f"refused by gitlab-client write policy: path contains a dot segment: {path!r}")
     if method == "GET":
         return
     if method not in ("POST", "PUT"):
@@ -283,7 +305,7 @@ def _paginate(self: Client, path: str, query: Mapping[str, Any] | None, *, max_i
         if keyset:
             m = LINK_NEXT.search(resp.header("link"))
             has_next = bool(m and page)
-            next_url = m.group(1) if has_next else None
+            next_url = self.same_origin(m.group(1)) if has_next else None
         else:
             nxt = resp.header("x-next-page")
             if nxt and page:
@@ -292,7 +314,7 @@ def _paginate(self: Client, path: str, query: Mapping[str, Any] | None, *, max_i
             else:  # some proxies drop x-* headers; fall back to the Link header
                 m = LINK_NEXT.search(resp.header("link"))
                 has_next = bool(m and page)
-                next_url = m.group(1) if has_next else None
+                next_url = self.same_origin(m.group(1)) if has_next else None
         if len(items) >= max_items:
             if len(items) > max_items or has_next:
                 warn(f"gl: warning: --all stopped at --max {max_items} items; more are available")
