@@ -40,7 +40,7 @@ GITLAB_CLIENT_LIVE=1 GITLAB_CLIENT_URL=… GITLAB_CLIENT_TOKEN=… uv run pytest
 ./scripts/gl version                                  # run the CLI without a venv
 ```
 
-CI runs the validations and the pytest suite via `.github/workflows/validate.yml` — it discovers `pyproject.toml` + `tests/` automatically. Ruff and ty are local-only, via `make check`.
+CI runs the validations and then this project's own `make check` (ruff, format, ty, pytest) via `.github/workflows/validate.yml` — it discovers `pyproject.toml` + `tests/` automatically.
 
 ## Gotchas
 

@@ -12,8 +12,8 @@ tidyup:
 	uv run ruff check --fix --unsafe-fixes .
 	uv run ruff format .
 
-# Full local gate: lint, format, types, tests. Stricter than CI,
-# which runs the tests but not ruff/ty.
+# The full gate: lint, format, types, tests. CI runs this exact target,
+# so a green `make check` here is a green CI there.
 check:
 	uv run ruff check .
 	uv run ruff format --check .

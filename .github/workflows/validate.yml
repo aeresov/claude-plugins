@@ -46,20 +46,29 @@ jobs:
       - name: Set up uv
         uses: astral-sh/setup-uv@v5
 
-      - name: Run plugin test suites
+      # Runs each project's own `make check` — ruff, ruff format --check, ty, pytest — so the
+      # local gate and CI are the same command by construction and cannot drift apart.
+      - name: Lint, typecheck and test each Python project
         run: |
           set -euo pipefail
           found=0
           while IFS= read -r proj; do
             found=1
             dir=$(dirname "$proj")
-            if [ -d "$dir/tests" ]; then
-              echo "::group::$dir"
-              (cd "$dir" && uv sync --locked --group dev --quiet && uv run --quiet pytest -q)
-              echo "::endgroup::"
-            else
+            if [ ! -d "$dir/tests" ]; then
               echo "Skipping $dir — no tests/ directory."
+              continue
             fi
+            if [ ! -f "$dir/Makefile" ]; then
+              echo "::error::$dir has tests/ but no Makefile — every in-tree Python project carries the shared one."
+              exit 1
+            fi
+            echo "::group::$dir"
+            # --locked verifies the lock matches pyproject; UV_FROZEN then stops the
+            # Makefile's own `uv run` calls from rewriting it. The two flags conflict
+            # on one command, so they are applied separately.
+            (cd "$dir" && uv sync --locked --group dev --quiet && UV_FROZEN=1 make check)
+            echo "::endgroup::"
           done < <(find plugins -name pyproject.toml -not -path '*/.venv/*' | sort)
           if [ "$found" -eq 0 ]; then
             echo "No in-tree Python projects found."

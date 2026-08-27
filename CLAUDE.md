@@ -32,11 +32,11 @@ Every in-tree Python project (`pyproject.toml` with a sibling `tests/`) carries 
 make sync     # install the dev group
 make test     # pytest -q
 make tidyup   # ruff autofix + format
-make check    # ruff + ruff format --check + ty + pytest (stricter than CI)
+make check    # ruff + ruff format --check + ty + pytest — exactly what CI runs
 make update   # uv lock --upgrade && uv sync
 ```
 
-CI discovers those projects automatically and runs `uv sync --locked --group dev && uv run pytest -q` in each — the tests, but **not** ruff or ty, so `make check` is the stricter gate and lint is enforced by habit, not by CI. Plugin-specific commands (running a server, a live smoke test) live in that plugin's `CLAUDE.md`.
+CI discovers those projects automatically, runs `uv sync --locked --group dev` and then **`make check` itself** in each — so the local gate and CI are the same command and cannot drift. A project with `tests/` but no `Makefile` fails the build. Plugin-specific commands (running a server, a live smoke test) live in that plugin's `CLAUDE.md`.
 
 ## Repo-wide conventions
 
