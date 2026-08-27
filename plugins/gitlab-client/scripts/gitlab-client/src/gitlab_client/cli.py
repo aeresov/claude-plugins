@@ -16,7 +16,7 @@ import urllib.parse
 from pathlib import Path
 from typing import Any, Callable, Mapping, Sequence, TextIO
 
-from . import __version__, log
+from . import __version__, diff, log
 from .errors import ConfigError, GlError, PolicyError
 from .http import Client, check_write_policy, parse_params, project_fields, substitute_project
 from .project import Project, git_toplevel, resolve_project
@@ -174,6 +174,32 @@ def cmd_log(ctx: Context, args: argparse.Namespace, out: TextIO) -> int:
     return 0
 
 
+def cmd_diff(ctx: Context, args: argparse.Namespace, out: TextIO) -> int:
+    if not (args.range or args.commit or args.mr_iid is not None):
+        raise ConfigError("give MR_IID, --commit SHA, or --range FROM..TO")
+    if args.range:
+        frm, sep, to = args.range.partition("..")
+        if not sep or not frm or not to:
+            raise ConfigError("--range needs FROM..TO")
+    pid = ctx.project.id  # resolved only after argument validation, so usage errors never hit the network
+    if args.range:
+        payload = diff.compare(ctx.client, pid, frm, to, args.straight)
+        diffs = payload.get("diffs") or []
+        if not args.files and not args.file:
+            out.write(diff.render_compare(payload))
+            return 0
+    elif args.commit:
+        diffs = diff.commit_diff(ctx.client, pid, args.commit)
+    else:
+        diffs = diff.mr_diffs(ctx.client, pid, args.mr_iid, ctx.warn)
+    if args.file:
+        diffs = [d for d in diffs if args.file in (d.get("new_path"), d.get("old_path"))]
+        if not diffs:
+            raise GlError(f"no file {args.file!r} in this diff")
+    out.write(diff.render_files(diffs) if args.files else diff.render_diffs(diffs))
+    return 0
+
+
 def _not_implemented(ctx: Context, args: argparse.Namespace, out: TextIO) -> int:
     raise ConfigError(f"{args.command} is not implemented yet")
 
@@ -183,7 +209,7 @@ COMMANDS: dict[str, Command] = {
     "project": cmd_project,
     "version": cmd_version,
     "log": cmd_log,
-    "diff": _not_implemented,
+    "diff": cmd_diff,
     "artifacts": _not_implemented,
 }
 
