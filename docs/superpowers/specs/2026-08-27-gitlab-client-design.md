@@ -106,7 +106,7 @@ Global flags on every subcommand: `--url`, `--project`, `--remote`, `-q/--quiet`
 - `PATH` is relative to `/api/v4`. The literal segment **`:project`** is replaced with the URL-encoded resolved project path (so `gl api GET /projects/:project/merge_requests` works from any clone). Any other segment that needs encoding (branch names, file paths with `/`) is the caller's job; the reference docs show `--file-path` style examples with `%2F`, and `gl diff`/`gl artifacts` do it internally.
 - **Params:** `key=value` (string), `key:=<json>` (typed — numbers, booleans, arrays, objects), `key[]=value` (repeatable → array). GET → query string (`urlencode(doseq=True)`, arrays as `key[]=`). POST/PUT → one JSON body, `Content-Type: application/json`. `--json BODY` sends a raw JSON body instead.
 - **`--all`:** follows pagination and prints one concatenated array. Offset endpoints: sets `per_page=100`, loops on the `x-next-page` header (falls back to `Link rel="next"`); never relies on `x-total`. For paths matching `/repository/tree$` it switches to keyset (`pagination=keyset&per_page=100`, following `Link rel="next"`) because 15.x no longer supports offset paging there. `--max N` caps the item count (default 1000) and warns on stderr when the cap truncates.
-- **`--fields a,b.c`:** projects each object (or each element of an array) to the listed dotted paths; missing → `null`. Exists purely for context economy — a bare MR is ~2 KB of JSON.
+- **`--fields a,b.c`:** projects each object (or each element of an array) to the listed dotted paths; an all-digit segment indexes a list (`notes.0.body`); missing → `null`. Exists purely for context economy — a bare MR is ~2 KB of JSON.
 - **`--out FILE`:** streams the raw response body to `FILE` (binary, 1 MiB chunks) and prints one line `wrote <bytes> bytes to <FILE>`; used for traces, artifacts, raw files.
 - Output is pretty JSON (indent 2) on stdout; non-JSON responses (raw files, `/trace`) are written verbatim unless `--out` is given.
 
@@ -135,7 +135,7 @@ Global flags on every subcommand: `--url`, `--project`, `--remote`, `-q/--quiet`
   POST /projects/:id/jobs/:jid/artifacts/keep
   ```
 
-  Explicitly outside the list (and therefore refused): `…/merge`, `…/approve`, `…/unapprove`, `…/approvals`, `…/rebase`, `…/jobs/:id/erase`, `…/repository/*` writes (branches, tags, files, commits — git does those locally), project/group/member/variable/hook/protected-branch settings, `/users`, `/personal_access_tokens`, anything under `/admin`, and the `sudo` parameter/header. There is no override flag; if the user wants more, that's a plugin change.
+  Explicitly outside the list (and therefore refused): `…/merge`, `…/approve`, `…/unapprove`, `…/approvals`, `…/rebase`, `…/jobs/:id/erase`, `…/repository/*` writes (branches, tags, files, commits — git does those locally), project/group/member/variable/hook/protected-branch settings, `/users`, `/personal_access_tokens`, anything under `/admin`, and the `sudo` parameter (refused in code on every verb, including in `--json` bodies). The policy check runs on the raw path *before* project resolution, so a refused call never runs `token_cmd` or touches the network. There is no override flag; if the user wants more, that's a plugin change.
 
 ### 4.4 `gl log`
 
@@ -188,7 +188,7 @@ rename from … / rename to …     # when renamed_file
   - *Refused outright* — anything not on the allow-list; hand it back to the user by name (merge, approve, delete, rebase, settings, repository writes → "use git locally").
   - *Confirm first* — creating or updating an MR, posting any note/discussion/reply, resolving a thread: show the exact target (`project!iid`) and the payload (title/description/body verbatim), ask, and send only after an explicit yes. A "just do it" for the turn still needs one confirmation per distinct payload.
   - *Go and report* — retry/cancel jobs and pipelines, play manual jobs, trigger a pipeline (with the variables echoed), keep artifacts. Report the resulting job/pipeline id, status, and `web_url`.
-- **Context economy.** Lists always with `--fields`; `--all` only with a filter (`state=opened`, `ref=`, `updated_after=`); `gl log` never with `--tail 0`; big diffs via `--files` first, then per file; raw files via `HEAD`/`X-Gitlab-Size` first when the size is unknown.
+- **Context economy.** Lists always with `--fields`; `--all` only with a filter (`state=opened`, `ref=`, `updated_after=`); `gl log` never with `--tail 0`; big diffs via `--files` first, then per file; raw files of unknown size via the JSON files endpoint's `--fields size,encoding` first (`gl` has no `HEAD` verb), then `/raw --out`.
 - **Inline vs dispatch.** One lookup, one write, or a small read → inline. Failed-pipeline triage, "why is CI red", anything needing 5+ calls or reading logs from more than one job → dispatch `pipeline-debugger` with the project path, the identifiers, and the question.
 - **Stepping out.** Issues/epics, approvals/merge, other forges, `python-gitlab`/`glab` code questions.
 
@@ -196,7 +196,7 @@ The six reference files are each self-contained (purpose → command → gotcha)
 
 ## 6. Subagent `pipeline-debugger`
 
-- **Frontmatter:** `tools: Bash, Read, Grep, Glob` (no `Edit`/`Write`/`NotebookEdit`/`Agent`). `model` inherited.
+- **Frontmatter:** `tools: Bash, Read, Grep, Glob` (no `Edit`/`Write`/`NotebookEdit`/`Agent`). `model: sonnet` (repo convention — the other plugins' subagents pin it too).
 - **Inputs (from the calling skill):** the `gl` path, the project path, one of {pipeline id, job id, branch, MR iid}, and the question. It does **not** read settings files or resolve tokens — `gl` does that on every call, so the agent needs nothing secret.
 - **Flow:** resolve the pipeline (`/pipelines/:id`, or `/merge_requests/:iid` → `head_pipeline`, or `/pipelines?ref=&order_by=updated_at&per_page=1`) → `/pipelines/:id/jobs?include_retried=false --fields id,name,stage,status,allow_failure,web_url` → `/pipelines/:id/bridges` and recurse into `downstream_pipeline.id` → for each failed job: `gl log <id> --sections`, then the last section(s) and `--grep -i 'error|fail|exception|traceback|fatal' -C 3` → if an MR is in play, `gl diff <iid> --files` to correlate touched paths with the failing job.
 - **Output contract:** ≤ 40 lines per failing job: job name/stage/id/`web_url`, the decisive log excerpt (≤ 20 lines, verbatim), probable cause, and a suggested next step (which `gl` write to run, or which file to change). Never runs retry/cancel/play itself — it recommends.
@@ -217,7 +217,7 @@ The six reference files are each self-contained (purpose → command → gotcha)
 | 7 | project resolves                        | `gl project` in the current repo; `n/a` outside a git repo or with no GitLab-looking remote and no `project:` | yes |
 | 8 | `.gitignore` covers `.claude/*.local.md`| only when a project-level file exists                                                                    | no    |
 
-- **`/gitlab-client:setup`** — interactive. Check 1 first (stop on fail). If the user file exists: show `url` + `token_cmd`, offer Keep / Reconfigure / Abort. Ask for the URL; ask where the token comes from (Keeper `ksm`, `pass`, 1Password `op`, env var → `printf '%s' "$VAR"`, literal → `echo <token>` with a warning that the file is then a secret, other) and assemble `token_cmd` verbatim. Write `~/.claude/gitlab-client.local.md`. Then offer a project-level file: only if `origin` doesn't parse or the user wants to pin `project:`; write it and fix `.gitignore` (check 8). Never runs `token_cmd`; prints "run `/gitlab-client:doctor` to verify".
+- **`/gitlab-client:setup`** — interactive. Check 1 first (stop on fail). If the user file exists: show `url` and whether `token_cmd` is set (never its value), offer Keep / Reconfigure / Abort. Ask for the URL; ask where the token comes from (Keeper `ksm`, `pass`, 1Password `op`, env var → `printf '%s' "$VAR"`, other) and assemble `token_cmd` verbatim. A literal token in the file is refused (setup and doctor may show the `token_cmd` line — never the token). Neither command ever `Read`s the settings files; validity checks are silent `grep -q`s. Write `~/.claude/gitlab-client.local.md`. Then offer a project-level file: only if `origin` doesn't parse or the user wants to pin `project:`; write it and fix `.gitignore` (check 8). Never runs `token_cmd`; prints "run `/gitlab-client:doctor` to verify".
 - **`/gitlab-client:doctor`** — read-only; runs 1–8, prints one `PASS/WARN/FAIL/SKIP/n-a` line per check with the checklist's remediation text verbatim, ends with `OK — gitlab-client ready · <host> · GitLab <version> · scopes <…> · project <path>` or `<n> issue(s) — see FAIL lines above`. Checks 4–7 run `token_cmd` and hit the API, so they prompt for permission once each — expected.
 
 Both commands' `allowed-tools` are limited to the listed shell probes, `Read`, `Glob`, `Write`/`Edit` (setup only) and `AskUserQuestion` (setup only).
