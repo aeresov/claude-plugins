@@ -1,6 +1,6 @@
 ---
 name: vpn-on-demand
-description: Connect the project's OpenVPN3 tunnel before commands that touch private network resources — RDS/ElastiCache/MemoryDB hosts, internal hostnames, private kubectl contexts, RFC1918 targets of remote-access verbs, plus any trigger_patterns declared in .claude/openvpn3-on-demand.local.md — and disconnect at task end. Requires that settings file: without it the skill is a no-op. Linux only. Not for localhost, Docker/compose networks, .local mDNS names, or public endpoints.
+description: Connect the project's OpenVPN3 tunnel before commands that touch private network resources — RDS/ElastiCache/MemoryDB hosts, internal hostnames, private kubectl contexts, RFC1918 targets of remote-access verbs, plus any trigger_patterns declared in .claude/openvpn3-on-demand.local.md — and disconnect at task end. Requires that settings file — without it the skill is a no-op. Linux only. Not for localhost, Docker/compose networks, .local mDNS names, or public endpoints.
 ---
 
 # VPN On Demand
