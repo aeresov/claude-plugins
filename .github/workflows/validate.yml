@@ -1,9 +1,13 @@
 name: Validate marketplace
 
 on:
-  push:
-    branches: [main]
+  push:            # every branch, so work in progress is verified before it reaches a PR or main
   pull_request:
+
+# One run per ref: a rapid follow-up push supersedes the run still going.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   validate:
