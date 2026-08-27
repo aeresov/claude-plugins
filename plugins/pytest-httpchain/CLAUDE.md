@@ -18,8 +18,11 @@ Folded in here in lieu of a separate spec:
 
 ## Layout
 
-- `skills/pytest-httpchain/SKILL.md` — the one skill. Frontmatter `description` is load-bearing (it decides triggering). Body: a short workflow preamble (setup check; inline vs subagent; always validate), then the authoring reference (scenario/stage/request/response/templates/substitutions/`$include`/`$merge`/`$ref`/parametrize/parallel/example), then validate + the read-only inspection commands (`resolve`/`show`/`graph`/`schema`). The canonical authoring guide — keep it accurate to the package's models.
-- `agents/httpchain-author.md` — context-isolated authoring subagent. Tools `Write, Edit, Read, Bash, Grep, Glob`; `model: sonnet`. Reads the SKILL.md as its reference, writes `test_*.http.json`, loops on `validate`, and **refuses live HTTP** (the no-network rule is stated in the agent file, not just the skill — subagents don't inherit the parent's skill context).
+- `skills/pytest-httpchain/SKILL.md` — the one skill. Frontmatter `description` is load-bearing (it decides triggering). Body: a short workflow preamble (setup check; inline vs subagent; always validate), the core authoring reference (scenario/stage/request/response/templates), a `## References` index, then validate + the read-only inspection commands (`resolve`/`show`/`graph`/`schema`). The canonical authoring guide — keep it accurate to the package's models.
+- `skills/pytest-httpchain/references/` — loaded on demand, matching the other plugins' progressive-disclosure shape.
+  - `composition.md` — substitutions, `$include`/`$merge`/`$ref`, parametrize, parallel execution.
+  - `example.md` — one complete multi-stage scenario, end to end.
+- `agents/httpchain-author.md` — context-isolated authoring subagent. Tools `Write, Edit, Read, Bash, Grep, Glob`; `model: sonnet`. Reads the SKILL.md (and its `references/`) as its reference, writes `test_*.http.json`, loops on `validate`, and **refuses live HTTP** (the no-network rule is stated in the agent file, not just the skill — subagents don't inherit the parent's skill context).
 - `commands/setup.md` — `/pytest-httpchain:setup`: detect manager → verify/guide install → optional `suffix` ini → optional scaffold. Never installs, validates, or dispatches.
 - `commands/doctor.md` — `/pytest-httpchain:doctor`: runs checks 1–4 read-only (including a static `validate` pass). Reports; fixes nothing.
 - `setup-checklist.md` — the four shared checks + verbatim remediation, read by both commands so they can't drift. Plugin-root file, deliberately not a slash command.
@@ -35,7 +38,7 @@ The plugin ships no Python, so the marketplace CI's test-suite step finds nothin
 
 ## Gotchas
 
-- **The skill is the only copy of the authoring guide.** When the package changes scenario syntax (new body type, new response step, renamed field, new `HTTPCHAINxxx` code), this `SKILL.md` won't update itself. Treat a package syntax change as a paired edit here, and bump the plugin version. Source of truth: the package's `packages/pytest-httpchain-models` and `validation.py`.
+- **The skill is the only copy of the authoring guide.** When the package changes scenario syntax (new body type, new response step, renamed field, new `HTTPCHAINxxx` code), this `SKILL.md` (and `references/composition.md`) won't update itself. Treat a package syntax change as a paired edit here, and bump the plugin version. Source of truth: the package's `packages/pytest-httpchain-models` and `validation.py`.
 - **`HTTPCHAINxxx` severities are load-bearing.** `000/001/002/007/008/01x` are errors (fail `validate`); `003/004/005/006/013/02x` are warnings (pass `validate` unless `--strict`). Don't describe a warning code as an error — `doctor.md`'s sample output and the skill depend on getting this right.
 - **The no-live-HTTP boundary is duplicated, not linked.** It's in both `SKILL.md` and `agents/httpchain-author.md` because the subagent can't see the skill's context. Tighten one → tighten both.
 - **The skill `description` is load-bearing.** Keep the concrete trigger phrases (`test_<name>.http.json`, "scenario", "`$ref`/`$include`", "`HTTPCHAINxxx`", "chain HTTP calls"). Dropping them narrows triggering; adding unrelated phrases broadens it past the plugin's competence.

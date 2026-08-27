@@ -19,7 +19,7 @@ Authors one pytest-httpchain scenario to a working, **statically valid** state a
 
 ## The authoring loop
 
-1. **Read the skill first.** Open `${CLAUDE_PLUGIN_ROOT}/skills/pytest-httpchain/SKILL.md` and follow it — it is the authoritative scenario reference (structure, body types, response steps, templates, `$include`/`$merge`/`$ref`, parametrize, parallel). Re-read the section you need rather than guessing syntax.
+1. **Read the skill first.** Open `${CLAUDE_PLUGIN_ROOT}/skills/pytest-httpchain/SKILL.md` and follow it — it is the authoritative scenario reference (structure, body types, response steps, templates). For `$include`/`$merge`/`$ref`, substitutions, parametrize and parallel stages, also read `references/composition.md` beside it; `references/example.md` has a full worked scenario. Re-read the section you need rather than guessing syntax.
 2. **Write** the scenario JSON to the target path.
 3. **Inspect (multi-file or multi-stage)** — `<invocation> resolve <file>` to confirm `$ref`/`$include`/`$merge` inline as intended, and `<invocation> show <file>` to check the data-flow (which stage saves/consumes what). Static, no network; catches forward-reference mistakes before validation. (≥0.5.0)
 4. **Validate** — run `<invocation> validate <file>` for fast structural + data-flow checks. If `module:func` references or referenced files/schemas are present, run `<invocation> validate --deep --syspath <dir> <file>` to confirm imports, signatures, and file existence.

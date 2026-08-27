@@ -127,7 +127,9 @@ def test_redirect_handler_strips_auth_cross_host_only():
 def test_client_wires_scheme_into_redirect_handler():
     client = Client("http://gitlab.internal:8080", "tok")
     assert (client.host, client.scheme) == ("gitlab.internal:8080", "http")
-    handler = next(h for h in client._opener.handlers if isinstance(h, AuthStrippingRedirectHandler))
+    opener: urllib.request.OpenerDirector = client._opener
+    # typeshed omits OpenerDirector.handlers; it exists at runtime.
+    handler = next(h for h in opener.handlers if isinstance(h, AuthStrippingRedirectHandler))  # ty: ignore[unresolved-attribute]
     assert (handler.api_host, handler.scheme) == ("gitlab.internal:8080", "http")
 
 
@@ -137,11 +139,16 @@ def test_describe_error_plain_text():
 
 
 def test_parse_params():
-    items = ["state=opened", "per_page=5", "labels[]=a", "labels[]=b", "squash:=true",
-             'vars:=[{"key":"K","value":"v"}]', "range[start]=1", "empty=", "title=a=b"]
+    items = ["state=opened", "per_page=5", "labels[]=a", "labels[]=b", "squash:=true", 'vars:=[{"key":"K","value":"v"}]', "range[start]=1", "empty=", "title=a=b"]
     assert parse_params(items) == {
-        "state": "opened", "per_page": "5", "labels": ["a", "b"], "squash": True,
-        "vars": [{"key": "K", "value": "v"}], "range[start]": "1", "empty": "", "title": "a=b",
+        "state": "opened",
+        "per_page": "5",
+        "labels": ["a", "b"],
+        "squash": True,
+        "vars": [{"key": "K", "value": "v"}],
+        "range[start]": "1",
+        "empty": "",
+        "title": "a=b",
     }
     with pytest.raises(ConfigError, match="bad JSON for x"):
         parse_params(["x:={oops"])
@@ -161,6 +168,9 @@ def test_encode_and_substitute_project():
 ALLOWED = [
     ("POST", "/projects/42/merge_requests"),
     ("POST", "/projects/grp%2Fproj/merge_requests"),
+    # cmd_api checks the policy on the *unsubstituted* path, and every doc example uses :project
+    ("POST", "/projects/:project/merge_requests"),
+    ("POST", "/projects/:project/merge_requests/7/discussions/6a1f0c2e9b3d4f5a6b7c8d9e0f1a2b3c4d5e6f70/notes"),
     ("PUT", "/projects/42/merge_requests/7"),
     ("POST", "/projects/42/merge_requests/7/notes"),
     ("POST", "/projects/42/merge_requests/7/discussions"),
@@ -247,7 +257,7 @@ def test_paginate_offset(client, opener):
 
 
 def test_paginate_stops_on_empty_page_without_header(client, opener):
-    opener.add(200, [1], {}).add(200, [], {})
+    opener.add(200, [1], {})
     assert client.paginate("/x", None) == [1]
     assert len(opener.requests) == 1  # no x-next-page and no Link → done after the first page
 
@@ -270,7 +280,9 @@ def test_paginate_keyset_for_tree(client, opener):
 
 
 def test_paginate_reanchors_link_urls_on_our_origin(client, opener):
-    opener.add(200, [1], {"Link": '<http://gitlab.example.com/api/v4/x?page=2>; rel="next"'}).add(200, [2], {"Link": '<https://evil.example/steal?page=3>; rel="next"'}).add(200, [], {})
+    opener.add(200, [1], {"Link": '<http://gitlab.example.com/api/v4/x?page=2>; rel="next"'}).add(200, [2], {"Link": '<https://evil.example/steal?page=3>; rel="next"'}).add(
+        200, [], {}
+    )
     assert client.paginate("/x", None) == [1, 2]
     assert opener.requests[1].full_url == "https://gitlab.example.com/api/v4/x?page=2"  # scheme restored
     assert opener.requests[2].full_url == "https://gitlab.example.com/steal?page=3"  # host restored
@@ -299,3 +311,9 @@ def test_project_fields():
     assert project_fields({"a": {"b": 1}}, ["a.b"]) == {"a.b": 1}
     assert project_fields({"notes": [{"body": "b"}, {"body": "c"}]}, ["notes.0.body", "notes.5.body", "notes.x"]) == {"notes.0.body": "b", "notes.5.body": None, "notes.x": None}
     assert project_fields("scalar", ["a"]) == "scalar"
+
+
+def test_parse_params_rejects_scalar_and_list_for_one_key():
+    for items in (["a=1", "a[]=2"], ["a[]=1", "a=2"]):
+        with pytest.raises(ConfigError, match="both"):
+            parse_params(items)

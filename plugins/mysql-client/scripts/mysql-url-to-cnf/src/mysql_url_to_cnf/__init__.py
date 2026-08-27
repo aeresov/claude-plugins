@@ -7,14 +7,19 @@ isn't a usable URL. `main()` wraps it as a stdin->stdout filter for the
 mysql-client plugin's connection-discovery flow. Pure standard library — no
 runtime dependencies, runnable with plain python3.
 """
+
 import sys
 from urllib.parse import unquote
 
 SSL_MODES = {
-    "disable": "DISABLED", "disabled": "DISABLED",
-    "prefer": "PREFERRED", "preferred": "PREFERRED",
-    "require": "REQUIRED", "required": "REQUIRED",
-    "verify-ca": "VERIFY_CA", "verify-full": "VERIFY_IDENTITY",
+    "disable": "DISABLED",
+    "disabled": "DISABLED",
+    "prefer": "PREFERRED",
+    "preferred": "PREFERRED",
+    "require": "REQUIRED",
+    "required": "REQUIRED",
+    "verify-ca": "VERIFY_CA",
+    "verify-full": "VERIFY_IDENTITY",
     "verify-identity": "VERIFY_IDENTITY",
 }
 
@@ -35,6 +40,10 @@ def url_to_cnf(raw):
     raw = raw.strip()
     if not raw:
         raise ValueError("empty input — connection_cmd produced nothing")
+    if raw.split() != [raw]:
+        # A URL never contains whitespace, so anything here is extra output (a `make` banner,
+        # a log line). Fail loudly rather than embed it in the option file.
+        raise ValueError("input is not a bare URL — it carries extra output; make connection_cmd print only the URL")
     scheme, sep, after = raw.partition("://")
     if not sep or scheme.lower() not in ("mysql", "mariadb"):
         raise ValueError("input is not a mysql:// or mariadb:// URL")
@@ -58,7 +67,7 @@ def url_to_cnf(raw):
     if not host:
         raise ValueError("URL has no host")
 
-    tail = hostpart[len(hostport):]
+    tail = hostpart[len(hostport) :]
     database = tail.split("?", 1)[0].lstrip("/")
     query = tail.split("?", 1)[1] if "?" in tail else ""
 

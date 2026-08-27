@@ -1,6 +1,6 @@
 ---
 description: Configure mysql-client connection discovery for this project — record the command that prints the database's connection URL, write .claude/mysql-client.local.md, and add it to .gitignore. Read-only against the host and database; runs nothing privileged and never connects.
-allowed-tools: Bash(mysql --version), Bash(test -f *), Read, Glob, Write, Edit, AskUserQuestion
+allowed-tools: Bash(mysql --version), Bash(test -f *), Bash(grep *), Bash(awk *), Read, Glob, Write, Edit, AskUserQuestion
 ---
 
 You are running `/mysql-client:setup`: an interactive configurator. You will write **only** `.claude/mysql-client.local.md` and (if needed) a line in `.gitignore`. You will **not** run the project's `connection_cmd`, **not** connect to any database, and **not** dispatch the `mysql-investigator` agent.
@@ -13,7 +13,14 @@ First read the shared checklist at `${CLAUDE_PLUGIN_ROOT}/setup-checklist.md` �
 Run check 1 (`mysql` client installed). If it fails, print its remediation text and **stop** — tell the user to re-run `/mysql-client:setup` once the client is installed.
 
 ### 2. Existing settings file?
-Run check 2. If `.claude/mysql-client.local.md` already exists, Read it, show the current `connection_cmd`, and ask via **AskUserQuestion**: *Keep as-is* / *Reconfigure (overwrite)* / *Abort*. Stop on Keep or Abort.
+Run check 2. If `.claude/mysql-client.local.md` already exists, do **not** `Read` it — `connection_cmd` may be a literal `echo 'mysql://user:pw@host/db'`, and reading it would put the password in the transcript. Probe it silently instead:
+
+```bash
+grep -qE '^connection_cmd: *[^ ]' .claude/mysql-client.local.md && \
+  grep -oE '^connection_cmd: *[^ ]+' .claude/mysql-client.local.md | awk '{print $2}'
+```
+
+Report only that `connection_cmd` is set and its first token (`make`, `vault`, `aws`, `echo`, …), never the whole line. Then ask via **AskUserQuestion**: *Keep as-is* / *Reconfigure (overwrite)* / *Abort*. Stop on Keep or Abort.
 
 ### 3. Where does the connection URL come from?
 The one setting, `connection_cmd`, is a command whose stdout is a `mysql://` (or `mariadb://`) URL. Ask via **AskUserQuestion** — "Where does this project's MySQL connection URL come from?":
@@ -63,4 +70,4 @@ connection_cmd: |
 Run check 6. If `.gitignore` doesn't already cover the settings file, append `.claude/*.local.md` (create `.gitignore` if absent). If already covered, say so and change nothing.
 
 ### 7. Summary
-Print the path written and the assembled `connection_cmd`. End with: "Done. The skill re-reads this file every turn — no restart needed. Run `/mysql-client:doctor` to verify the URL resolves and the connection actually works."
+Print the path written and the *shape* of the command (its first token) — not the assembled `connection_cmd`, which may embed the URL and its password. End with: "Done. The skill re-reads this file every turn — no restart needed. Run `/mysql-client:doctor` to verify the URL resolves and the connection actually works."

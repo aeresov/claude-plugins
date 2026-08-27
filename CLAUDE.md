@@ -14,7 +14,7 @@ Plugins:
 
 ## Adding / changing a plugin
 
-Drop it at `plugins/<name>/` with a `.claude-plugin/plugin.json`, then add a matching entry to the `plugins` array in `.claude-plugin/marketplace.json`. The two manifests duplicate `name` / `description` / `version` / `license` — keep them in sync (a version bump touches both). `scripts/check-version-sync.sh` enforces the version part: each `plugin.json` must match its `marketplace.json` entry and any in-tree `pyproject.toml` under that plugin.
+Drop it at `plugins/<name>/` with a `.claude-plugin/plugin.json`, then add a matching entry to the `plugins` array in `.claude-plugin/marketplace.json`. The two manifests duplicate `name` / `description` / `version` — keep them in sync (a version bump touches both). `license` lives only in `marketplace.json`. `scripts/check-version-sync.sh` enforces the version part: each `plugin.json` must match its `marketplace.json` entry and any in-tree `pyproject.toml` under that plugin.
 
 ## Commands
 

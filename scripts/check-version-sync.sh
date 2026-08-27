@@ -9,7 +9,7 @@ set -euo pipefail
 shopt -s nullglob
 
 fail=0
-err() { echo "::error::$1"; fail=1; }
+err() { echo "${GITHUB_ACTIONS:+::error::}$1" >&2; fail=1; }
 
 declare -A mkt
 while read -r n v; do mkt[$n]=$v; done < <(jq -r '.plugins[] | "\(.name) \(.version)"' .claude-plugin/marketplace.json)

@@ -8,7 +8,7 @@ A bundle that makes Claude an effective, *safe* user of a self-managed GitLab 15
 
 ## Layout
 
-- `.claude-plugin/plugin.json` — manifest (name/description/version/license mirror the repo-root `marketplace.json` entry).
+- `.claude-plugin/plugin.json` — manifest (name/description/version mirror the repo-root `marketplace.json` entry; `license` lives only there).
 - `CLAUDE.md` · `README.md` · `setup-checklist.md` — this file; user docs; the shared checklist (8 checks + remediation text) read by both commands so they can't drift. It lives at the plugin root so it isn't itself a slash command.
 - `commands/setup.md` · `commands/doctor.md` — `/gitlab-client:setup` (interactive configurator; runs the static checks it owns: 1, 2, 3, 8) and `/gitlab-client:doctor` (health check; reports all 8).
 - `agents/pipeline-debugger.md` — context-isolated failed-pipeline triage subagent; read-only, returns a short report.
@@ -52,16 +52,16 @@ CI runs the validations and the pytest suite on push/PR via `.github/workflows/v
 - **A project-level `.claude/gitlab-client.local.md` can override `url` and `token_cmd`** (spec §3). That's convenient for a repo on a second instance, but it also means a hostile checkout could point `gl` at another host or run its own `token_cmd` — the same trust model as `mysql-client`'s `connection_cmd`. If that ever matters, restrict the project file to `project:` in `settings.load_settings`.
 - **Version bumps touch four files:** `.claude-plugin/plugin.json`, the repo-root `marketplace.json` entry, `scripts/gitlab-client/pyproject.toml`, `uv.lock` — plus `src/gitlab_client/__init__.py::__version__` (pinned to pyproject by `tests/test_version.py`).
 
-## Verified on the instance (2026-08-27, GitLab 15.2.5 CE at gitlabs.soundunited.com)
+## Verified against a live instance (2026-08-27, GitLab 15.2.5 CE)
 
-Spec Appendix B probes, run with `gl` against `heos/heos` (read-only) and `alexander.eresov/workarounds` (writes). The instance turned out to be **15.2.5 CE**, not the 15.11 EE the spec assumed — hence the intra-15.x table in `v15-compat.md`.
+Spec Appendix B probes, run with `gl` against a read-only project and a throwaway project (writes). The instance turned out to be **15.2.5 CE**, not the 15.11 EE the spec assumed — hence the intra-15.x table in `v15-compat.md`.
 
 1. **Scopes of `/metadata` and `/personal_access_tokens/self`:** `/metadata` and `/user` work with both `api` and `read_api`. `/personal_access_tokens/self` returns **401** for both — it doesn't exist before 15.5; doctor check 6 WARNs on 401/403/404.
 2. **`Range` on `GET /jobs/:id/trace`:** ignored — `Range: bytes=-1024` returns 200 with the full body; `Content-Type: text/plain`. `gl log` keeps downloading whole traces.
 3. **Project code search `scope=blobs`:** works on CE without Elasticsearch (basic search) — results carry `path` and `startline`.
-4. **Retry / play:** `POST …/jobs/<id>/play` on a *finished* `when: manual` job creates and runs a new job (id 881619 here — cancelled straight after). `POST …/jobs/<id>/retry` on a never-run manual job and on a job that was already re-played → **403 `Job is not retryable`**. `cancel` on a pending job → 200, `status: canceled`.
+4. **Retry / play:** `POST …/jobs/<id>/play` on a *finished* `when: manual` job creates and runs a new job (cancelled straight after). `POST …/jobs/<id>/retry` on a never-run manual job and on a job that was already re-played → **403 `Job is not retryable`**. `cancel` on a pending job → 200, `status: canceled`.
 5. **Multiple `reviewer_ids`:** not run — no throwaway MR existed in a project the user owns.
 6. **Unknown label via `add_labels`:** not run — same reason.
 7. **Artifacts:** `gl artifacts <job> --list` and `--file` work. Downloads are **proxied** here (200, no `Location`), so the cross-host redirect stripping in `AuthStrippingRedirectHandler` is covered by unit tests only.
 
-Also observed: `GET …/merge_requests/<iid>/diffs` → 404 (15.7+); `/changes` works and reports `overflow`. `detailed_merge_status` is `null`; `merge_status` is populated. `order_by=version` on tags → 400. Keyset tree paging, `/bridges`, `test_report_summary`, `/members/all`, `/labels` all fine. The api token's user is Developer (30) on `heos/heos`.
+Also observed: `GET …/merge_requests/<iid>/diffs` → 404 (15.7+); `/changes` works and reports `overflow`. `detailed_merge_status` is `null`; `merge_status` is populated. `order_by=version` on tags → 400. Keyset tree paging, `/bridges`, `test_report_summary`, `/members/all`, `/labels` all fine. The api token's user is Developer (30) on the read-only project.

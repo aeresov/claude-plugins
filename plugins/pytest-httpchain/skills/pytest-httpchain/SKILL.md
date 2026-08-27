@@ -25,7 +25,7 @@ Missing? Stop and run `/pytest-httpchain:setup` (or have the user add it as a de
 - **A single small scenario, or a one-line edit → do it inline** with the reference below, then validate.
 - **A multi-stage chain, multi-file `$ref`/`$include` composition, parametrized/parallel stages, or anything needing several validate→fix rounds → dispatch the [`httpchain-author`](../../agents/httpchain-author.md) subagent.** Hand it the goal, the target `test_*.http.json` path, the API shape (endpoints, auth, expected codes), and any `--syspath` directory where `module:func` references live. It authors and statically validates in an isolated context and returns the finished scenario. It **never makes live HTTP calls** — it only writes JSON and runs `pytest-httpchain validate`.
 
-Always `validate` after authoring, inline or not (see the last section).
+Always `validate` after authoring, inline or not (see *Validate your scenario* below).
 
 ---
 
@@ -152,131 +152,12 @@ Use `{{ expr }}` syntax. Expressions are evaluated with Python semantics.
 
 **JSON literals:** `true`, `false`, `null` map to Python `True`, `False`, `None`.
 
-## Substitutions
+## References
 
-Define variables before stages run:
+Load these as the task needs them:
 
-```json
-"substitutions": [
-  { "vars": { "base_url": "https://api.example.com", "count": "{{ 2 + 3 }}" } },
-  { "functions": { "generate_token": "mymodule:create_jwt" } }
-]
-```
-
-Substitutions can appear at scenario level (global) or stage level (local).
-
-## References ($include / $merge / $ref)
-
-Split scenarios across files. `$include` and `$merge` are preferred (they avoid editor conflicts with JSON-Schema's `$ref`); `$ref` is the legacy spelling. All three behave identically — the referenced content is deep-merged with any sibling properties.
-
-```json
-{
-  "request": {
-    "$include": "common.json#/requests/get_user"
-  }
-}
-```
-
-Sibling properties are deep-merged with the referenced content:
-
-```json
-{
-  "$include": "base_request.json",
-  "headers": { "X-Custom": "override" }
-}
-```
-
-## Parametrize
-
-Run a stage with different inputs:
-
-```json
-"parametrize": [
-  {
-    "individual": { "user_id": [1, 2, 3] },
-    "ids": ["user-one", "user-two", "user-three"]
-  }
-]
-```
-
-Or use combinations:
-
-```json
-"parametrize": [
-  {
-    "combinations": [
-      { "method": "GET", "expected": 200 },
-      { "method": "DELETE", "expected": 403 }
-    ]
-  }
-]
-```
-
-## Parallel execution
-
-Execute requests concurrently for load testing:
-
-```json
-"parallel": {
-  "repeat": 100,
-  "max_concurrency": 10,
-  "calls_per_sec": 50
-}
-```
-
-Or iterate over parameter sets in parallel:
-
-```json
-"parallel": {
-  "foreach": [{ "individual": { "id": [1, 2, 3, 4, 5] } }],
-  "max_concurrency": 5
-}
-```
-
-## Complete example: multi-stage API test
-
-```json
-{
-  "substitutions": [
-    { "vars": { "base": "{{ env('API_URL', 'http://localhost:8000') }}" } }
-  ],
-  "stages": [
-    {
-      "name": "create user",
-      "request": {
-        "url": "{{ base }}/users",
-        "method": "POST",
-        "body": { "json": { "name": "Alice", "email": "alice@example.com" } }
-      },
-      "response": [
-        { "verify": { "status": 201 } },
-        { "save": { "jmespath": { "user_id": "id" } } }
-      ]
-    },
-    {
-      "name": "get user",
-      "request": {
-        "url": "{{ base }}/users/{{ user_id }}"
-      },
-      "response": [
-        { "verify": { "status": 200 } },
-        { "save": { "jmespath": { "name": "name" } } },
-        { "verify": { "expressions": ["{{ name == 'Alice' }}"] } }
-      ]
-    },
-    {
-      "name": "delete user",
-      "request": {
-        "url": "{{ base }}/users/{{ user_id }}",
-        "method": "DELETE"
-      },
-      "response": [
-        { "verify": { "status": 204 } }
-      ]
-    }
-  ]
-}
-```
+- [`references/composition.md`](references/composition.md) — substitutions, `$include` / `$merge` / `$ref`, parametrize, parallel execution.
+- [`references/example.md`](references/example.md) — a complete multi-stage scenario, end to end.
 
 ## Validate your scenario
 

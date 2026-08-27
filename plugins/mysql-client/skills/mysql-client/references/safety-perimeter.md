@@ -42,13 +42,19 @@ Surface the answer verbatim in chat. The two checks that matter:
 - **`@@hostname`** — confirms you hit the host you meant to. Critical when the user provides a DSN you can't visually verify; critical when reader/writer endpoints look similar (`my-cluster-ro.<id>.<region>.rds.amazonaws.com` vs `my-cluster.<id>.<region>.rds.amazonaws.com`).
 - **`@@read_only` / `@@super_read_only`** — if either is `1`, the server itself refuses non-temporary writes from anyone but `SUPER`/`CONNECTION_ADMIN`. That's a hard backstop; if both are `0`, you have no backstop and `--safe-updates` is doing all the work.
 
-Then run the safety set if we're against a writable server:
+Then set the statement timeout — **always**, writable server or replica, since a runaway `SELECT` is just as likely on a reader:
 
 ```sql
-SET SESSION sql_safe_updates = 1;
 SET SESSION max_execution_time = 30000;   -- MySQL: milliseconds, SELECT-only
 -- MariaDB equivalent:
 -- SET SESSION max_statement_time = 30;   -- seconds (DECIMAL), broader scope
+```
+
+And add the write guard only when the server is writable (`@@read_only` and `@@super_read_only` both `0`) — on a
+read-only server the engine is already the backstop:
+
+```sql
+SET SESSION sql_safe_updates = 1;
 ```
 
 `max_execution_time` (MySQL 5.7.4+) cancels `SELECT` statements past the limit. It **does not** cancel `UPDATE`, `DELETE`, or DDL — those run to completion. MariaDB's `max_statement_time` does cover more statement kinds.

@@ -24,8 +24,10 @@ from pydantic import BaseModel, Field
 __version__ = _pkg_version("openvpn3-mcp")
 
 try:
-    import dbus  # type: ignore[import-not-found]
-    import openvpn3  # type: ignore[import-not-found]
+    # Both ship as system packages (python3-dbus, openvpn3-client) reached via
+    # --system-site-packages; no type checker or venv-only environment can see them.
+    import dbus  # type: ignore[import-not-found]  # ty: ignore[unresolved-import]
+    import openvpn3  # type: ignore[import-not-found]  # ty: ignore[unresolved-import]
 except ImportError:
     print(
         "openvpn3-mcp: cannot import 'dbus' and/or 'openvpn3'. Install the 'python3-dbus' and 'openvpn3-client' system packages.",
@@ -46,7 +48,9 @@ _DBUS_ERRORS = (dbus.exceptions.DBusException, RuntimeError)
 _DISCONNECT_TIMEOUT_SECS: float = 5.0
 
 # How long we poll session status after `Connect()` waiting for CONN_CONNECTED before giving up.
-_CONNECT_TIMEOUT_SECS: float = 10.0
+# Bounds the whole handshake (transport + TLS + route/DNS push); expiry also tears the session down,
+# so keep it generous enough for a TCP-fallback or high-latency link.
+_CONNECT_TIMEOUT_SECS: float = 30.0
 
 # StatusMinor names that mean the tunnel won't come up — fail fast instead of waiting for the timeout.
 _CONNECT_FAILURE_MINORS: frozenset[str] = frozenset({"CONN_FAILED", "CONN_AUTH_FAILED", "CONN_DISCONNECTED"})
@@ -58,7 +62,7 @@ _CONNECT_FAILURE_MINORS: frozenset[str] = frozenset({"CONN_FAILED", "CONN_AUTH_F
 class SessionView(BaseModel):
     path: Annotated[str, Field(description="D-Bus object path.")]
     config_name: Annotated[str, Field(description="Registered openvpn3 config name.")]
-    status: Annotated[str, Field(description="'MAJOR / MINOR: message' from the session manager.")]
+    status: Annotated[str, Field(description="'MAJOR/MINOR' from the session manager, plus ': message' when one is set.")]
 
 
 class VpnStatusOk(BaseModel):
@@ -126,6 +130,13 @@ def _dbus_error_msg(exc: BaseException) -> str:
     return str(exc)
 
 
+def _format_status(st: dict[str, Any]) -> str:
+    major = getattr(st.get("major"), "name", "?")
+    minor = getattr(st.get("minor"), "name", "?")
+    message = str(st.get("message", "") or "")
+    return f"{major}/{minor}" + (f": {message}" if message else "")
+
+
 def _session_view(sess: Any) -> SessionView:
     config_name = "<unknown>"
     for key in ("config_name", "session_name"):
@@ -133,8 +144,7 @@ def _session_view(sess: Any) -> SessionView:
             config_name = str(sess.GetProperty(key))
             break
     try:
-        st = sess.GetStatus()
-        status = f"{getattr(st.get('major'), 'name', '?')} / {getattr(st.get('minor'), 'name', '?')}: {st.get('message', '')}"
+        status = _format_status(sess.GetStatus())
     except _DBUS_ERRORS as exc:
         status = f"<unavailable: {_dbus_error_msg(exc)}>"
     return SessionView(path=str(sess.GetPath()), config_name=config_name, status=status)
@@ -164,13 +174,6 @@ def _wait_session_cleared(profile: str, timeout: float = _DISCONNECT_TIMEOUT_SEC
             return True
         time.sleep(0.1)
     return not _sessions_for(profile)
-
-
-def _format_status(st: dict[str, Any]) -> str:
-    major = getattr(st.get("major"), "name", "?")
-    minor = getattr(st.get("minor"), "name", "?")
-    message = str(st.get("message", "") or "")
-    return f"{major}/{minor}" + (f": {message}" if message else "")
 
 
 def _await_connected(sess: Any, profile_name: str) -> VpnError | None:
@@ -348,7 +351,13 @@ def vpn_connect_ephemeral(
     except _DBUS_ERRORS as exc:
         return VpnError(profile_name=profile_name, message=f"Import failed: {_dbus_error_msg(exc)}")
 
-    return _start_session(profile_name, overrides)
+    result = _start_session(profile_name, overrides)
+    if isinstance(result, VpnError):
+        # NewTunnel consumes a single-use config; if we failed before that, drop it so the name is reusable.
+        for cfg in _configs_for(profile_name):
+            with suppress(*_DBUS_ERRORS):
+                cfg.Remove()
+    return result
 
 
 @mcp.tool(annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=True, idempotentHint=True, openWorldHint=False))

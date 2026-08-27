@@ -5,13 +5,14 @@ Precedence, highest first: CLI flags → environment → project file → user f
 The token is resolved by running `token_cmd` (a user-authored shell command line —
 `shell=True` is deliberate) and lives only in this process's memory.
 """
+
 from __future__ import annotations
 
 import subprocess
 import sys
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Callable, Mapping
 
 from .errors import ConfigError
 
@@ -108,18 +109,14 @@ def load_settings(
 
     url = merged.get("url")
     if not url:
-        raise ConfigError(
-            f"no GitLab URL configured — run /gitlab-client:setup to create {user_path} (or set {ENV_URL})"
-        )
+        raise ConfigError(f"no GitLab URL configured — run /gitlab-client:setup to create {user_path} (or set {ENV_URL})")
     if not url.startswith(("http://", "https://")):
         raise ConfigError(f"url must start with http:// or https:// (got {url!r}, from {sources['url']})")
 
     token = env.get(ENV_TOKEN) or None
     token_cmd = None if token else merged.get("token_cmd")
     if not token and not token_cmd:
-        raise ConfigError(
-            f"no token_cmd configured in {user_path} — run /gitlab-client:setup (or set {ENV_TOKEN})"
-        )
+        raise ConfigError(f"no token_cmd configured in {user_path} — run /gitlab-client:setup (or set {ENV_TOKEN})")
     return Settings(
         url=url.rstrip("/"),
         token_cmd=token_cmd,

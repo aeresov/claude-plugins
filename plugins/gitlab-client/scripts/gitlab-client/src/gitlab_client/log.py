@@ -2,6 +2,7 @@
 """Job log (trace) handling: download to a cache file, strip ANSI, parse runner sections,
 and expose bounded views. The full log is never returned to the caller as one blob.
 """
+
 from __future__ import annotations
 
 import re
@@ -93,11 +94,7 @@ def grep(lines: list[str], pattern: str, context: int = 0) -> list[str]:
 
 
 def sections_summary(sections: list[Section]) -> list[str]:
-    return [
-        f"{s.name} · {s.end_line - s.start_line} lines · "
-        + (f"{s.duration}s" if s.duration is not None else "unterminated")
-        for s in sections
-    ]
+    return [f"{s.name} · {s.end_line - s.start_line} lines · " + (f"{s.duration}s" if s.duration is not None else "unterminated") for s in sections]
 
 
 def section_body(lines: list[str], sections: list[Section], name: str) -> list[str] | None:

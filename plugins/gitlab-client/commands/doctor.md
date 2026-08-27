@@ -1,9 +1,9 @@
 ---
 description: Diagnose the gitlab-client setup — python3, settings files, token_cmd resolves, instance reachable and its version, token scopes and expiry, project resolves from the git remote, .gitignore — and report what is missing. Runs your token_cmd (inside gl) and makes three read-only API calls.
-allowed-tools: Bash(python3 -c *), Bash(test -f *), Bash(test -n *), Bash(grep *), Read, Glob
+allowed-tools: Bash(python3 -c *), Bash(test -f *), Bash(test -n *), Bash(grep *), Bash(sed -n *), Bash(sort *), Read, Glob
 ---
 
-You are running `/gitlab-client:doctor`: a health check. Write no files, dispatch no agent, make no write calls. Checks 1–3 and 8 are static. Checks 4–7 are **live** — they run `${CLAUDE_PLUGIN_ROOT}/scripts/gl`, which runs the user's `token_cmd` internally and calls `GET /metadata`, `GET /personal_access_tokens/self`, and `GET /projects/:path`. The three `gl` calls aren't pre-approved, so each prompts for permission once — that is expected. `Read` is for `.gitignore` only; the settings files are inspected with silent `grep`s (see the checklist) so a `token_cmd` never enters the transcript.
+You are running `/gitlab-client:doctor`: a health check. Write no files, dispatch no agent, make no write calls. Checks 1–3 and 8 are static. Checks 4–7 are **live** — they run `${CLAUDE_PLUGIN_ROOT}/scripts/gl`, which runs the user's `token_cmd` internally and calls `GET /metadata`, `GET /personal_access_tokens/self`, and `GET /projects/:path`. The three `gl` calls aren't pre-approved, so each prompts for permission once — that is expected. `Read` is for `.gitignore` only; the settings files are inspected with silent `sed -n` + `grep` probes (see the checklist) so a `token_cmd` never enters the transcript.
 
 ## Steps
 

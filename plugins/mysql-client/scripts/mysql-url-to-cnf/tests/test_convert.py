@@ -30,9 +30,7 @@ def test_basic_url():
 
 
 def test_example_rds_proxy_url():
-    url = ("mysql://su_ws_user:cQQo*Wvtw6DfxG^F@"
-           "feat-staged-fw-hatch-userpass.endpoint.proxy-chmww1z0xozm."
-           "us-east-1.rds.amazonaws.com:3306/altecws?sslmode=require")
+    url = "mysql://su_ws_user:cQQo*Wvtw6DfxG^F@feat-staged-fw-hatch-userpass.endpoint.proxy-chmww1z0xozm.us-east-1.rds.amazonaws.com:3306/altecws?sslmode=require"
     cnf = parse(url_to_cnf(url))
     assert cnf["host"].endswith(".rds.amazonaws.com")
     assert cnf["user"] == '"su_ws_user"'
@@ -90,14 +88,17 @@ def test_no_sslmode_line():
     assert "ssl-mode" not in parse(url_to_cnf("mysql://u:pw@h/db"))
 
 
-@pytest.mark.parametrize("mode,expected", [
-    ("disable", "DISABLED"),
-    ("prefer", "PREFERRED"),
-    ("require", "REQUIRED"),
-    ("verify-ca", "VERIFY_CA"),
-    ("verify-full", "VERIFY_IDENTITY"),
-    ("verify-identity", "VERIFY_IDENTITY"),
-])
+@pytest.mark.parametrize(
+    "mode,expected",
+    [
+        ("disable", "DISABLED"),
+        ("prefer", "PREFERRED"),
+        ("require", "REQUIRED"),
+        ("verify-ca", "VERIFY_CA"),
+        ("verify-full", "VERIFY_IDENTITY"),
+        ("verify-identity", "VERIFY_IDENTITY"),
+    ],
+)
 def test_sslmode_mapping(mode, expected):
     assert parse(url_to_cnf("mysql://u:pw@h/db?sslmode=" + mode))["ssl-mode"] == expected
 
@@ -111,18 +112,24 @@ def test_surrounding_whitespace_stripped():
     assert parse(url_to_cnf("  mysql://u:pw@h/db\n"))["host"] == "h"
 
 
-@pytest.mark.parametrize("bad", [
-    "",
-    "   ",
-    "make[1]: Entering directory",
-    "https://example.com/",
-    "mysql://h/db",
-    "mysql://u:pw@/db",
-    "mysql://:pw@h/db",
-    "mysql://u:pw@[::1/db",
-    "mysql://u:pw@[::1]3306/db",
-    "mysql://u:pw@[]/db",
-])
+@pytest.mark.parametrize(
+    "bad",
+    [
+        "",
+        "   ",
+        "make[1]: Entering directory",
+        # trailing output after a valid URL — the `make` recipe case local-settings.md warns about
+        "mysql://u:pw@h/db\nmake[1]: Leaving directory",
+        "mysql://u:pw@h/db extra",
+        "https://example.com/",
+        "mysql://h/db",
+        "mysql://u:pw@/db",
+        "mysql://:pw@h/db",
+        "mysql://u:pw@[::1/db",
+        "mysql://u:pw@[::1]3306/db",
+        "mysql://u:pw@[]/db",
+    ],
+)
 def test_rejects_bad_input(bad):
     with pytest.raises(ValueError):
         url_to_cnf(bad)
@@ -148,7 +155,8 @@ def test_main_cli_success():
     result = subprocess.run(
         [sys.executable, str(MODULE)],
         input="mysql://u:pw@h/db?sslmode=require",
-        capture_output=True, text=True,
+        capture_output=True,
+        text=True,
     )
     assert result.returncode == 0
     assert result.stdout.startswith("[client]\n")
@@ -159,7 +167,8 @@ def test_main_cli_rejects_garbage_without_echo():
     result = subprocess.run(
         [sys.executable, str(MODULE)],
         input="not a url",
-        capture_output=True, text=True,
+        capture_output=True,
+        text=True,
     )
     assert result.returncode != 0
     assert "mysql-url-to-cnf:" in result.stderr

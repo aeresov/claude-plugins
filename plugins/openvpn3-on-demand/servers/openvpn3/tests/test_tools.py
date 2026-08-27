@@ -3,8 +3,6 @@
 
 from __future__ import annotations
 
-import pytest
-
 from _fakes import FakeConfig, FakeConfigManager, FakeSession, FakeSessionManager
 
 # vpn_status ------------------------------------------------------------------
@@ -172,10 +170,17 @@ def test_vpn_connect_ephemeral_does_not_pre_parse_with_configparser(server, monk
     assert cfg_mgr.import_calls[0]["cfg"] == raw
 
 
-@pytest.fixture(autouse=True)
-def _restore_managers(server):
-    original_session = server._get_session_mgr
-    original_config = server._get_config_mgr
-    yield
-    server._get_session_mgr = original_session  # type: ignore[assignment]
-    server._get_config_mgr = original_config  # type: ignore[assignment]
+def test_vpn_connect_ephemeral_drops_the_config_when_the_tunnel_never_starts(server, monkeypatch, wire_managers, tmp_path, no_sleep):
+    """NewTunnel consumes a single-use config; failing before it must not strand one."""
+    imported = FakeConfig(name="ovpn3-od-sess-9")
+    wire_managers(config_mgr=FakeConfigManager(), session_mgr=FakeSessionManager(raise_on_new_tunnel=True))
+    monkeypatch.setattr(server, "_sessions_for", lambda _n: [])
+    monkeypatch.setattr(server, "_configs_for", lambda _n: [imported])
+
+    ovpn = tmp_path / "x.ovpn"
+    ovpn.write_text("client\nremote example.com 1194\n")
+
+    result = server.vpn_connect_ephemeral(str(ovpn), session_id="sess-9")
+    assert isinstance(result, server.VpnError)
+    assert "NewTunnel failed" in result.message
+    assert imported.removed is True

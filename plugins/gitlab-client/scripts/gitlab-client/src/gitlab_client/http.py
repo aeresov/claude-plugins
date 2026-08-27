@@ -4,6 +4,7 @@
 Everything network-related lives here so `cli.py` and the helpers stay testable with a
 stub opener (see tests/conftest.py).
 """
+
 from __future__ import annotations
 
 import json
@@ -12,8 +13,9 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
-from typing import Any, Callable, Iterable, Mapping
+from typing import Any
 
 from . import __version__
 from .errors import ConfigError, GlError, HttpError, PolicyError
@@ -30,7 +32,10 @@ KEYSET_PATHS = re.compile(r"/repository/tree/?$")
 # Hints appended to error messages by status code (spec §8).
 _HINTS = {
     401: " — token rejected; check token_cmd output and the token's expiry (/gitlab-client:doctor)",
-    403: " — forbidden: if GitLab's message doesn't already say why, the usual causes are a role below Developer (retry/cancel/play/trigger; Reporter for logs), a protected branch, or a missing token scope",
+    403: (
+        " — forbidden: if GitLab's message doesn't already say why, the usual causes are a role below Developer"
+        " (retry/cancel/play/trigger; Reporter for logs), a protected branch, or a missing token scope"
+    ),
     404: " — GitLab returns 404 for both missing and not-visible resources; check the project path and the token's access",
     429: " — rate limited (already retried once after Retry-After)",
 }
@@ -194,6 +199,47 @@ class Client:
                 raise GlError(f"{method} {url}: {type(e).__name__}: {e}") from None
         raise AssertionError("unreachable")
 
+    def paginate(self, path: str, query: Mapping[str, Any] | None, *, max_items: int = 1000, warn: Callable[[str], None] = lambda m: None) -> list[Any]:
+        """Follow pagination and return one concatenated list.
+
+        Offset endpoints: per_page=100, loop on the x-next-page header. /repository/tree is
+        keyset-only on GitLab ≥ 15.0: pagination=keyset and follow the Link rel="next" URL.
+        """
+        q: dict[str, Any] = dict(query or {})
+        q["per_page"] = PER_PAGE
+        keyset = bool(KEYSET_PATHS.search(path.split("?", 1)[0]))
+        if keyset:
+            q["pagination"] = "keyset"
+        else:
+            q["page"] = 1
+        items: list[Any] = []
+        next_url: str | None = None
+        while True:
+            resp = self.request("GET", path, absolute_url=next_url) if next_url else self.request("GET", path, query=q)
+            page = resp.json()
+            if not isinstance(page, list):
+                raise GlError(f"--all expects an array response, got {type(page).__name__}")
+            items.extend(page)
+            if keyset:
+                m = LINK_NEXT.search(resp.header("link"))
+                has_next = bool(m and page)
+                next_url = self.same_origin(m.group(1)) if has_next else None
+            else:
+                nxt = resp.header("x-next-page")
+                if nxt and page:
+                    has_next, next_url = True, None
+                    q["page"] = int(nxt)
+                else:  # some proxies drop x-* headers; fall back to the Link header
+                    m = LINK_NEXT.search(resp.header("link"))
+                    has_next = bool(m and page)
+                    next_url = self.same_origin(m.group(1)) if has_next else None
+            if len(items) >= max_items:
+                if len(items) > max_items or has_next:
+                    warn(f"gl: warning: --all stopped at --max {max_items} items; more are available")
+                return items[:max_items]
+            if not has_next:
+                return items
+
 
 # ---- parameters, project placeholder, write policy ------------------------------------------
 
@@ -216,8 +262,13 @@ def parse_params(items: Iterable[str]) -> dict[str, Any]:
         else:
             value = raw
         if key.endswith("[]"):
-            out.setdefault(key[:-2], []).append(value)
+            bare = key[:-2]
+            if not isinstance(out.setdefault(bare, []), list):
+                raise ConfigError(f"{bare!r} given both as a scalar and as {key}")
+            out[bare].append(value)
         else:
+            if isinstance(out.get(key), list):
+                raise ConfigError(f"{key!r} given both as {key}[] and as a scalar")
             out[key] = value
     return out
 
@@ -263,9 +314,7 @@ def check_write_policy(method: str, path: str) -> None:
     """Refuse paths that wouldn't round-trip; GET then passes; POST/PUT must match WRITE_ALLOW."""
     method = method.upper()
     if _UNSAFE_PATH.search(path):
-        raise PolicyError(
-            f"refused by gitlab-client write policy: path must be URL-encoded printable ASCII without '#': {path!r}"
-        )
+        raise PolicyError(f"refused by gitlab-client write policy: path must be URL-encoded printable ASCII without '#': {path!r}")
     if any(urllib.parse.unquote(seg) in (".", "..") for seg in path.split("?", 1)[0].split("/")):
         raise PolicyError(f"refused by gitlab-client write policy: path contains a dot segment: {path!r}")
     if method == "GET":
@@ -277,53 +326,7 @@ def check_write_policy(method: str, path: str) -> None:
         raise PolicyError(f"refused by gitlab-client write policy: {key} (see references/safety-perimeter.md)")
 
 
-# ---- pagination and projection --------------------------------------------------------------
-
-
-def _paginate(self: Client, path: str, query: Mapping[str, Any] | None, *, max_items: int = 1000,
-              warn: Callable[[str], None] = lambda m: None) -> list[Any]:
-    """Follow pagination and return one concatenated list.
-
-    Offset endpoints: per_page=100, loop on the x-next-page header. /repository/tree is
-    keyset-only on GitLab ≥ 15.0: pagination=keyset and follow the Link rel="next" URL.
-    """
-    q: dict[str, Any] = dict(query or {})
-    q["per_page"] = PER_PAGE
-    keyset = bool(KEYSET_PATHS.search(path.split("?", 1)[0]))
-    if keyset:
-        q["pagination"] = "keyset"
-    else:
-        q["page"] = 1
-    items: list[Any] = []
-    next_url: str | None = None
-    while True:
-        resp = self.request("GET", path, absolute_url=next_url) if next_url else self.request("GET", path, query=q)
-        page = resp.json()
-        if not isinstance(page, list):
-            raise GlError(f"--all expects an array response, got {type(page).__name__}")
-        items.extend(page)
-        if keyset:
-            m = LINK_NEXT.search(resp.header("link"))
-            has_next = bool(m and page)
-            next_url = self.same_origin(m.group(1)) if has_next else None
-        else:
-            nxt = resp.header("x-next-page")
-            if nxt and page:
-                has_next, next_url = True, None
-                q["page"] = int(nxt)
-            else:  # some proxies drop x-* headers; fall back to the Link header
-                m = LINK_NEXT.search(resp.header("link"))
-                has_next = bool(m and page)
-                next_url = self.same_origin(m.group(1)) if has_next else None
-        if len(items) >= max_items:
-            if len(items) > max_items or has_next:
-                warn(f"gl: warning: --all stopped at --max {max_items} items; more are available")
-            return items[:max_items]
-        if not has_next:
-            return items
-
-
-Client.paginate = _paginate  # type: ignore[attr-defined]
+# ---- projection ---------------------------------------------------------------------------
 
 
 def project_fields(data: Any, fields: list[str]) -> Any:

@@ -4,14 +4,15 @@
 Only the remote's *path* matters (SSH aliases and split hostnames are common); the
 GET /projects/:path confirmation call is the check that the guess was right.
 """
+
 from __future__ import annotations
 
 import re
 import subprocess
 import urllib.parse
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable
 
 from .errors import ConfigError, HttpError
 from .http import Client, encode_path_segment
@@ -96,10 +97,7 @@ def resolve_project(client: Client, settings: Settings, *, remote: str, cwd: Pat
     else:
         remote_url = git_remote_url(cwd, remote, run)
         if not remote_url:
-            raise ConfigError(
-                f"cannot resolve project: no --project, no project: in settings, and "
-                f"`git remote get-url {remote}` gave nothing"
-            )
+            raise ConfigError(f"cannot resolve project: no --project, no project: in settings, and `git remote get-url {remote}` gave nothing")
         prefix = urllib.parse.urlsplit(settings.url).path
         parsed = parse_remote_url(remote_url, prefix)
         if not parsed:
@@ -113,8 +111,7 @@ def resolve_project(client: Client, settings: Settings, *, remote: str, cwd: Pat
     except HttpError as e:
         if e.status == 404:
             raise ConfigError(
-                f"project {path!r} (from {source}) not found or not visible to this token — "
-                f"pass --project, or set project: in .claude/gitlab-client.local.md"
+                f"project {path!r} (from {source}) not found or not visible to this token — pass --project, or set project: in .claude/gitlab-client.local.md"
             ) from None
         raise
     return Project(

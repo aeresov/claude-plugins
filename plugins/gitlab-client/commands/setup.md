@@ -1,6 +1,6 @@
 ---
 description: Configure gitlab-client — record the GitLab URL and the command that prints your access token in ~/.claude/gitlab-client.local.md, optionally pin a project path for this repo, and add the project file to .gitignore. Never runs your token command and never contacts GitLab.
-allowed-tools: Bash(python3 -c *), Bash(test -f *), Bash(grep *), Bash(git remote get-url *), Read, Glob, Write, Edit, AskUserQuestion
+allowed-tools: Bash(python3 -c *), Bash(test -f *), Bash(grep *), Bash(sed -n *), Bash(sort *), Bash(git remote get-url *), Read, Glob, Write, Edit, AskUserQuestion
 ---
 
 You are running `/gitlab-client:setup`: an interactive configurator. You will write **only** `~/.claude/gitlab-client.local.md`, optionally `.claude/gitlab-client.local.md` in the project root, and (if needed) a line in the project's `.gitignore`. You will **not** run `token_cmd`, **not** call `gl`, and **not** contact GitLab — `/gitlab-client:doctor` does the live checks afterwards.

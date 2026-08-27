@@ -9,8 +9,9 @@ PYPROJECT = Path(__file__).resolve().parent.parent / "pyproject.toml"
 
 
 def test_version_matches_pyproject():
-    toml_version = re.search(r'^version *= *"([^"]+)"', PYPROJECT.read_text(), re.M).group(1)
-    assert gitlab_client.__version__ == toml_version
+    m = re.search(r'^version *= *"([^"]+)"', PYPROJECT.read_text(), re.M)
+    assert m, f"no version found in {PYPROJECT}"
+    assert gitlab_client.__version__ == m.group(1)
 
 
 def test_exit_codes():

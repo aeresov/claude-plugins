@@ -76,3 +76,10 @@ def test_gl_diff_cli(run_gl, opener):
     assert code == 2 and "FROM..TO" in err
     code, _, err = run_gl("diff", "--project", "group/proj")
     assert code == 2 and "MR_IID" in err
+
+
+def test_diff_rejects_conflicting_selectors(run_gl):
+    code, _, err = run_gl("diff", "7", "--commit", "abc1234", "--project", "group/proj")
+    assert code == 2 and "mutually exclusive" in err
+    code, _, err = run_gl("diff", "--commit", "abc1234", "--range", "a..b", "--project", "group/proj")
+    assert code == 2 and "mutually exclusive" in err

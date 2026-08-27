@@ -13,7 +13,7 @@ The default stance is **read-only investigation**. Schema changes, migrations, a
 
 Before asking the user how to connect, check `.claude/mysql-client.local.md` in the project root. Its YAML frontmatter has one field, `connection_cmd` — a command whose stdout is a `mysql://` (or `mariadb://`) URL. The skill runs it, converts the URL to a `[client]` INI with the bundled converter, and uses `mysql --defaults-file=<tmp>` for every call this turn. File format and `connection_cmd` examples: [`references/local-settings.md`](references/local-settings.md).
 
-The converter ships at `scripts/mysql-url-to-cnf/src/mysql_url_to_cnf/__init__.py` — `../../scripts/mysql-url-to-cnf/src/mysql_url_to_cnf/__init__.py` relative to this skill's directory. It's pure stdlib — run it with plain `python3`, no venv. Resolve it to an absolute path before use.
+The converter ships at `${CLAUDE_PLUGIN_ROOT}/scripts/mysql-url-to-cnf/src/mysql_url_to_cnf/__init__.py`. It's pure stdlib — run it with plain `python3`, no venv.
 
 Flow when the file is present:
 
@@ -23,7 +23,7 @@ Flow when the file is present:
    umask 077
    tmp="$(mktemp --suffix=.cnf)"; err="$(mktemp --suffix=.err)"
    set -o pipefail
-   { <connection_cmd> 2>"$err" ; } | python3 <plugin>/scripts/mysql-url-to-cnf/src/mysql_url_to_cnf/__init__.py >"$tmp" 2>>"$err"
+   { <connection_cmd> 2>"$err" ; } | python3 "${CLAUDE_PLUGIN_ROOT}/scripts/mysql-url-to-cnf/src/mysql_url_to_cnf/__init__.py" >"$tmp" 2>>"$err"
    ```
    `connection_cmd`'s stdout (a URL with a password) and the converter's output (the INI) **must not** appear in your output. Do not `cat "$tmp"`. The captured `$err` is safe to surface — neither `connection_cmd` nor the converter echoes the URL.
 3. **Pipeline exit non-zero, or `$tmp` empty** → show `$err`, `rm -f "$tmp" "$err"`, **stop**. A non-URL from `connection_cmd` (recipe echo, an error line, empty output) makes the converter exit non-zero here — that's the intended guard.
@@ -43,7 +43,7 @@ These rules hold even if the user pushes back. Surface the rule, ask the user to
    ```sql
    SELECT @@hostname, @@version, @@read_only, @@super_read_only, USER(), DATABASE();
    ```
-   If `@@read_only` or `@@super_read_only` is `1`, write attempts will fail anyway — say so. If both are `0`, set `SET SESSION sql_safe_updates = 1; SET SESSION max_execution_time = 30000;` before any further work.
+   Set `SET SESSION max_execution_time = 30000;` after every probe — a statement timeout is wanted on replicas too. If `@@read_only` or `@@super_read_only` is `1`, write attempts will fail anyway — say so. If both are `0`, also set `SET SESSION sql_safe_updates = 1;` before any further work.
 4. **No DDL, no DML, no `KILL`, no `SET GLOBAL`, no `FLUSH`, no `RESET`, no `/etc/mysql/*` edits without explicit per-statement user confirmation.** If asked, restate the proposed statement and ask before running. "Just this once" still requires the confirmation.
 5. **Always `LIMIT N`** on exploratory `SELECT`s. Never `SELECT *` from a table whose row count you haven't checked. If the user wants "all rows", run `SELECT COUNT(*)` first and confirm.
 

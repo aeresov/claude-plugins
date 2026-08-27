@@ -13,8 +13,7 @@ def test_no_command_is_usage(run_gl):
 
 def test_api_get_with_project_placeholder_and_fields(run_gl, opener):
     opener.add(200, PROJECT_JSON).add(200, [{"iid": 1, "title": "A", "author": {"username": "u"}, "big": "x" * 100}])
-    code, out, err = run_gl("api", "GET", "/projects/:project/merge_requests", "state=opened",
-                            "--project", "group/proj", "--fields", "iid,title,author.username")
+    code, out, err = run_gl("api", "GET", "/projects/:project/merge_requests", "state=opened", "--project", "group/proj", "--fields", "iid,title,author.username")
     assert code == 0, err
     assert json.loads(out) == [{"iid": 1, "title": "A", "author.username": "u"}]
     assert opener.requests[0].full_url == "https://gitlab.example.com/api/v4/projects/group%2Fproj"
@@ -66,9 +65,11 @@ def test_api_refuses_hash_in_path_before_network(run_gl, opener):
     assert code == 3 and "write policy" in err and opener.requests == []
 
 
-def test_api_delete_is_usage_error(run_gl):
-    with pytest.raises(SystemExit):
+def test_api_delete_is_usage_error(run_gl, capsys):
+    with pytest.raises(SystemExit) as exc:  # argparse rejects the verb before any command runs
         run_gl("api", "DELETE", "/projects/1")
+    assert exc.value.code == 2
+    assert "invalid choice: 'DELETE'" in capsys.readouterr().err
 
 
 def test_api_all_and_out(run_gl, opener, tmp_path):
@@ -114,8 +115,7 @@ def test_project_command(run_gl, opener):
     opener.add(200, PROJECT_JSON)
     code, out, _ = run_gl("project", "--project", "group/proj")
     assert code == 0
-    assert json.loads(out) == {"id": 42, "path_with_namespace": "group/proj", "default_branch": "main",
-                               "web_url": "https://gitlab.example.com/group/proj", "resolved_from": "flag"}
+    assert json.loads(out) == {"id": 42, "path_with_namespace": "group/proj", "default_branch": "main", "web_url": "https://gitlab.example.com/group/proj", "resolved_from": "flag"}
 
 
 def test_version_warns_on_non_15(run_gl, opener):
@@ -136,3 +136,28 @@ def test_version_warns_on_non_15(run_gl, opener):
     opener.add(200, {"version": "16.4.0", "revision": "abc", "enterprise": True})
     code, out, err = run_gl("version", "--quiet")
     assert code == 0 and err == ""
+
+
+def test_api_rejects_conflicting_flags(run_gl, tmp_path):
+    code, _, err = run_gl("api", "GET", "/projects", "--json", '{"a": 1}')
+    assert code == 2 and "--json only applies to POST/PUT" in err
+    for extra in (("--all",), ("--fields", "id")):
+        code, _, err = run_gl("api", "GET", "/projects", "--out", str(tmp_path / "f"), *extra)
+        assert code == 2 and "cannot be combined with --all or --fields" in err
+
+
+def test_api_out_does_not_clobber_the_destination_on_failure(run_gl, opener, tmp_path):
+    dest = tmp_path / "keep.json"
+    dest.write_bytes(b"previous contents")
+    opener.add(500, b"boom")
+    code, _, err = run_gl("api", "GET", "/projects/1/jobs/5/trace", "--out", str(dest))
+    assert code == 1 and "HTTP 500" in err
+    assert dest.read_bytes() == b"previous contents"  # untouched, not truncated
+    assert not (tmp_path / "keep.json.part").exists()
+
+
+def test_api_out_creates_missing_parent_directories(run_gl, opener, tmp_path):
+    opener.add(200, b"raw bytes")
+    dest = tmp_path / "nested" / "dir" / "f.bin"
+    code, _, _ = run_gl("api", "GET", "/projects/1/jobs/5/trace", "--out", str(dest))
+    assert code == 0 and dest.read_bytes() == b"raw bytes"

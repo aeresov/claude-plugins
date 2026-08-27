@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 """Opt-in smoke test against a real instance. Skipped unless GITLAB_CLIENT_LIVE=1."""
+
 import os
 
 import pytest

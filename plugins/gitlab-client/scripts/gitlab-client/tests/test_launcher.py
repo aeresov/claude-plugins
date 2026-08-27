@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 """The bash launcher must import the bundled package, not whatever the current directory holds."""
+
 import os
 import subprocess
 from pathlib import Path
@@ -10,6 +11,7 @@ GL = Path(__file__).resolve().parents[2] / "gl"
 def run(cwd, *args):
     env = {k: v for k, v in os.environ.items() if not k.startswith("GITLAB_CLIENT_")}
     env.pop("PYTHONPATH", None)
+    env["HOME"] = str(cwd)  # else the launcher reads the developer's own ~/.claude/gitlab-client.local.md
     return subprocess.run([str(GL), *args], cwd=str(cwd), env=env, capture_output=True, text=True, timeout=30)
 
 

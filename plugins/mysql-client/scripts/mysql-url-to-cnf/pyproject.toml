@@ -12,8 +12,42 @@ keywords = ["mysql", "mariadb", "dsn", "url"]
 mysql-url-to-cnf = "mysql_url_to_cnf:main"
 
 [dependency-groups]
-dev = ["pytest>=9.0"]
+dev = [
+    "pytest>=9.0",
+    "ruff>=0.12.1",
+    "ty>=0.0.37",
+]
 
 [build-system]
 requires = ["uv_build>=0.11.7,<0.12"]
 build-backend = "uv_build"
+
+[tool.ruff]
+line-length = 180
+target-version = "py310"
+
+[tool.ruff.format]
+quote-style = "double"
+line-ending = "lf"
+
+[tool.ruff.lint]
+select = [
+    "E",  # pycodestyle errors
+    "W",  # pycodestyle warnings
+    "F",  # pyflakes
+    "I",  # isort
+    "B",  # flake8-bugbear
+    "C4", # flake8-comprehensions
+    "UP", # pyupgrade
+]
+ignore = []
+
+[tool.ruff.lint.isort]
+known-first-party = ["mysql_url_to_cnf"]
+
+[tool.ty.environment]
+python-version = "3.10"
+root = ["./src", "./tests"]
+
+[tool.ty.src]
+include = ["src", "tests"]

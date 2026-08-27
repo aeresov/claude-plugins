@@ -1,8 +1,7 @@
 # Per-project Claude Code settings — may contain internal hostnames
 # and infrastructure-specific commands.
-.claude/*.local.md
-.claude/*.local.json
-.claude/settings.local.json
+**/.claude/*.local.md
+**/.claude/*.local.json
 
 # Python artifacts from running MCP servers locally.
 __pycache__/

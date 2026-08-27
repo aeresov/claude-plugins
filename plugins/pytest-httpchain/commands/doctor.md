@@ -1,9 +1,9 @@
 ---
 description: Diagnose the pytest-httpchain setup — Python project + package manager, package installed in the test env (+ version), scenarios discoverable, and every scenario passes `validate` — and report what's missing. Read-only — it runs `pytest-httpchain validate` (static, no network) and version probes, writes nothing, and dispatches no agent.
-allowed-tools: Bash(test -f *), Bash(test -d *), Bash(uv run *), Bash(python -c *), Bash(poetry run *), Bash(pdm run *), Bash(pytest-httpchain *), Read, Glob
+allowed-tools: Bash(test -f *), Bash(test -d *), Bash(python -c *), Bash(uv run python -c *), Bash(poetry run python -c *), Bash(pdm run python -c *), Bash(pytest-httpchain validate *), Bash(uv run pytest-httpchain validate *), Bash(poetry run pytest-httpchain validate *), Bash(pdm run pytest-httpchain validate *), Read, Glob
 ---
 
-You are running `/pytest-httpchain:doctor`: a health check. Write no files, dispatch no agent, make no HTTP calls. The probes run the project's own runner (`uv run` etc.) and `pytest-httpchain validate` — arbitrary project commands, so they aren't pre-approved and may prompt for permission once each; that is expected. `validate` is static and touches no network.
+You are running `/pytest-httpchain:doctor`: a health check. Write no files, dispatch no agent, make no HTTP calls. The probes are narrowly pre-approved: the two shapes the checklist runs (`<runner> python -c "…version…"` and `<runner> pytest-httpchain validate …`) and nothing else, so a broader command still prompts. `validate` is static and touches no network.
 
 ## Steps
 

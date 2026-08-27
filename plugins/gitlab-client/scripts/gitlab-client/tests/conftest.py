@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 """Shared fixtures: a stub urllib opener, a Client wired to it, and a `run_gl` CLI runner."""
+
 import io
 import json
 import urllib.error
@@ -66,7 +67,9 @@ class StubOpener:
 
 @pytest.fixture
 def opener():
-    return StubOpener()
+    o = StubOpener()
+    yield o
+    assert not o.queue, f"unconsumed canned responses: {o.queue}"
 
 
 @pytest.fixture

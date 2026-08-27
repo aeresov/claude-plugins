@@ -3,6 +3,7 @@
 
 15.11 has no endpoint that lists an archive's contents, so listing means downloading the zip.
 """
+
 from __future__ import annotations
 
 import shutil
@@ -12,10 +13,7 @@ from pathlib import Path
 from .errors import GlError, HttpError
 from .http import Client, encode_path_segment
 
-BY_REF_HINT = (
-    " (on GitLab 15.x the by-ref route only looks at the single latest *successful* pipeline of "
-    "that branch/tag, and SHAs are not accepted — use a job id instead)"
-)
+BY_REF_HINT = " (on GitLab 15.x the by-ref route only looks at the single latest *successful* pipeline of that branch/tag, and SHAs are not accepted — use a job id instead)"
 
 
 def encode_artifact_path(p: str) -> str:

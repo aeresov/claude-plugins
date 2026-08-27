@@ -1,19 +1,19 @@
 ---
 description: Configure openvpn3-on-demand for this project — pick BYO vs ephemeral mode, write .claude/openvpn3-on-demand.local.md, and add it to .gitignore. Read-only against the host; runs nothing privileged.
-allowed-tools: Bash(openvpn3 version), Bash(python3 -c *), Bash(test -f *), Bash(openvpn3 configs-list), Read, Glob, Write, Edit, AskUserQuestion
+allowed-tools: Bash(openvpn3 version), Bash(uv --version), Bash(python3 -c *), Bash(test -f *), Bash(openvpn3 configs-list), Read, Glob, Write, Edit, AskUserQuestion
 ---
 
 You are running `/openvpn3-on-demand:setup`: an interactive configurator. You will write **only** `.claude/openvpn3-on-demand.local.md` and (if needed) a line in `.gitignore`. You will **not** run anything privileged, **not** import an openvpn3 config, and **not** call any `vpn_*` MCP tool.
 
-First read the shared checklist at `${CLAUDE_PLUGIN_ROOT}/setup-checklist.md` — it defines checks 1–7 and the remediation text. Use that text verbatim on failures.
+First read the shared checklist at `${CLAUDE_PLUGIN_ROOT}/setup-checklist.md` — it defines checks 1–8 and the remediation text. Use that text verbatim on failures.
 
 ## Flow
 
 ### 1. Host prerequisites
-Run checks 1, 2, and 3 from the checklist. If any fails, print its remediation text and **stop** — tell the user to re-run `/openvpn3-on-demand:setup` after fixing. Check 3 (netcfg) is instruct-only: show the `sudo` lines, don't run them.
+Run checks 1, 2, 3, and 4 from the checklist. If any fails, print its remediation text and **stop** — tell the user to re-run `/openvpn3-on-demand:setup` after fixing. Check 4 (netcfg) is instruct-only: show the `sudo` lines, don't run them.
 
 ### 2. Existing settings file?
-Run check 4. If `.claude/openvpn3-on-demand.local.md` exists, Read it, show the current frontmatter, and ask via **AskUserQuestion**: *Keep as-is* / *Reconfigure (overwrite)* / *Abort*. Stop on Keep or Abort.
+Run check 5. If `.claude/openvpn3-on-demand.local.md` exists, Read it, show the current frontmatter, and ask via **AskUserQuestion**: *Keep as-is* / *Reconfigure (overwrite)* / *Abort*. Stop on Keep or Abort.
 
 ### 3. Pick the mode
 **AskUserQuestion** — "Which mode should this project use?":
@@ -22,13 +22,7 @@ Run check 4. If `.claude/openvpn3-on-demand.local.md` exists, Read it, show the 
 
 ### 4. Mode-specific question
 
-**BYO** → Ask for the `profile_name` (the `--name` they'll use with `openvpn3 config-import`). Run check 6 (`openvpn3 configs-list`). If the name isn't listed, tell the user — after this command writes the settings file — to import it once:
-
-```bash
-openvpn3 config-import --config /path/to/your.ovpn --name <profile_name> --persistent
-```
-
-Note that the profile must be non-interactive (`auth-user-pass` inlined, no encrypted PKCS#12) — the MCP server can't answer credential prompts. Don't import it yourself.
+**BYO** → Ask for the `profile_name` (the `--name` they'll use with `openvpn3 config-import`). Run check 7 (`openvpn3 configs-list`). If the name isn't listed, print check 7's remediation text verbatim from the checklist, noting it applies *after* this command writes the settings file. Don't import it yourself.
 
 **Ephemeral** → Ask for the `ovpn_provision_cmd`. Show these example shapes:
 
@@ -76,11 +70,11 @@ Which account this profile is for, how to rotate its credentials, who to ping wh
 Emit the chosen mode's field uncommented; emit chosen optional fields uncommented with their values.
 
 ### 7. `.gitignore`
-Run check 7. If `.gitignore` doesn't already cover the settings file, append `.claude/*.local.md` (create `.gitignore` if absent). If already covered, say so and change nothing.
+Run check 8. If `.gitignore` doesn't already cover the settings file, append `.claude/*.local.md` (create `.gitignore` if absent). If already covered, say so and change nothing.
 
 ### 8. Summary
 Print the path written, which mode, and anything the user still owes —
 - BYO + profile not yet imported → the `config-import` line again.
-- Check 3 borderline / skipped → the netcfg note again.
+- Check 4 borderline / skipped → the netcfg note again.
 
 End with: "Done. No restart needed — the skill re-reads this file every turn. Run `/openvpn3-on-demand:doctor` any time to re-check." Mention they can ask Claude to do something VPN-gated and the skill picks it up.

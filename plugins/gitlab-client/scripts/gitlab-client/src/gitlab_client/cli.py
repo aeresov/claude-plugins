@@ -5,6 +5,7 @@ Subcommands: api (any REST v4 call, writes allow-listed), project, version, log,
 All network access goes through `Context.client`; cwd, home, env, the client factory and stdio
 are injectable so tests never touch the real environment (git is the one thing they still call).
 """
+
 from __future__ import annotations
 
 import argparse
@@ -13,8 +14,9 @@ import os
 import re
 import sys
 import urllib.parse
+from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
-from typing import Any, Callable, Mapping, Sequence, TextIO
+from typing import Any, TextIO
 
 from . import __version__, artifacts, diff, log
 from .errors import ConfigError, GlError, PolicyError
@@ -29,8 +31,7 @@ Command = Callable[["Context", argparse.Namespace, TextIO], int]
 class Context:
     """Lazily resolves settings → token → client → project, each at most once per process."""
 
-    def __init__(self, args: argparse.Namespace, *, cwd: Path, home: Path, env: Mapping[str, str],
-                 client_factory: ClientFactory, stderr: TextIO):
+    def __init__(self, args: argparse.Namespace, *, cwd: Path, home: Path, env: Mapping[str, str], client_factory: ClientFactory, stderr: TextIO):
         self.args = args
         self.cwd = cwd
         self.home = home
@@ -46,8 +47,11 @@ class Context:
         if self._settings is None:
             root = git_toplevel(self.cwd) or self.cwd  # the project-level settings file lives at the repo root
             self._settings = load_settings(
-                cwd=root, home=self.home, env=self.env,
-                url_flag=getattr(self.args, "url", None), project_flag=getattr(self.args, "project", None),
+                cwd=root,
+                home=self.home,
+                env=self.env,
+                url_flag=getattr(self.args, "url", None),
+                project_flag=getattr(self.args, "project", None),
                 warn=self.warn,
             )
         return self._settings
@@ -95,6 +99,10 @@ def cmd_api(ctx: Context, args: argparse.Namespace, out: TextIO) -> int:
     params = parse_params(args.params)
     if args.all and method != "GET":
         raise ConfigError("--all only applies to GET")
+    if args.json_body is not None and method == "GET":
+        raise ConfigError("--json only applies to POST/PUT")
+    if args.out and (args.all or args.fields):
+        raise ConfigError("--out streams the raw body; it cannot be combined with --all or --fields")
 
     body: Any = None
     if args.json_body is not None:
@@ -114,8 +122,16 @@ def cmd_api(ctx: Context, args: argparse.Namespace, out: TextIO) -> int:
     accept_json = not RAW_ROUTE.search(path.split("?", 1)[0])
 
     if args.out:
-        with open(args.out, "wb") as fh:
-            resp = ctx.client.request(method, path, query=query, json_body=body, accept_json=False, stream_to=fh)
+        dest = Path(args.out)
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        tmp = dest.with_name(dest.name + ".part")  # never truncate FILE until the response is complete
+        try:
+            with open(tmp, "wb") as fh:
+                resp = ctx.client.request(method, path, query=query, json_body=body, accept_json=False, stream_to=fh)
+        except GlError:
+            tmp.unlink(missing_ok=True)
+            raise
+        tmp.replace(dest)
         out.write(f"wrote {resp.bytes_written} bytes to {args.out}\n")
         return 0
 
@@ -160,6 +176,8 @@ def cmd_version(ctx: Context, args: argparse.Namespace, out: TextIO) -> int:
 
 
 def cmd_log(ctx: Context, args: argparse.Namespace, out: TextIO) -> int:
+    if args.head is not None and args.tail is not None:
+        raise ConfigError("--head and --tail are mutually exclusive")
     job, path, size = log.fetch_trace(ctx.client, ctx.project.id, args.job_id, ctx.cache_dir, refresh=args.refresh)
     out.write(log.header_line(job, size) + "\n")
     raw = path.read_bytes().decode("utf-8", errors="replace")  # bytes: text mode would turn bare \r into newlines
@@ -189,8 +207,11 @@ def cmd_log(ctx: Context, args: argparse.Namespace, out: TextIO) -> int:
 
 
 def cmd_diff(ctx: Context, args: argparse.Namespace, out: TextIO) -> int:
-    if not (args.range or args.commit or args.mr_iid is not None):
+    selectors = [args.mr_iid is not None, bool(args.commit), bool(args.range)]
+    if not any(selectors):
         raise ConfigError("give MR_IID, --commit SHA, or --range FROM..TO")
+    if sum(selectors) > 1:
+        raise ConfigError("MR_IID, --commit and --range are mutually exclusive — give exactly one")
     if args.range:
         frm, sep, to = args.range.partition("..")
         if not sep or not frm or not to:
@@ -219,6 +240,8 @@ def cmd_artifacts(ctx: Context, args: argparse.Namespace, out: TextIO) -> int:
         raise ConfigError("give JOB_ID, or --ref REF --job NAME")
     if args.ref and not args.job:
         raise ConfigError("--ref needs --job NAME")
+    if args.job_id is not None and args.job:
+        raise ConfigError("--job selects a job by name with --ref; it cannot be combined with JOB_ID")
     pid = ctx.project.id
     selector: dict[str, Any] = {"job_id": args.job_id} if args.job_id is not None else {"ref": args.ref, "job": args.job}
 

@@ -109,3 +109,8 @@ def test_gl_artifacts_cli(run_gl, opener, tmp_path):
     assert code == 2 and "JOB_ID" in err
     code, _, err = run_gl("artifacts", "--ref", "main", "--project", "group/proj")
     assert code == 2 and "--job" in err
+
+
+def test_artifacts_rejects_job_name_with_job_id(run_gl):
+    code, _, err = run_gl("artifacts", "5", "--job", "build", "--project", "group/proj")
+    assert code == 2 and "cannot be combined with JOB_ID" in err

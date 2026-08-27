@@ -10,7 +10,7 @@ def test_session_view_uses_config_name(server):
     view = server._session_view(sess)
     assert view.path == "/p/1"
     assert view.config_name == "demo"
-    assert "CONNECTION / CONN_CONNECTED" in view.status
+    assert view.status == "CONNECTION/CONN_CONNECTED: ok"  # same renderer as _await_connected
 
 
 def test_session_view_falls_back_to_session_name(server):

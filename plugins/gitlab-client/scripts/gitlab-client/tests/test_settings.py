@@ -16,7 +16,7 @@ from gitlab_client.settings import (
 
 
 def test_parse_plain_and_quoted_values():
-    text = "---\n# comment\nurl: https://gitlab.example.com/\ntoken_cmd: \"ksm secret get x\"\n---\n\n# notes\nurl: not-parsed\n"
+    text = '---\n# comment\nurl: https://gitlab.example.com/\ntoken_cmd: "ksm secret get x"\n---\n\n# notes\nurl: not-parsed\n'
     assert parse_frontmatter(text) == {"url": "https://gitlab.example.com/", "token_cmd": "ksm secret get x"}
 
 
@@ -74,7 +74,8 @@ def test_missing_url_and_token_cmd(tmp_path):
 
 
 def fake_run(stdout="", stderr="", returncode=0, raise_timeout=False):
-    calls = []
+    """Return (runner, calls) — `calls` records every (cmd, kwargs) the runner saw."""
+    calls: list[tuple] = []
 
     def run(cmd, **kwargs):
         calls.append((cmd, kwargs))
@@ -82,8 +83,7 @@ def fake_run(stdout="", stderr="", returncode=0, raise_timeout=False):
             raise subprocess.TimeoutExpired(cmd, 60)
         return subprocess.CompletedProcess(cmd, returncode, stdout, stderr)
 
-    run.calls = calls
-    return run
+    return run, calls
 
 
 def settings(token_cmd="printf %s tok"):
@@ -91,21 +91,21 @@ def settings(token_cmd="printf %s tok"):
 
 
 def test_resolve_token_runs_shell_command():
-    run = fake_run(stdout="glpat-abc\n")
+    run, calls = fake_run(stdout="glpat-abc\n")
     assert resolve_token(settings("ksm secret get x"), run=run) == "glpat-abc"
-    cmd, kwargs = run.calls[0]
+    cmd, kwargs = calls[0]
     assert cmd == "ksm secret get x"
     assert kwargs["shell"] is True and kwargs["capture_output"] is True and kwargs["timeout"] == 60
 
 
 def test_resolve_token_failures_never_show_stdout():
     with pytest.raises(ConfigError) as e:
-        resolve_token(settings(), run=fake_run(stdout="glpat-leak", stderr="not logged in", returncode=3))
+        resolve_token(settings(), run=fake_run(stdout="glpat-leak", stderr="not logged in", returncode=3)[0])
     assert "exited 3" in str(e.value) and "not logged in" in str(e.value) and "glpat-leak" not in str(e.value)
 
     with pytest.raises(ConfigError, match="exactly one non-empty line \\(got 2\\)"):
-        resolve_token(settings(), run=fake_run(stdout="line1\nline2\n"))
+        resolve_token(settings(), run=fake_run(stdout="line1\nline2\n")[0])
     with pytest.raises(ConfigError, match="got 0"):
-        resolve_token(settings(), run=fake_run(stdout="\n"))
+        resolve_token(settings(), run=fake_run(stdout="\n")[0])
     with pytest.raises(ConfigError, match="timed out"):
-        resolve_token(settings(), run=fake_run(raise_timeout=True))
+        resolve_token(settings(), run=fake_run(raise_timeout=True)[0])

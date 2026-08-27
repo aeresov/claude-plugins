@@ -6,9 +6,11 @@ empty `diff` on a file that is neither new, deleted, nor renamed means the serve
 because of the instance diff limits (15.11 has no collapsed/too_large flags). A renamed-and-modified
 file over the limit therefore renders as a pure rename — a known simplification.
 """
+
 from __future__ import annotations
 
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
 from .errors import HttpError
 from .http import Client, encode_path_segment

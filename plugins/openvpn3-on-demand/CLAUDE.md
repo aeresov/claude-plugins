@@ -6,7 +6,7 @@ Developer notes for working inside `openvpn3-on-demand`. User-facing docs: [`REA
 
 - `servers/openvpn3/` — MCP server (uv project; package `openvpn3_mcp`, script `openvpn3-mcp`, Python ≥ 3.10). Wraps openvpn3's D-Bus services via the `openvpn3` Python module + `dbus-python`. Four tools: `vpn_status`, `vpn_connect`, `vpn_connect_ephemeral`, `vpn_disconnect`. Launched by `.mcp.json` via `scripts/launch.sh`.
 - `skills/vpn-on-demand/SKILL.md` — policy layer. Decides *when* Claude calls the tools and which mode the project uses. Owns connect *and* disconnect — there is no safety-net hook; an orphaned tunnel after a crash needs `openvpn3 session-manage --disconnect --config <name>` by hand.
-- `commands/setup.md` + `commands/doctor.md` — `/openvpn3-on-demand:setup` (interactive configurator) and `/openvpn3-on-demand:doctor` (read-only health check). Both read `setup-checklist.md` for the 7 checks so they can't drift. Prose, no code; neither runs `sudo` or `vpn_*` tools.
+- `commands/setup.md` + `commands/doctor.md` — `/openvpn3-on-demand:setup` (interactive configurator) and `/openvpn3-on-demand:doctor` (read-only health check). Both read `setup-checklist.md` for the 8 checks so they can't drift. Prose, no code; neither runs `sudo` or `vpn_*` tools.
 - `.claude/openvpn3-on-demand.local.md` (in the consuming project) — per-project settings. Frontmatter: exactly one of `profile_name` (BYO) / `ovpn_provision_cmd` (ephemeral); optional `trigger_patterns`, `post_connect_cmd`, `post_disconnect_cmd`, `config_overrides`. Re-read every turn — edits apply immediately.
 
 ## Commands

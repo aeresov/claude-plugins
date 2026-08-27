@@ -13,7 +13,7 @@ from gitlab_client.log import (
 
 TRACE = (
     "\x1b[0KRunning with gitlab-runner 15.11.0\x1b[0;m\n"
-    "section_start:1700000000:prepare_executor\r\x1b[0KPreparing the \"docker\" executor\x1b[0;m\n"
+    'section_start:1700000000:prepare_executor\r\x1b[0KPreparing the "docker" executor\x1b[0;m\n'
     "Using Docker executor with image python:3.11 ...\n"
     "section_end:1700000004:prepare_executor\r\x1b[0K\n"
     "section_start:1700000004:step_script[collapsed=true]\r\x1b[0K\x1b[32;1m$ pytest -q\x1b[0;m\n"
@@ -136,3 +136,8 @@ def test_gl_log_cli(run_gl, opener):
     opener.add(200, PROJECT_JSON).add(200, JOB)
     code, out, err = run_gl("log", "5", "--project", "group/proj", "--section", "nope")
     assert code == 1 and "no section named 'nope'" in err
+
+
+def test_log_rejects_head_with_tail(run_gl):
+    code, _, err = run_gl("log", "5", "--head", "2", "--tail", "3", "--project", "group/proj")
+    assert code == 2 and "--head and --tail are mutually exclusive" in err
