@@ -16,7 +16,7 @@ import urllib.parse
 from pathlib import Path
 from typing import Any, Callable, Mapping, Sequence, TextIO
 
-from . import __version__
+from . import __version__, log
 from .errors import ConfigError, GlError, PolicyError
 from .http import Client, check_write_policy, parse_params, project_fields, substitute_project
 from .project import Project, git_toplevel, resolve_project
@@ -146,6 +146,34 @@ def cmd_version(ctx: Context, args: argparse.Namespace, out: TextIO) -> int:
     return 0
 
 
+def cmd_log(ctx: Context, args: argparse.Namespace, out: TextIO) -> int:
+    job, path, size = log.fetch_trace(ctx.client, ctx.project.id, args.job_id, ctx.cache_dir, refresh=args.refresh)
+    out.write(log.header_line(job, size) + "\n")
+    raw = path.read_bytes().decode("utf-8", errors="replace")  # bytes: text mode would turn bare \r into newlines
+    lines, sections = log.parse_trace(raw, strip_ansi=not args.raw)
+    if args.sections:
+        out.write("".join(s + "\n" for s in log.sections_summary(sections)))
+        return 0
+    if args.section:
+        body = log.section_body(lines, sections, args.section)
+        if body is None:
+            raise GlError(f"no section named {args.section!r} (use --sections to list them)")
+        lines = body
+    if args.grep:
+        out.write("".join(s + "\n" for s in log.grep(lines, args.grep, args.context)))
+        return 0
+    if args.head is not None:
+        lines = log.head(lines, args.head)
+    elif args.tail is not None:
+        if args.tail == 0:
+            ctx.warn(f"gl: warning: printing the whole log ({len(lines)} lines, {size} bytes)")
+        lines = log.tail(lines, args.tail)
+    elif not args.section:
+        lines = log.tail(lines, log.DEFAULT_TAIL)
+    out.write("".join(s + "\n" for s in lines))
+    return 0
+
+
 def _not_implemented(ctx: Context, args: argparse.Namespace, out: TextIO) -> int:
     raise ConfigError(f"{args.command} is not implemented yet")
 
@@ -154,7 +182,7 @@ COMMANDS: dict[str, Command] = {
     "api": cmd_api,
     "project": cmd_project,
     "version": cmd_version,
-    "log": _not_implemented,
+    "log": cmd_log,
     "diff": _not_implemented,
     "artifacts": _not_implemented,
 }
