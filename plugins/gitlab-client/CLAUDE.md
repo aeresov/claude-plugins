@@ -15,7 +15,7 @@ A bundle that makes Claude an effective, *safe* user of a self-managed GitLab 15
 - `skills/gitlab-client/SKILL.md` — entry point. Owns the write-policy classes (refused / confirm / go-and-report), discovery (`gl version` once per turn), project resolution, context economy, and the inline-vs-dispatch rule.
 - `skills/gitlab-client/references/{local-settings,repo-browsing,merge-requests,pipelines,safety-perimeter,v15-compat}.md` — reference-style docs (purpose → command → gotcha), loaded on demand, each self-sufficient.
 - `scripts/gl` — bash launcher; runs the package from source with `python3`, works from any cwd. Deliberately not `python3 -m`: it replaces `sys.path[0]` (which `-m` would set to the *current directory*) with the plugin's `src/`, so a checkout containing a decoy `gitlab_client/` can't hijack the CLI (`tests/test_launcher.py`).
-- `scripts/gitlab-client/pyproject.toml` · `uv.lock` — uv project for `gl` (dev dep `pytest`; zero runtime deps).
+- `scripts/gitlab-client/pyproject.toml` · `uv.lock` · `Makefile` — uv project for `gl` (dev deps `pytest`, `ruff`, `ty`; zero runtime deps). The `Makefile` is identical across all three in-tree projects.
 - `scripts/gitlab-client/src/gitlab_client/`:
   - `__init__.py` — `__version__`
   - `__main__.py` — `sys.exit(main())`
@@ -34,12 +34,13 @@ A bundle that makes Claude an effective, *safe* user of a self-managed GitLab 15
 ```bash
 claude plugin validate .                              # marketplace
 claude plugin validate plugins/gitlab-client          # this plugin
-cd scripts/gitlab-client && uv sync --group dev && uv run pytest -q   # unit tests (stub transport, no GitLab)
+cd scripts/gitlab-client && make check                # ruff + ty + pytest (stub transport, no GitLab)
+cd scripts/gitlab-client && make tidyup               # ruff autofix + format
 GITLAB_CLIENT_LIVE=1 GITLAB_CLIENT_URL=… GITLAB_CLIENT_TOKEN=… uv run pytest -q tests/test_live.py   # opt-in live smoke: GET /metadata + /user
 ./scripts/gl version                                  # run the CLI without a venv
 ```
 
-CI runs the validations and the pytest suite on push/PR via `.github/workflows/validate.yml` — it discovers `pyproject.toml` + `tests/` automatically.
+CI runs the validations and the pytest suite via `.github/workflows/validate.yml` — it discovers `pyproject.toml` + `tests/` automatically. Ruff and ty are local-only, via `make check`.
 
 ## Gotchas
 

@@ -18,7 +18,7 @@ Drop it at `plugins/<name>/` with a `.claude-plugin/plugin.json`, then add a mat
 
 ## Commands
 
-No build or lint step. The gates (mirrored by `.github/workflows/validate.yml` on push/PR):
+No build step. The repo-wide gates (mirrored by `.github/workflows/validate.yml`, which runs on every branch and on PRs):
 
 ```bash
 claude plugin validate .                  # validate marketplace.json
@@ -26,7 +26,17 @@ claude plugin validate plugins/<name>     # validate a plugin's plugin.json
 scripts/check-version-sync.sh             # plugin.json ↔ marketplace.json ↔ pyproject.toml versions
 ```
 
-CI additionally runs every in-tree Python test suite under `plugins/` — any `pyproject.toml` with a sibling `tests/` directory — via `uv`. Per-plugin test/run commands live in that plugin's `CLAUDE.md`.
+Every in-tree Python project (`pyproject.toml` with a sibling `tests/`) carries the **same `Makefile`**, so the per-project workflow is uniform:
+
+```bash
+make sync     # install the dev group
+make test     # pytest -q
+make tidyup   # ruff autofix + format
+make check    # ruff + ruff format --check + ty + pytest (stricter than CI)
+make update   # uv lock --upgrade && uv sync
+```
+
+CI discovers those projects automatically and runs `uv sync --locked --group dev && uv run pytest -q` in each — the tests, but **not** ruff or ty, so `make check` is the stricter gate and lint is enforced by habit, not by CI. Plugin-specific commands (running a server, a live smoke test) live in that plugin's `CLAUDE.md`.
 
 ## Repo-wide conventions
 

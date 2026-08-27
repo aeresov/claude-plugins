@@ -12,7 +12,8 @@ tidyup:
 	uv run ruff check --fix --unsafe-fixes .
 	uv run ruff format .
 
-# What CI would reject on: lint, format, types, tests.
+# Full local gate: lint, format, types, tests. Stricter than CI,
+# which runs the tests but not ruff/ty.
 check:
 	uv run ruff check .
 	uv run ruff format --check .

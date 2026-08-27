@@ -13,9 +13,8 @@ Developer notes for working inside `openvpn3-on-demand`. User-facing docs: [`REA
 
 ```bash
 cd servers/openvpn3
-uv sync --group dev
-uv run ruff check && uv run ruff format --check && uv run ty check
-uv run pytest -q                                         # unit tests; D-Bus / openvpn3 are stubbed in `tests/conftest.py`
+make check                                               # ruff + ty + pytest; D-Bus / openvpn3 are stubbed in `tests/conftest.py`
+make tidyup                                              # ruff autofix + format
 uv run openvpn3-mcp                                      # stdio server (expects an MCP client)
 claude --plugin-dir /absolute/path/to/openvpn3-on-demand # load into a live session
 ```
