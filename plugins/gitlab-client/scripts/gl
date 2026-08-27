@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+# SPDX-License-Identifier: AGPL-3.0-only
+#
+# Launch the bundled gitlab_client package with the system python3 — no venv.
+set -euo pipefail
+here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+export PYTHONPATH="$here/gitlab-client/src${PYTHONPATH:+:$PYTHONPATH}"
+exec python3 -m gitlab_client "$@"

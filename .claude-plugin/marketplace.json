@@ -33,6 +33,15 @@
       "license": "AGPL-3.0-only",
       "homepage": "https://github.com/aeresov/claude-plugins/tree/main/plugins/pytest-httpchain",
       "repository": "https://github.com/aeresov/claude-plugins"
+    },
+    {
+      "name": "gitlab-client",
+      "source": "./plugins/gitlab-client",
+      "description": "Drive an on-prem GitLab 15.x from Claude Code — browse repos, read and open merge requests, debug CI pipelines and job logs — through a bundled REST client with an allow-listed write policy.",
+      "version": "0.1.0",
+      "license": "AGPL-3.0-only",
+      "homepage": "https://github.com/aeresov/claude-plugins/tree/main/plugins/gitlab-client",
+      "repository": "https://github.com/aeresov/claude-plugins"
     }
   ]
 }

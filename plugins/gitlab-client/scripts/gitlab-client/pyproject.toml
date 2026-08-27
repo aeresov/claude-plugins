@@ -1,0 +1,19 @@
+[project]
+name = "gitlab-client"
+version = "0.1.0"
+description = "Small GitLab REST v4 client (gl) for the gitlab-client Claude Code plugin."
+requires-python = ">=3.10"
+license = "AGPL-3.0-only"
+authors = [{ name = "aeresov" }]
+keywords = ["gitlab", "rest", "cli"]
+dependencies = []
+
+[project.scripts]
+gl = "gitlab_client.cli:main"
+
+[dependency-groups]
+dev = ["pytest>=9.0"]
+
+[build-system]
+requires = ["uv_build>=0.11.7,<0.12"]
+build-backend = "uv_build"

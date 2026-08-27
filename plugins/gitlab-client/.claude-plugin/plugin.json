@@ -1,0 +1,11 @@
+{
+  "name": "gitlab-client",
+  "version": "0.1.0",
+  "description": "Drive an on-prem GitLab 15.x from Claude Code — browse repos, read and open merge requests, debug CI pipelines and job logs — through a bundled REST client with an allow-listed write policy.",
+  "author": {
+    "name": "aeresov"
+  },
+  "homepage": "https://github.com/aeresov/claude-plugins/tree/main/plugins/gitlab-client",
+  "repository": "https://github.com/aeresov/claude-plugins",
+  "keywords": ["gitlab", "merge-request", "ci", "pipeline", "self-managed", "rest-api"]
+}
