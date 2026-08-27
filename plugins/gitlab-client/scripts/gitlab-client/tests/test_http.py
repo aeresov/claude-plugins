@@ -116,3 +116,153 @@ def test_redirect_handler_strips_auth_cross_host_only():
 def test_describe_error_plain_text():
     assert describe_error(502, b"<html>Bad Gateway</html>") == "<html>Bad Gateway</html>"
     assert describe_error(500, b"") == "(empty body)"
+
+
+# ---- Task 4: params, policy, pagination, fields -------------------------------------------
+from gitlab_client.errors import ConfigError, PolicyError  # noqa: E402
+from gitlab_client.http import (  # noqa: E402
+    check_write_policy,
+    encode_path_segment,
+    parse_params,
+    project_fields,
+    substitute_project,
+)
+
+
+def test_parse_params():
+    items = ["state=opened", "per_page=5", "labels[]=a", "labels[]=b", "squash:=true",
+             'vars:=[{"key":"K","value":"v"}]', "range[start]=1", "empty=", "title=a=b"]
+    assert parse_params(items) == {
+        "state": "opened", "per_page": "5", "labels": ["a", "b"], "squash": True,
+        "vars": [{"key": "K", "value": "v"}], "range[start]": "1", "empty": "", "title": "a=b",
+    }
+    with pytest.raises(ConfigError, match="bad JSON for x"):
+        parse_params(["x:={oops"])
+    with pytest.raises(ConfigError, match="key=value"):
+        parse_params(["novalue"])
+
+
+def test_encode_and_substitute_project():
+    assert encode_path_segment("grp/sub/proj") == "grp%2Fsub%2Fproj"
+    assert encode_path_segment("feature/x.y") == "feature%2Fx.y"
+    assert substitute_project("/projects/:project/merge_requests", "grp/sub/proj") == "/projects/grp%2Fsub%2Fproj/merge_requests"
+    assert substitute_project("/user", None) == "/user"
+    with pytest.raises(ConfigError, match=":project"):
+        substitute_project("/projects/:project", None)
+
+
+ALLOWED = [
+    ("POST", "/projects/42/merge_requests"),
+    ("POST", "/projects/grp%2Fproj/merge_requests"),
+    ("PUT", "/projects/42/merge_requests/7"),
+    ("POST", "/projects/42/merge_requests/7/notes"),
+    ("POST", "/projects/42/merge_requests/7/discussions"),
+    ("POST", "/projects/42/merge_requests/7/discussions/6a1f0c2e9b3d4f5a6b7c8d9e0f1a2b3c4d5e6f70/notes"),
+    ("PUT", "/projects/42/merge_requests/7/discussions/6a1f0c2e9b3d4f5a6b7c8d9e0f1a2b3c4d5e6f70?resolved=true"),
+    ("POST", "/projects/42/pipeline"),
+    ("POST", "/projects/42/pipelines/99/retry"),
+    ("POST", "/projects/42/pipelines/99/cancel"),
+    ("POST", "/projects/42/jobs/5/retry"),
+    ("POST", "/projects/42/jobs/5/cancel"),
+    ("POST", "/projects/42/jobs/5/play"),
+    ("POST", "/projects/42/jobs/5/artifacts/keep"),
+    ("post", "/projects/42/jobs/5/play/"),
+]
+REFUSED = [
+    ("PUT", "/projects/42/merge_requests/7/merge"),
+    ("POST", "/projects/42/merge_requests/7/approve"),
+    ("POST", "/projects/42/merge_requests/7/unapprove"),
+    ("POST", "/projects/42/merge_requests/7/approvals"),
+    ("PUT", "/projects/42/merge_requests/7/rebase"),
+    ("POST", "/projects/42/jobs/5/erase"),
+    ("POST", "/projects/42/repository/branches"),
+    ("POST", "/projects/42/repository/files/a.txt"),
+    ("PUT", "/projects/42"),
+    ("POST", "/projects/42/members"),
+    ("POST", "/projects/42/variables"),
+    ("POST", "/projects/42/hooks"),
+    ("POST", "/projects/42/protected_branches"),
+    ("POST", "/users"),
+    ("POST", "/personal_access_tokens"),
+    ("POST", "/admin/ci/variables"),
+    ("POST", "/projects/42/merge_requests/7/notes/1"),
+    ("PUT", "/projects/42/merge_requests/7/notes/1"),
+    ("POST", "/projects/42/pipelines"),
+    ("PUT", "/projects/42/pipelines/99/metadata"),
+]
+
+
+@pytest.mark.parametrize("method,path", ALLOWED)
+def test_write_policy_allows(method, path):
+    check_write_policy(method, path)
+
+
+@pytest.mark.parametrize("method,path", REFUSED)
+def test_write_policy_refuses(method, path):
+    with pytest.raises(PolicyError, match="write policy"):
+        check_write_policy(method, path)
+
+
+def test_write_policy_other_verbs():
+    check_write_policy("get", "/anything/at/all")
+    with pytest.raises(PolicyError, match="DELETE"):
+        check_write_policy("DELETE", "/projects/1/pipelines/2")
+    with pytest.raises(PolicyError, match="PATCH"):
+        check_write_policy("PATCH", "/projects/1")
+
+
+def test_paginate_offset(client, opener):
+    opener.add(200, [1, 2], {"X-Next-Page": "2"}).add(200, [3], {"X-Next-Page": ""})
+    warnings = []
+    assert client.paginate("/projects/1/merge_requests", {"state": "opened"}, warn=warnings.append) == [1, 2, 3]
+    urls = [r.full_url for r in opener.requests]
+    assert urls[0].endswith("/merge_requests?state=opened&per_page=100&page=1")
+    assert urls[1].endswith("/merge_requests?state=opened&per_page=100&page=2")
+    assert warnings == []
+
+
+def test_paginate_stops_on_empty_page_without_header(client, opener):
+    opener.add(200, [1], {}).add(200, [], {})
+    assert client.paginate("/x", None) == [1]
+    assert len(opener.requests) == 1  # no x-next-page and no Link → done after the first page
+
+
+def test_paginate_offset_falls_back_to_link_header(client, opener):
+    nxt = "https://gitlab.example.com/api/v4/x?per_page=100&page=2"
+    opener.add(200, [1], {"Link": f'<{nxt}>; rel="next"'}).add(200, [2], {})
+    assert client.paginate("/x", None) == [1, 2]
+    assert opener.requests[1].full_url == nxt
+
+
+def test_paginate_keyset_for_tree(client, opener):
+    nxt = "https://gitlab.example.com/api/v4/projects/1/repository/tree?pagination=keyset&per_page=100&page_token=abc"
+    opener.add(200, [{"name": "a"}], {"Link": f'<{nxt}>; rel="next"'}).add(200, [{"name": "b"}], {})
+    assert client.paginate("/projects/1/repository/tree", {"recursive": True}) == [{"name": "a"}, {"name": "b"}]
+    first = opener.requests[0].full_url
+    assert "pagination=keyset" in first and "recursive=true" in first
+    assert "&page=" not in first and "?page=" not in first
+    assert opener.requests[1].full_url == nxt
+
+
+def test_paginate_max_cap_warns(client, opener):
+    opener.add(200, [1, 2, 3], {"X-Next-Page": "2"})
+    warnings = []
+    assert client.paginate("/x", None, max_items=2, warn=warnings.append) == [1, 2]
+    assert len(warnings) == 1 and "--max 2" in warnings[0]
+
+
+def test_paginate_requires_array(client, opener):
+    opener.add(200, {"not": "a list"})
+    with pytest.raises(GlError, match="expects an array"):
+        client.paginate("/x", None)
+
+
+def test_project_fields():
+    data = [{"id": 1, "author": {"username": "u"}, "x": 0}, {"id": 2}]
+    assert project_fields(data, ["id", "author.username"]) == [
+        {"id": 1, "author.username": "u"},
+        {"id": 2, "author.username": None},
+    ]
+    assert project_fields({"a": {"b": 1}}, ["a.b"]) == {"a.b": 1}
+    assert project_fields({"notes": [{"body": "b"}, {"body": "c"}]}, ["notes.0.body", "notes.5.body", "notes.x"]) == {"notes.0.body": "b", "notes.5.body": None, "notes.x": None}
+    assert project_fields("scalar", ["a"]) == "scalar"

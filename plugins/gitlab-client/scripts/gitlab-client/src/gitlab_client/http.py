@@ -182,3 +182,147 @@ class Client:
             except OSError as e:  # socket timeouts and friends raised directly
                 raise GlError(f"{method} {url}: {type(e).__name__}: {e}") from None
         raise AssertionError("unreachable")
+
+
+# ---- parameters, project placeholder, write policy ------------------------------------------
+
+_PARAM = re.compile(r"^([A-Za-z0-9_.\-\[\]]+)(:=|=)(.*)$", re.S)
+
+
+def parse_params(items: Iterable[str]) -> dict[str, Any]:
+    """`key=value` → str; `key:=json` → parsed JSON; `key[]=value` → list (repeatable)."""
+    out: dict[str, Any] = {}
+    for item in items:
+        m = _PARAM.match(item)
+        if not m:
+            raise ConfigError(f"parameter must be key=value, key:=json or key[]=value: {item!r}")
+        key, op, raw = m.groups()
+        if op == ":=":
+            try:
+                value: Any = json.loads(raw)
+            except json.JSONDecodeError as e:
+                raise ConfigError(f"bad JSON for {key}: {e}") from None
+        else:
+            value = raw
+        if key.endswith("[]"):
+            out.setdefault(key[:-2], []).append(value)
+        else:
+            out[key] = value
+    return out
+
+
+def encode_path_segment(value: str) -> str:
+    return urllib.parse.quote(value, safe="")
+
+
+def substitute_project(path: str, project_path: str | None) -> str:
+    if ":project" not in path:
+        return path
+    if not project_path:
+        raise ConfigError("path uses :project but no project could be resolved")
+    return path.replace(":project", encode_path_segment(project_path))
+
+
+_P = r"/projects/[^/]+"
+_MR = _P + r"/merge_requests/\d+"
+_DISC = _MR + r"/discussions/[0-9a-fA-F]+"
+WRITE_ALLOW = [
+    re.compile(p)
+    for p in (
+        rf"^POST {_P}/merge_requests$",
+        rf"^PUT {_MR}$",
+        rf"^POST {_MR}/notes$",
+        rf"^POST {_MR}/discussions$",
+        rf"^POST {_DISC}/notes$",
+        rf"^PUT {_DISC}$",
+        rf"^POST {_P}/pipeline$",
+        rf"^POST {_P}/pipelines/\d+/(retry|cancel)$",
+        rf"^POST {_P}/jobs/\d+/(retry|cancel|play)$",
+        rf"^POST {_P}/jobs/\d+/artifacts/keep$",
+    )
+]
+
+
+def check_write_policy(method: str, path: str) -> None:
+    """GET always passes; POST/PUT must match WRITE_ALLOW; every other verb is refused."""
+    method = method.upper()
+    if method == "GET":
+        return
+    if method not in ("POST", "PUT"):
+        raise PolicyError(f"{method} is not supported by gl (only GET, POST, PUT)")
+    key = f"{method} {path.split('?', 1)[0].rstrip('/')}"
+    if not any(p.match(key) for p in WRITE_ALLOW):
+        raise PolicyError(f"refused by gitlab-client write policy: {key} (see references/safety-perimeter.md)")
+
+
+# ---- pagination and projection --------------------------------------------------------------
+
+
+def _paginate(self: Client, path: str, query: Mapping[str, Any] | None, *, max_items: int = 1000,
+              warn: Callable[[str], None] = lambda m: None) -> list[Any]:
+    """Follow pagination and return one concatenated list.
+
+    Offset endpoints: per_page=100, loop on the x-next-page header. /repository/tree is
+    keyset-only on GitLab ≥ 15.0: pagination=keyset and follow the Link rel="next" URL.
+    """
+    q: dict[str, Any] = dict(query or {})
+    q["per_page"] = PER_PAGE
+    keyset = bool(KEYSET_PATHS.search(path.split("?", 1)[0]))
+    if keyset:
+        q["pagination"] = "keyset"
+    else:
+        q["page"] = 1
+    items: list[Any] = []
+    next_url: str | None = None
+    while True:
+        resp = self.request("GET", path, absolute_url=next_url) if next_url else self.request("GET", path, query=q)
+        page = resp.json()
+        if not isinstance(page, list):
+            raise GlError(f"--all expects an array response, got {type(page).__name__}")
+        items.extend(page)
+        if keyset:
+            m = LINK_NEXT.search(resp.header("link"))
+            has_next = bool(m and page)
+            next_url = m.group(1) if has_next else None
+        else:
+            nxt = resp.header("x-next-page")
+            if nxt and page:
+                has_next, next_url = True, None
+                q["page"] = int(nxt)
+            else:  # some proxies drop x-* headers; fall back to the Link header
+                m = LINK_NEXT.search(resp.header("link"))
+                has_next = bool(m and page)
+                next_url = m.group(1) if has_next else None
+        if len(items) >= max_items:
+            if len(items) > max_items or has_next:
+                warn(f"gl: warning: --all stopped at --max {max_items} items; more are available")
+            return items[:max_items]
+        if not has_next:
+            return items
+
+
+Client.paginate = _paginate  # type: ignore[attr-defined]
+
+
+def project_fields(data: Any, fields: list[str]) -> Any:
+    """Keep only the listed dotted paths of each object; missing → None."""
+
+    def pick(obj: Any) -> Any:
+        if not isinstance(obj, dict):
+            return obj
+        out: dict[str, Any] = {}
+        for f in fields:
+            cur: Any = obj
+            for part in f.split("."):
+                if isinstance(cur, dict):
+                    cur = cur.get(part)
+                elif isinstance(cur, list) and part.isdigit():
+                    cur = cur[int(part)] if int(part) < len(cur) else None
+                else:
+                    cur = None
+                if cur is None:
+                    break
+            out[f] = cur
+        return out
+
+    return [pick(x) for x in data] if isinstance(data, list) else pick(data)
