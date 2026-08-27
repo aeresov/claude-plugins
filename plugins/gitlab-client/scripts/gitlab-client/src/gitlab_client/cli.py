@@ -16,7 +16,7 @@ import urllib.parse
 from pathlib import Path
 from typing import Any, Callable, Mapping, Sequence, TextIO
 
-from . import __version__, diff, log
+from . import __version__, artifacts, diff, log
 from .errors import ConfigError, GlError, PolicyError
 from .http import Client, check_write_policy, parse_params, project_fields, substitute_project
 from .project import Project, git_toplevel, resolve_project
@@ -200,8 +200,39 @@ def cmd_diff(ctx: Context, args: argparse.Namespace, out: TextIO) -> int:
     return 0
 
 
-def _not_implemented(ctx: Context, args: argparse.Namespace, out: TextIO) -> int:
-    raise ConfigError(f"{args.command} is not implemented yet")
+def cmd_artifacts(ctx: Context, args: argparse.Namespace, out: TextIO) -> int:
+    if (args.job_id is None) == (args.ref is None):
+        raise ConfigError("give JOB_ID, or --ref REF --job NAME")
+    if args.ref and not args.job:
+        raise ConfigError("--ref needs --job NAME")
+    pid = ctx.project.id
+    selector: dict[str, Any] = {"job_id": args.job_id} if args.job_id is not None else {"ref": args.ref, "job": args.job}
+
+    if args.file:
+        data = artifacts.fetch_file(ctx.client, pid, args.file, **selector)
+        if args.out:
+            Path(args.out).write_bytes(data)
+            out.write(f"wrote {len(data)} bytes to {args.out}\n")
+        else:
+            out.write(data.decode("utf-8", errors="replace"))
+        return 0
+
+    if args.job_id is not None:
+        dest = artifacts.cache_path(ctx.cache_dir, args.job_id)
+        if args.refresh or not dest.is_file():
+            size = artifacts.download_archive(ctx.client, pid, dest, **selector)
+        else:
+            size = dest.stat().st_size
+    else:  # by ref: "latest successful" moves, so never cache
+        dest = ctx.cache_dir / f"ref-{args.ref.replace('/', '%2F')}-{args.job}-artifacts.zip"
+        size = artifacts.download_archive(ctx.client, pid, dest, **selector)
+    out.write(f"{dest} ({size} bytes)\n")
+    if args.list:
+        out.write("".join(f"{s:>10} {name}\n" for s, name in artifacts.list_archive(dest)))
+    if args.extract:
+        n = artifacts.extract_archive(dest, Path(args.extract))
+        out.write(f"extracted {n} file(s) to {args.extract}\n")
+    return 0
 
 
 COMMANDS: dict[str, Command] = {
@@ -210,7 +241,7 @@ COMMANDS: dict[str, Command] = {
     "version": cmd_version,
     "log": cmd_log,
     "diff": cmd_diff,
-    "artifacts": _not_implemented,
+    "artifacts": cmd_artifacts,
 }
 
 
