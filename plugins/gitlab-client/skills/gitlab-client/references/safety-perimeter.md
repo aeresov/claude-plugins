@@ -53,7 +53,7 @@ Send it?
 
 | Status | Meaning |
 |---|---|
-| **404** | Ambiguous by design: the resource is missing **or** exists but the token can't see it. Also check: wrong path (typo, 15.11-missing route — see v15-compat), or a reverse proxy that decoded the `%2F` in an encoded file/project path. `gl` annotates this. |
+| **404** | Ambiguous by design: the resource is missing **or** exists but the token can't see it. Also check: wrong path (typo, a route your 15.x minor doesn't have — see v15-compat), or a reverse proxy that decoded the `%2F` in an encoded file/project path. `gl` annotates this. |
 | **403** `insufficient_scope` | The token lacks a scope — `gl` names it (writes need `api`; `read_api` is read-only). Fix the token, not the call. |
 | **403** other | The *user's* role or a rule: below Developer for retry/cancel/play, or a protected branch/environment. |
 | **401** | Token rejected — revoked, expired, or `token_cmd` emitted the wrong thing. Run `/gitlab-client:doctor`. |

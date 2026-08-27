@@ -146,8 +146,15 @@ def cmd_project(ctx: Context, args: argparse.Namespace, out: TextIO) -> int:
 def cmd_version(ctx: Context, args: argparse.Namespace, out: TextIO) -> int:
     data = ctx.client.request("GET", "/metadata").json() or {}
     version = str(data.get("version", "?"))
-    if version.split(".", 1)[0] != "15":
-        ctx.warn(f"gl: warning: references are written for GitLab 15.11; this instance is {version}")
+    major, _, rest = version.partition(".")
+    minor = rest.split(".", 1)[0]
+    if major != "15":
+        ctx.warn(f"gl: warning: references are written for GitLab 15.x; this instance is {version}")
+    elif minor.isdigit() and int(minor) < 11:
+        ctx.warn(
+            f"gl: note: GitLab {version} predates some 15.x endpoints the references mention — they carry their "
+            "minimum version (see v15-compat.md); gl diff falls back to /changes automatically"
+        )
     out.write(_dump({"version": version, "revision": data.get("revision"), "enterprise": data.get("enterprise"), "url": ctx.settings.url}))
     return 0
 

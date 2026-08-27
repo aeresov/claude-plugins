@@ -127,7 +127,11 @@ def test_version_warns_on_non_15(run_gl, opener):
 
     opener.add(200, {"version": "16.4.0", "revision": "abc", "enterprise": True})
     code, out, err = run_gl("version")
-    assert code == 0 and "written for GitLab 15.11; this instance is 16.4.0" in err
+    assert code == 0 and "written for GitLab 15.x; this instance is 16.4.0" in err
+
+    opener.add(200, {"version": "15.2.5", "revision": "abc"})  # CE, pre-15.6: no `enterprise` field at all
+    code, out, err = run_gl("version")
+    assert code == 0 and "GitLab 15.2.5 predates some 15.x endpoints" in err and json.loads(out)["enterprise"] is None
 
     opener.add(200, {"version": "16.4.0", "revision": "abc", "enterprise": True})
     code, out, err = run_gl("version", "--quiet")

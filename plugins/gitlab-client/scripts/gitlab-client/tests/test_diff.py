@@ -45,6 +45,15 @@ def test_gl_diff_cli(run_gl, opener):
     code, out, _ = run_gl("diff", "12", "--project", "group/proj", "--files")
     assert out == "A a.py\nM m.py\n2 file(s)\n"
 
+    # GitLab < 15.7 has no /diffs: fall back to the deprecated /changes and surface `overflow`.
+    opener.add(200, PROJECT_JSON).add(404, {"error": "404 Not Found"}).add(200, {"changes": [MOD], "overflow": True})
+    code, out, err = run_gl("diff", "12", "--project", "group/proj")
+    assert code == 0 and out == render_file(MOD) and "overflow=true" in err
+    assert opener.last.full_url.endswith("/projects/42/merge_requests/12/changes")
+    opener.add(200, PROJECT_JSON).add(403, {"message": "403 Forbidden"})
+    code, _, err = run_gl("diff", "12", "--project", "group/proj")
+    assert code == 1 and "403" in err  # only a 404 triggers the fallback
+
     opener.add(200, PROJECT_JSON).add(200, [NEW, MOD], {"X-Next-Page": ""})
     code, out, _ = run_gl("diff", "12", "--project", "group/proj", "--file", "m.py")
     assert out == render_file(MOD)

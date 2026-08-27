@@ -31,7 +31,7 @@ Missing any of 1–3 → stop and ask. Never read `.claude/gitlab-client.local.m
    - MR iid → `gl api GET /projects/:project/merge_requests/<iid> --fields iid,title,source_branch,head_pipeline.id,head_pipeline.status,head_pipeline.web_url`
    - branch → `gl api GET /projects/:project/pipelines ref=<branch> order_by=updated_at sort=desc per_page=1 --fields id,status,sha,web_url`
    - job id → `gl api GET /projects/:project/jobs/<id> --fields id,name,stage,status,pipeline.id`
-2. **List jobs.** `gl api GET /projects/:project/pipelines/<id>/jobs --all --fields id,name,stage,status,allow_failure,duration,web_url`. Then `…/pipelines/<id>/bridges --fields name,status,downstream_pipeline.id,downstream_pipeline.status` and repeat this step for every failed downstream pipeline (15.11 doesn't list child pipelines otherwise).
+2. **List jobs.** `gl api GET /projects/:project/pipelines/<id>/jobs --all --fields id,name,stage,status,allow_failure,duration,web_url`. Then `…/pipelines/<id>/bridges --fields name,status,downstream_pipeline.id,downstream_pipeline.status` and repeat this step for every failed downstream pipeline (15.x doesn't list child pipelines otherwise).
 3. **Read each failed job's log, narrowest view first.**
    - `gl log <job> --sections` — find the failing section (usually `step_script`; look at durations and line counts).
    - `gl log <job> --section step_script --grep 'error|failed|exception|traceback|fatal|exit code' -C 3`

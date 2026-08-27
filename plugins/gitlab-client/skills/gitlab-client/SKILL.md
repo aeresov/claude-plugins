@@ -5,7 +5,7 @@ description: Work with a self-managed GitLab (15.x) through the bundled `gl` CLI
 
 # gitlab-client
 
-Make Claude an effective, safe user of an on-prem GitLab through `gl`, a small bundled REST v4 client. The skill owns *which* calls to make and *when to stop and ask*; `gl` owns auth, encoding, pagination, and the write allow-list. The reference docs are written for **GitLab 15.11** — `gl version` warns when the instance is something else.
+Make Claude an effective, safe user of an on-prem GitLab through `gl`, a small bundled REST v4 client. The skill owns *which* calls to make and *when to stop and ask*; `gl` owns auth, encoding, pagination, and the write allow-list. The reference docs cover the **GitLab 15.x** series (verified live on 15.2.5 CE; anything that arrived later in 15.x carries its minimum version) — `gl version` warns when the instance is outside 15.x and notes when it predates 15.11.
 
 `gl` lives at `../../scripts/gl` relative to this skill's directory (`${CLAUDE_PLUGIN_ROOT}/scripts/gl`). Resolve it to an absolute path once per turn and use that. It needs only `python3` ≥ 3.10.
 
@@ -76,11 +76,11 @@ Why the split: the confirm class is visible to colleagues and hard to unsay; the
 - [`references/merge-requests.md`](references/merge-requests.md) — list/read, diffs, discussions vs notes, create (`Draft:` prefix), update (`add_labels`, `reviewer_ids`), "the MR for my branch".
 - [`references/pipelines.md`](references/pipelines.md) — pipelines/jobs/bridges, logs, retry/cancel/play, trigger, test reports, artifacts.
 - [`references/safety-perimeter.md`](references/safety-perimeter.md) — allow-list, confirmation format, error semantics.
-- [`references/v15-compat.md`](references/v15-compat.md) — params/routes that don't exist on 15.11 and the deprecated-but-present fields to prefer.
+- [`references/v15-compat.md`](references/v15-compat.md) — params/routes that don't exist on 15.x (or only from a later 15.x minor) and the deprecated-but-present fields to prefer.
 
 ## When to step out
 
 - Issues, epics, wiki, snippets, releases — not covered; say so.
 - Merging, approving, rebasing, deleting — refused; the user does it in the GitLab UI or with git.
-- GitHub / Bitbucket / gitlab.com SaaS questions — wrong skill (the client would work against gitlab.com, but the references target self-managed 15.11).
+- GitHub / Bitbucket / gitlab.com SaaS questions — wrong skill (the client would work against gitlab.com, but the references target self-managed 15.x).
 - `python-gitlab` / `glab` / CI YAML authoring — not this skill's job.

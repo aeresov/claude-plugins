@@ -1,4 +1,4 @@
-# Merge requests (GitLab 15.11)
+# Merge requests (GitLab 15.x)
 
 MRs are addressed by project-scoped **iid** (the `!142` number), never the global id. Reads are free; **create, update, comment, and resolve are confirm-first** — show the project, iid, exact text, and the command, and send only after an explicit yes.
 
@@ -8,7 +8,7 @@ MRs are addressed by project-scoped **iid** (the `!142` number), never the globa
 gl api GET /projects/:project/merge_requests state=opened order_by=updated_at --fields iid,title,author.username,source_branch,draft,detailed_merge_status,web_url
 ```
 
-Filters: `source_branch=`, `target_branch=`, `author_username=`, `reviewer_username=`, `search=`, `wip=yes|no`. There is **no `draft=` filter on 15.11** — use `wip=`.
+Filters: `source_branch=`, `target_branch=`, `author_username=`, `reviewer_username=`, `search=`, `wip=yes|no`. There is **no `draft=` filter on 15.x** — use `wip=`.
 
 "The MR for my branch":
 
@@ -22,7 +22,7 @@ gl api GET /projects/:project/merge_requests source_branch=$(git branch --show-c
 gl api GET /projects/:project/merge_requests/<iid> --fields iid,title,description,state,draft,detailed_merge_status,has_conflicts,source_branch,target_branch,head_pipeline.id,head_pipeline.status,head_pipeline.web_url,diff_refs,changes_count,reviewers,labels,web_url
 ```
 
-- Use `detailed_merge_status` (15.6+), not the deprecated `merge_status`; `head_pipeline`, not `pipeline`.
+- Use `detailed_merge_status` (**15.6+**; it is `null` on earlier 15.x — then read the deprecated `merge_status`: `can_be_merged` / `cannot_be_merged` / `unchecked`); `head_pipeline`, not `pipeline`.
 - `changes_count` is a **string**, capped at `"1000+"`.
 - `diff_refs` is empty for a few seconds after creation — retry before building a diff-note `position` from it.
 
@@ -31,6 +31,7 @@ gl api GET /projects/:project/merge_requests/<iid> --fields iid,title,descriptio
 ```bash
 gl diff <iid> --files        # changed files first
 gl diff <iid> --file path    # then only the files that matter
+# uses /diffs (15.7+); on older 15.x gl falls back to the deprecated /changes — same output, plus a warning when the server set overflow
 ```
 
 A file the server refused to render (over diff limits) appears as `[diff omitted by server …]` — read it via the raw files API or locally instead. Commits on the MR:

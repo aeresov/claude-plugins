@@ -1,4 +1,4 @@
-# Pipelines (GitLab 15.11)
+# Pipelines (GitLab 15.x)
 
 CI/CD through `gl`. Reads are free; retry/cancel/play/trigger are **go-and-report** writes — run them, then report the resulting id, status, and `web_url`. No merging, no deleting, no log erasing (exit 3).
 
@@ -18,7 +18,7 @@ For an MR, don't list — read `head_pipeline` from the MR object (see merge-req
 gl api GET /projects/:project/pipelines/<id> --fields id,status,ref,sha,duration,web_url,user.username
 ```
 
-**Child pipelines never appear in the list** on 15.11 — reach them through bridges (below). The single-pipeline and jobs endpoints do accept child ids.
+**Child pipelines never appear in the list** on 15.x — reach them through bridges (below). The single-pipeline and jobs endpoints do accept child ids.
 
 ## Jobs and stages
 
@@ -59,8 +59,8 @@ gl api POST /projects/:project/pipelines/<id>/retry
 gl api POST /projects/:project/pipelines/<id>/cancel
 ```
 
-- Job retry creates a **new job id** (report it); the old job keeps its status (`failed`) and disappears from the pipeline's job list unless `include_retried:=true`. Bridge jobs can't be retried on 15.11 — retry the pipeline instead.
-- `play` works on manual jobs only; `job_variables_attributes` is optional.
+- Job retry creates a **new job id** (report it); the old job keeps its status (`failed`) and disappears from the pipeline's job list unless `include_retried:=true`. Bridge jobs can't be retried on 15.x — retry the pipeline instead. Retry is also refused with **403 `Job is not retryable`** for a manual job that has never run (play it instead) and for a job that was already retried/re-played (retry the newest attempt).
+- `play` is for manual jobs — including a manual job that already **finished**: playing it again creates and runs a **new** job (verified on 15.2.5), so treat `play` as "run CI now", not as a no-op on completed jobs. `job_variables_attributes` is optional.
 - Pipeline retry reruns the failed/canceled jobs and **keeps the same pipeline id**.
 - Pipeline cancel may return 200 with nothing actually cancelled — re-fetch the status before reporting.
 - 403 here = role below Developer, or a protected branch.
@@ -110,4 +110,4 @@ gl api POST /projects/:project/jobs/<id>/artifacts/keep
 
 ## Status vocabulary
 
-Jobs: `created` `pending` `running` `failed` `success` `canceled` `skipped` `waiting_for_resource` `manual`. Pipelines add `preparing` and `scheduled`. Don't filter on values from newer GitLab versions — 15.11 rejects or ignores them.
+Jobs: `created` `pending` `running` `failed` `success` `canceled` `skipped` `waiting_for_resource` `manual`. Pipelines add `preparing` and `scheduled`. Don't filter on values from newer GitLab versions — 15.x rejects or ignores them.

@@ -27,7 +27,7 @@ You are running `/gitlab-client:doctor`: a health check. Write no files, dispatc
    PASS  2. user settings file present
    PASS  3. settings valid
    PASS  4. token_cmd resolves
-   PASS  5. instance reachable — GitLab 15.11.13-ee (EE)
+   PASS  5. instance reachable — GitLab 15.2.5 (CE)
    WARN  6. token scopes — read_api only (writes will 403); expires 2026-09-03
          → <remediation text from the checklist, verbatim>
    PASS  7. project resolves — platform/api (from remote:origin)

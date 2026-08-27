@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from typing import Any, Callable
 
+from .errors import HttpError
 from .http import Client, encode_path_segment
 
 OMITTED = "[diff omitted by server — exceeds the instance's diff limits]"
@@ -70,7 +71,18 @@ def render_compare(payload: dict[str, Any]) -> str:
 
 
 def mr_diffs(client: Client, project_id: int, iid: int, warn: Callable[[str], None]) -> list[dict[str, Any]]:
-    return client.paginate(f"/projects/{project_id}/merge_requests/{iid}/diffs", None, max_items=3000, warn=warn)
+    """Per-file diffs of an MR. `/diffs` exists from GitLab 15.7; older 15.x 404s, so fall back to the
+    deprecated `/changes` (one response, same per-file shape, plus an `overflow` flag)."""
+    base = f"/projects/{project_id}/merge_requests/{iid}"
+    try:
+        return client.paginate(base + "/diffs", None, max_items=3000, warn=warn)
+    except HttpError as e:
+        if e.status != 404:
+            raise
+    data = client.request("GET", base + "/changes").json() or {}
+    if data.get("overflow"):
+        warn("gl: warning: the server truncated this diff (overflow=true) — it exceeds the instance diff limits")
+    return data.get("changes") or []
 
 
 def commit_diff(client: Client, project_id: int, sha: str) -> list[dict[str, Any]]:

@@ -37,8 +37,8 @@ Checks 1–3 and 8 are static and read-only. Checks 4–7 are **live**: they run
 
 ### 5. Instance reachable, version (live; only if 4 passed)
 
-- Uses the same `gl version` run. PASS if exit 0; note `version` and `enterprise` for the summary.
-- WARN (still PASS for the summary count) if `gl` printed `references are written for GitLab 15.11; this instance is …` → repeat that line.
+- Uses the same `gl version` run. PASS if exit 0; note `version` and edition for the summary (`enterprise: true` → EE; `false`/`null` → CE — the field only exists from 15.6, and a version string without `-ee` is CE).
+- WARN (still PASS for the summary count) if `gl` printed `references are written for GitLab 15.x; this instance is …` → repeat that line. A `gl: note: … predates some 15.x endpoints` line is informational — repeat it, no WARN.
 - FAIL (exit 1) → show `gl`'s stderr, then: "Could not reach `<url>` as an authenticated user. 401 means the token was rejected (expired, revoked, or the wrong secret); a connection error means the host isn't reachable from here (VPN? DNS? proxy?); 404 on `/api/v4/metadata` usually means `url` points at the wrong place (relative-URL installs need the `/gitlab` prefix)."
 
 ### 6. Token scopes and expiry (live; only if 5 passed)
@@ -48,7 +48,7 @@ Checks 1–3 and 8 are static and read-only. Checks 4–7 are **live**: they run
 - FAIL if `scopes` has neither `api` nor `read_api` → "The token can't use the REST API (scopes: `<list>`). Create a token with `read_api` (reads) or `api` (reads + writes) and update the secret behind `token_cmd`." (`read_repository` alone only unlocks the files endpoints.)
 - WARN if `scopes` has `read_api` but not `api` → "Token is read-only (`read_api`): browsing, logs, and diffs work; creating MRs, commenting, retrying jobs and triggering pipelines will fail with 403. Create a token with the `api` scope if you want writes."
 - WARN if `expires_at` is within 14 days → "Token expires on `<date>` — rotate it soon and update `token_cmd`'s secret."
-- WARN if the call itself 403s/404s (check 5 already proved the token works) → "Could not introspect the token (`/personal_access_tokens/self` needs GitLab ≥ 15.5 and may need `read_api`). Check the token's scopes in GitLab → User settings → Access tokens: `read_api` for reads, `api` for writes."
+- WARN if the call itself 401s/403s/404s (check 5 already proved the token works) → "Could not introspect the token (`/personal_access_tokens/self` exists from GitLab 15.5 — it returns **401** on 15.2 — and may need `read_api`). Check the token's scopes in GitLab → User settings → Access tokens: `read_api` for reads, `api` for writes."
 - FAIL if `active` is false or `revoked` is true → "The token is revoked or inactive. Create a new one and update the secret behind `token_cmd`."
 
 ### 7. Project resolves (live; only if 5 passed)

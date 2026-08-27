@@ -2,6 +2,8 @@
 
 **Date:** 2026-08-27 · **Plugin:** `plugins/gitlab-client/` · **Initial version:** 0.1.0 · **Target:** self-managed GitLab **15.11 EE** (license tier unknown), reachable over plain HTTPS, authenticated with a personal access token (PAT).
 
+> **Post-implementation note (2026-08-27):** the real instance turned out to be **GitLab 15.2.5 CE**. The endpoint inventory below was researched against the archived 15.11 docs and stands; features that arrived between 15.2 and 15.11 are tabulated in the plugin's `references/v15-compat.md`, and `gl diff` falls back to `/changes` where `/diffs` (15.7) is missing. Live probe results are in `plugins/gitlab-client/CLAUDE.md`.
+
 ## 1. Goal
 
 Make Claude Code an effective, safe user of an on-prem GitLab 15.11 for three jobs:

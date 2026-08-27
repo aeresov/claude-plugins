@@ -78,7 +78,7 @@ def test_http_error_maps_message_shapes(client, opener):
         client.request("POST", "/projects/1/merge_requests", json_body={"title": "x"})
 
     opener.add(403, {"message": "403 Forbidden"})
-    with pytest.raises(HttpError, match="403 Forbidden.*role too low"):
+    with pytest.raises(HttpError, match="403 Forbidden.*role below Developer"):
         client.request("POST", "/projects/1/jobs/2/retry")
 
     opener.add(401, {"message": "401 Unauthorized"})

@@ -1,4 +1,4 @@
-# Repo browsing (GitLab 15.11)
+# Repo browsing (GitLab 15.x)
 
 Read-only repository access through `gl`. All paths take `:project` (expands to the URL-encoded project path). Always pass `--fields` on lists.
 
@@ -28,7 +28,7 @@ Since 15.0 this endpoint is **keyset-paginated only**; `gl` follows the `Link` h
 
 ## Files
 
-`ref` is **required** on 15.11 for every files call. Encode the *whole* file path with `%2F` (e.g. `src/app.py` → `src%2Fapp.py`).
+`ref` is **required** on 15.x for every files call. Encode the *whole* file path with `%2F` (e.g. `src/app.py` → `src%2Fapp.py`).
 
 Metadata first when size is unknown:
 
@@ -95,7 +95,7 @@ gl api GET /projects/:project/repository/branches search=^feature --all --fields
 gl api GET /projects/:project/repository/tags order_by=version --fields name,commit.short_id,message
 ```
 
-`search=^x` anchors at the start. `order_by=version` sorts tags semver-style (15.4+). Names containing `/` must be `%2F`-encoded when they appear *in the path* (`…/repository/branches/feature%2Fx`) — not as query values.
+`search=^x` anchors at the start. `order_by=version` sorts tags semver-style (**15.4+** — a 400 `order_by does not have a valid value` before that; drop it and sort client-side). Names containing `/` must be `%2F`-encoded when they appear *in the path* (`…/repository/branches/feature%2Fx`) — not as query values.
 
 ## Code search
 
@@ -103,7 +103,7 @@ gl api GET /projects/:project/repository/tags order_by=version --fields name,com
 gl api GET /projects/:project/search scope=blobs search="def resolve_project" --fields path,startline,data
 ```
 
-On 15.11 the docs gate blob search behind **Premium + Elasticsearch**. If it 400s/403s — or returns nothing for a term you know exists — don't retry: fall back to tree (`recursive:=true`) + raw files + local grep, and remember the outcome for the rest of the turn.
+The 15.11 docs gate project blob search behind **Premium + Elasticsearch**, but basic search answers it fine on 15.2.5 CE without Elasticsearch (verified live). If it 400s/403s — or returns nothing for a term you know exists — don't retry: fall back to tree (`recursive:=true`) + raw files + local grep, and remember the outcome for the rest of the turn.
 
 ## Archive
 

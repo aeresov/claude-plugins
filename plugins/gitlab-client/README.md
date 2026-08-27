@@ -79,11 +79,11 @@ Every subcommand takes `--url`, `--project`, `--remote`, `-q/--quiet`. Exit code
 
 ## Troubleshooting
 
-- **404 on something that exists.** GitLab returns 404 both for *missing* and *not visible to this token* — also check for a path typo, a route that doesn't exist on 15.11, or a reverse proxy decoding the `%2F` in encoded paths.
+- **404 on something that exists.** GitLab returns 404 both for *missing* and *not visible to this token* — also check for a path typo, a route that doesn't exist on your 15.x minor (see `v15-compat.md`), or a reverse proxy decoding the `%2F` in encoded paths.
 - **403.** `insufficient_scope` means the token: writes need `api`, `read_api` is read-only — fix the token, not the call. Any other 403 is your *role* (below Developer for retry/cancel/play) or a protected branch/environment.
 - **Huge job logs.** Never dump a log you haven't sized: `gl log JOB_ID --sections` first, then `--section NAME`, `--grep`, or `--tail`.
 - **Artifact and trace downloads 302** to pre-signed object-storage URLs; `gl` strips the token before following the redirect. Replicating the download with plain curl would re-send the token to the storage host — don't.
-- **"references are written for GitLab 15.11" warning** from `gl version`: the plugin still works, but the reference docs may be slightly off — expect the occasional 404 on routes that moved.
+- **"references are written for GitLab 15.x" warning** from `gl version`: the plugin still works, but the reference docs may be slightly off — expect the occasional 404 on routes that moved. The quieter **"predates some 15.x endpoints" note** means you're on an early 15.x (e.g. 15.2): `gl diff` uses `/changes` instead of `/diffs`, `/personal_access_tokens/self` (15.5) isn't there, and `detailed_merge_status` (15.6) is `null` — read `merge_status`.
 - **Cache.** Logs and artifact archives land in `~/.cache/gitlab-client/<host>/` (respects `XDG_CACHE_HOME`). Safe to delete at any time; `gl` re-downloads on demand.
 
 ## License
