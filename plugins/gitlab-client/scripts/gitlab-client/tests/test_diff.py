@@ -62,10 +62,14 @@ def test_gl_diff_cli(run_gl, opener):
     code, out, err = run_gl("diff", "12", "--project", "group/proj", "--file", "zzz")
     assert code == 1 and "no file 'zzz'" in err
 
-    opener.add(200, PROJECT_JSON).add(200, [MOD])
+    # The commit diff endpoint is paginated (20 files per page by default): follow every page.
+    opener.add(200, PROJECT_JSON).add(200, [NEW], {"X-Next-Page": "2"}).add(200, [MOD], {"X-Next-Page": ""})
     code, out, _ = run_gl("diff", "--commit", "abc123", "--project", "group/proj")
-    assert code == 0 and out == render_file(MOD)
-    assert opener.last.full_url.endswith("/projects/42/repository/commits/abc123/diff")
+    assert code == 0 and out == render_file(NEW) + render_file(MOD)
+    assert opener.last.full_url.endswith("/projects/42/repository/commits/abc123/diff?per_page=100&page=2")
+    opener.add(200, PROJECT_JSON).add(200, [NEW], {"X-Next-Page": "2"}).add(200, [MOD], {"X-Next-Page": ""})
+    code, out, _ = run_gl("diff", "--commit", "abc123", "--project", "group/proj", "--file", "m.py")
+    assert code == 0 and out == render_file(MOD)  # a file on page 2 is found
 
     opener.add(200, PROJECT_JSON).add(200, {"commits": [{"short_id": "abc1234", "title": "T"}], "diffs": [MOD], "compare_timeout": False})
     code, out, _ = run_gl("diff", "--range", "v1.0..release/2.0", "--straight", "--project", "group/proj")

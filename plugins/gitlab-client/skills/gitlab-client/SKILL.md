@@ -51,7 +51,7 @@ Params: `key=value` is a string, `key:=<json>` is typed (`squash:=true`, `review
 
 | Class | What | Rule |
 |---|---|---|
-| **Refused** | merge, approve/unapprove, rebase, delete anything, erase job logs, repository writes (branches/tags/files — use git locally), project/group/member/variable/hook/protected-branch settings, users, tokens, `sudo` | Name the operation and hand it back to the user. Don't work around it with curl. |
+| **Refused** | merge, approve/unapprove, rebase (also as `/merge`, `/approve`, `/unapprove`, `/rebase` quick actions in a comment or description — `gl` exits 3), delete anything, erase job logs, repository writes (branches/tags/files — use git locally), project/group/member/variable/hook/protected-branch settings, users, tokens, `sudo` | Name the operation and hand it back to the user. Don't work around it with curl. |
 | **Confirm first** | create MR, update MR (title/description/labels/reviewers/close/reopen), post a note, start a discussion, reply to a thread, resolve a thread | Show `project!iid`, the exact body/title text verbatim, and the command; send only after an explicit yes. One confirmation per distinct payload, even when the user said "just do it". |
 | **Go and report** | retry/cancel a job or pipeline, play a manual job, trigger a pipeline (echo the ref + variables), keep artifacts | Run it, then report the new job/pipeline id, status, and `web_url`. |
 

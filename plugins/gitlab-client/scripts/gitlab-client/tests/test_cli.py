@@ -58,6 +58,37 @@ def test_api_refuses_sudo_parameter(run_gl, opener):
     assert code == 3 and "sudo" in err and opener.requests == []
     code, _, err = run_gl("api", "POST", "/projects/1/jobs/5/retry?x=1&sudo[]=alice")
     assert code == 3 and "sudo" in err and opener.requests == []
+    # GitLab 15.x (Rack 2) also splits a query string on ';'.
+    code, _, err = run_gl("api", "GET", "/user?x=1;sudo=alice")
+    assert code == 3 and "sudo" in err and opener.requests == []
+    code, _, err = run_gl("api", "POST", "/projects/1/merge_requests?x=1;sudo=alice", "title=t")
+    assert code == 3 and "sudo" in err and opener.requests == []
+
+
+@pytest.mark.parametrize(
+    "argv",
+    [
+        ("POST", "/projects/1/merge_requests/2/notes", "body=/approve"),
+        ("POST", "/projects/1/merge_requests/2/notes", "body=/merge", "merge_request_diff_head_sha=abc123"),
+        ("POST", "/projects/1/merge_requests/2/notes", "merge_request_diff_head_sha=abc123", "body=done"),
+        ("POST", "/projects/1/merge_requests/2/discussions", "body=Looks good.\n  /Unapprove"),
+        ("POST", "/projects/1/merge_requests/2/discussions/0a1b/notes", "body=/rebase"),
+        ("PUT", "/projects/1/merge_requests/2", "description=LGTM\n/approve"),
+        ("POST", "/projects/1/merge_requests", "--json", '{"title": "t", "description": "x\\n/merge"}'),  # JSON-escaped newline
+        ("POST", "/projects/1/merge_requests/2/notes?body=/approve"),  # Grape merges the PATH query into params
+    ],
+)
+def test_api_refuses_merge_and_approve_quick_actions(run_gl, opener, argv):
+    code, _, err = run_gl("api", *argv)
+    assert code == 3 and "write policy" in err and opener.requests == []
+
+
+def test_api_allows_text_that_only_looks_like_a_quick_action(run_gl, opener):
+    body = "See /merge_requests/7 and /approved-list.\nPlease rebase: run /rebase-helper, or merge via the UI /merge later"
+    opener.add(201, {"id": 1})
+    code, _, err = run_gl("api", "POST", "/projects/1/merge_requests/2/notes", f"body={body}")
+    assert code == 0, err
+    assert json.loads(opener.last.data) == {"body": body}
 
 
 def test_api_refuses_hash_in_path_before_network(run_gl, opener):

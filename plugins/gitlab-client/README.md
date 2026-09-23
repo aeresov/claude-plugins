@@ -25,8 +25,8 @@ Two Markdown-with-frontmatter files, three keys total. Never shown to Claude —
 
 | Key | Where | Meaning |
 |---|---|---|
-| `url` | user file; project may override | Instance base URL, e.g. `https://gitlab.example.com` |
-| `token_cmd` | user file; project may override | Shell command whose stdout is the PAT — recorded verbatim |
+| `url` | user file only | Instance base URL, e.g. `https://gitlab.example.com` |
+| `token_cmd` | user file only | Shell command whose stdout is the PAT — recorded verbatim |
 | `project` | project file only | `group/subgroup/name` — pins the project when the git remote doesn't map |
 
 - **User:** `~/.claude/gitlab-client.local.md` — written by `/gitlab-client:setup`; required.
@@ -44,6 +44,8 @@ token_cmd: ksm secret notation keeper://abc123/field/password
 `token_cmd` is run through the shell, so pipes and `$(…)` work: Keeper `ksm secret notation keeper://<uid>/field/password`, pass `pass show work/gitlab-pat`, 1Password `op read "op://Work/GitLab PAT/credential"`, env var `printf '%s' "$GITLAB_TOKEN"`. It must exit 0 and print exactly one non-empty line; on failure `gl` exits 2 showing only the exit code and stderr — never stdout. **Never put a literal token in the file** (`token_cmd: echo glpat-…`) — the command line itself may be displayed by `setup`/`doctor`.
 
 Precedence, highest first: CLI flags (`--url`, `--project`) → environment (`GITLAB_CLIENT_URL`, `GITLAB_CLIENT_TOKEN` — when the token env var is set, `token_cmd` is not run) → project file → user file.
+
+A project file can only pin `project`. `gl` ignores `url` and `token_cmd` there, with a warning: a checkout must not decide where your token is sent or what command fetches it. For a repo on a second instance, export `GITLAB_CLIENT_URL` and `GITLAB_CLIENT_TOKEN` for that repo instead.
 
 ## What Claude will and won't do
 

@@ -53,7 +53,7 @@ Which instance, which token, who to ping when it breaks.
 Multi-line `token_cmd` → YAML block scalar (`token_cmd: |` + indented lines).
 
 ### 5. Project-level file (optional)
-Run `git remote get-url origin` in the project root. If it succeeds and looks like `<host>:group/name.git` or `https://<host>/group/name.git`, tell the user the project will be derived from it and ask via **AskUserQuestion** whether to pin it anyway: *No — derive from the remote* / *Yes — pin `project:`* / *Yes — and override url/token_cmd for this repo*. If the remote is missing or doesn't look like a GitLab path, recommend pinning and ask for the `group/name` path.
+Run `git remote get-url origin` in the project root. If it succeeds and looks like `<host>:group/name.git` or `https://<host>/group/name.git`, tell the user the project will be derived from it and ask via **AskUserQuestion** whether to pin it anyway: *No — derive from the remote* / *Yes — pin `project:`*. A project file can only pin `project` (`gl` ignores `url`/`token_cmd` there); if the user needs another instance for this repo, point them at `GITLAB_CLIENT_URL` + `GITLAB_CLIENT_TOKEN`. If the remote is missing or doesn't look like a GitLab path, recommend pinning and ask for the `group/name` path.
 
 If writing, create `.claude/gitlab-client.local.md`:
 

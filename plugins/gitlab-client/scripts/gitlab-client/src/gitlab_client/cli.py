@@ -20,7 +20,7 @@ from typing import Any, TextIO
 
 from . import __version__, artifacts, diff, log
 from .errors import ConfigError, GlError, PolicyError
-from .http import Client, check_write_policy, parse_params, project_fields, substitute_project
+from .http import Client, check_body_policy, check_write_policy, parse_params, path_query, project_fields, substitute_project
 from .project import Project, git_toplevel, resolve_project
 from .settings import Settings, load_settings, resolve_token
 
@@ -113,10 +113,12 @@ def cmd_api(ctx: Context, args: argparse.Namespace, out: TextIO) -> int:
     elif method != "GET":
         body = params
     query = params if method == "GET" else None
-    path_query = urllib.parse.parse_qs(urllib.parse.urlsplit(args.path).query, keep_blank_values=True)
-    body_keys = list(body) if isinstance(body, dict) else []
-    if any(k.rstrip("[]") == "sudo" for k in [*params, *path_query, *body_keys]):
+    in_path = path_query(args.path)
+    keys = [*params, *in_path, *(body if isinstance(body, dict) else [])]
+    if any(k.rstrip("[]") == "sudo" for k in keys):
         raise PolicyError("refused by gitlab-client write policy: the sudo parameter (impersonation) is not allowed")
+    if method != "GET":
+        check_body_policy(keys, [body, in_path])
 
     path = substitute_project(args.path, ctx.project.path) if ":project" in args.path else args.path
     accept_json = not RAW_ROUTE.search(path.split("?", 1)[0])
@@ -224,7 +226,7 @@ def cmd_diff(ctx: Context, args: argparse.Namespace, out: TextIO) -> int:
             out.write(diff.render_compare(payload))
             return 0
     elif args.commit:
-        diffs = diff.commit_diff(ctx.client, pid, args.commit)
+        diffs = diff.commit_diff(ctx.client, pid, args.commit, ctx.warn)
     else:
         diffs = diff.mr_diffs(ctx.client, pid, args.mr_iid, ctx.warn)
     if args.file:

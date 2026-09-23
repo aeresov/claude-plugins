@@ -24,7 +24,8 @@ POST /projects/:id/jobs/:jid/artifacts/keep
 
 - `DELETE` and `PATCH` do not exist in `gl` at all — the parser accepts only `GET | POST | PUT`.
 - The path is matched exactly as it will be sent: anything that wouldn't round-trip — a `#`, whitespace, control or non-ASCII characters, or a `.`/`..` segment — is refused on every verb. URL-encode file paths and branch names (`%2F`, `%20`) instead.
-- A `sudo` parameter is refused in code on **every** verb, whether passed as `sudo=…`, in a GET query, or inside a `--json` body.
+- A `sudo` parameter is refused in code on **every** verb, whether passed as `sudo=…`, in a query string inside PATH (split on `;` as well as `&`, as GitLab 15.x does), or inside a `--json` body.
+- Quick actions that merge, approve or rebase are refused in code. GitLab runs quick actions in MR descriptions, notes and discussions, so a line opening with `/merge`, `/approve`, `/unapprove` or `/rebase` in any POST/PUT parameter, and the `merge_request_diff_head_sha` parameter (the Notes API's companion to `/merge`), exit 3 before any network call. Other quick actions (`/label`, `/assign`, …) pass, because the allow-listed MR update can do the same.
 - There is no override flag. Don't work around a refusal with `curl`; name the operation and hand it back to the user.
 
 ## Why each refused class is refused

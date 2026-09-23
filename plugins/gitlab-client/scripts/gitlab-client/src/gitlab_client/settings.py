@@ -1,7 +1,8 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 """Settings discovery (user + project .local.md files, env, flags) and token resolution.
 
-Precedence, highest first: CLI flags → environment → project file → user file.
+Precedence, highest first: CLI flags → environment → project file → user file. The project
+file may only set `project`; `url` and `token_cmd` come from the user file or the environment.
 The token is resolved by running `token_cmd` (a user-authored shell command line —
 `shell=True` is deliberate) and lives only in this process's memory.
 """
@@ -19,6 +20,10 @@ from .errors import ConfigError
 KNOWN_KEYS = ("url", "token_cmd", "project")
 USER_FILE = Path(".claude") / "gitlab-client.local.md"  # relative to $HOME
 PROJECT_FILE = Path(".claude") / "gitlab-client.local.md"  # relative to the repo root
+# A checkout's own file must not choose where the user's token goes or what runs to fetch it:
+# `url` alone would send the user-level token to that host, and `token_cmd` would run inside gl,
+# out of sight of Claude Code's per-command permission prompt.
+PROJECT_FILE_IGNORED = ("url", "token_cmd")
 ENV_URL = "GITLAB_CLIENT_URL"
 ENV_TOKEN = "GITLAB_CLIENT_TOKEN"
 TOKEN_CMD_TIMEOUT = 60
@@ -94,9 +99,13 @@ def load_settings(
 ) -> Settings:
     user_path = home / USER_FILE
     project_path = cwd / PROJECT_FILE
+    project_file = read_file_settings(project_path, warn)
+    for key in PROJECT_FILE_IGNORED:
+        if project_file.pop(key, None) is not None:
+            warn(f"gl: warning: {project_path}: '{key}' ignored — a project file may only set 'project'")
     layers = [
         ("user file", read_file_settings(user_path, warn)),
-        ("project file", read_file_settings(project_path, warn)),
+        ("project file", project_file),
         ("env", {"url": env[ENV_URL]} if env.get(ENV_URL) else {}),
         ("flag", {k: v for k, v in (("url", url_flag), ("project", project_flag)) if v}),
     ]

@@ -1,6 +1,6 @@
 {
   "name": "gitlab-client",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Drive an on-prem GitLab 15.x from Claude Code — browse repos, read and open merge requests, debug CI pipelines and job logs — through a bundled REST client with an allow-listed write policy.",
   "author": {
     "name": "aeresov"

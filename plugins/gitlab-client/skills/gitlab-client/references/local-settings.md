@@ -8,14 +8,14 @@ Two Markdown-with-frontmatter files; only three keys exist:
 
 | Key | Where | Meaning |
 |---|---|---|
-| `url` | user file; project may override | Instance base URL, e.g. `https://gitlab.example.com` (relative-URL installs: `https://host/gitlab`) |
-| `token_cmd` | user file; project may override | Shell command whose stdout is the PAT — recorded verbatim |
+| `url` | user file only | Instance base URL, e.g. `https://gitlab.example.com` (relative-URL installs: `https://host/gitlab`) |
+| `token_cmd` | user file only | Shell command whose stdout is the PAT — recorded verbatim |
 | `project` | project file only | `group/subgroup/name` — pins the project when the git remote doesn't map |
 
 - **User:** `~/.claude/gitlab-client.local.md` — written by `/gitlab-client:setup`; required.
 - **Project:** `<repo>/.claude/gitlab-client.local.md` — optional, gitignored.
 
-Precedence, highest first: CLI flags (`--url`, `--project`) → environment (`GITLAB_CLIENT_URL`, `GITLAB_CLIENT_TOKEN`; when the token env var is set, `token_cmd` is not run) → project file → user file. Unknown keys warn on stderr and are ignored. Edits apply on the next `gl` call — nothing to restart.
+Precedence, highest first: CLI flags (`--url`, `--project`) → environment (`GITLAB_CLIENT_URL`, `GITLAB_CLIENT_TOKEN`; when the token env var is set, `token_cmd` is not run) → project file → user file. Unknown keys warn on stderr and are ignored. A project file may only set `project`: `gl` ignores `url` and `token_cmd` there, with a warning, so a checkout can't redirect the user's token or run its own command. For a second instance, use the two environment variables. Edits apply on the next `gl` call — nothing to restart.
 
 ## Minimum user file
 

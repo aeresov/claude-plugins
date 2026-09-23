@@ -25,7 +25,8 @@ Checks 1–3 and 8 are static and read-only. Checks 4–7 are **live**: they run
   - `sed -n '2,/^---$/p' FILE | grep -qE '^url: *["'"'"']?https?://'` → url present
   - `sed -n '2,/^---$/p' FILE | grep -qE '^token_cmd: *[^ ]'` → token_cmd present
   - `sed -n '2,/^---$/p' FILE | grep -oE '^[A-Za-z_]+:' | sort -u` → the key names in use (prints only names, never values)
-- PASS if `url` and `token_cmd` are each present in at least one file and every key name is one of `url:`, `token_cmd:`, `project:`.
+- PASS if `url` and `token_cmd` are each present in the **user** file (a project file's copies don't count — `gl` ignores them) and every key name is one of `url:`, `token_cmd:`, `project:`.
+- WARN if the project file sets `url:` or `token_cmd:` → "`.claude/gitlab-client.local.md` sets `<key>`, which `gl` ignores in a project file: only `project:` is read there, so a checkout can't redirect your token or run its own command. Remove it. For a repo on a second instance, export `GITLAB_CLIENT_URL` and `GITLAB_CLIENT_TOKEN` instead."
 - FAIL → "`~/.claude/gitlab-client.local.md` needs `url: https://…` and `token_cmd: <command printing the token>` in its frontmatter. Re-run `/gitlab-client:setup`, or see `skills/gitlab-client/references/local-settings.md`." (For an unknown key: "unknown key `<k>` in a gitlab-client settings file — only `url`, `token_cmd`, `project` are read.")
 
 ### 4. `token_cmd` resolves (live; only if 3 passed or is `n/a`)

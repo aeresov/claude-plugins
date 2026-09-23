@@ -13,7 +13,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
-from collections.abc import Callable, Iterable, Mapping
+from collections.abc import Callable, Iterable, Iterator, Mapping
 from dataclasses import dataclass
 from typing import Any
 
@@ -324,6 +324,42 @@ def check_write_policy(method: str, path: str) -> None:
     key = f"{method} {path.split('?', 1)[0].rstrip('/')}"
     if not any(p.match(key) for p in WRITE_ALLOW):
         raise PolicyError(f"refused by gitlab-client write policy: {key} (see references/safety-perimeter.md)")
+
+
+def path_query(path: str) -> dict[str, list[str]]:
+    """The query string embedded in PATH, split the way GitLab 15.x (Rack 2) splits it: on '&' *and* ';'."""
+    return urllib.parse.parse_qs(urllib.parse.urlsplit(path).query.replace(";", "&"), keep_blank_values=True)
+
+
+# GitLab runs quick actions in MR descriptions, notes and discussions — all allow-listed — so a
+# `/merge` or `/approve` line in a body would do what WRITE_ALLOW refuses by path. A command only
+# counts when it opens a line and is followed by a space or the line end, as GitLab parses it.
+_QUICK_ACTION = re.compile(r"^[ \t]*/(merge|approve|unapprove|rebase)(?=[ \t]|$)", re.I | re.M)
+MERGE_SHA_PARAM = "merge_request_diff_head_sha"  # the Notes API's companion to /merge
+
+
+def _strings(value: Any) -> Iterator[str]:
+    if isinstance(value, str):
+        yield value
+    elif isinstance(value, Mapping):
+        for v in value.values():
+            yield from _strings(v)
+    elif isinstance(value, (list, tuple)):
+        for v in value:
+            yield from _strings(v)
+
+
+def check_body_policy(keys: Iterable[str], values: Any) -> None:
+    """Refuse write parameters that would merge, approve, unapprove or rebase through an allow-listed route.
+
+    `keys` are the parameter names (body and PATH query); `values` is everything that will be sent,
+    walked recursively for quick-action lines.
+    """
+    if MERGE_SHA_PARAM in (k.rstrip("[]") for k in keys):
+        raise PolicyError(f"refused by gitlab-client write policy: {MERGE_SHA_PARAM} (merging) is not allowed")
+    for text in _strings(values):
+        if m := _QUICK_ACTION.search(text):
+            raise PolicyError(f"refused by gitlab-client write policy: quick action /{m.group(1).lower()} in the request (merge/approve/unapprove/rebase are refused)")
 
 
 # ---- projection ---------------------------------------------------------------------------

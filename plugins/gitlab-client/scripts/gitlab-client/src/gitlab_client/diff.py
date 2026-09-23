@@ -87,8 +87,9 @@ def mr_diffs(client: Client, project_id: int, iid: int, warn: Callable[[str], No
     return data.get("changes") or []
 
 
-def commit_diff(client: Client, project_id: int, sha: str) -> list[dict[str, Any]]:
-    return client.request("GET", f"/projects/{project_id}/repository/commits/{encode_path_segment(sha)}/diff").json() or []
+def commit_diff(client: Client, project_id: int, sha: str, warn: Callable[[str], None]) -> list[dict[str, Any]]:
+    """Per-file diffs of a commit. The endpoint is paginated (20 files per page by default)."""
+    return client.paginate(f"/projects/{project_id}/repository/commits/{encode_path_segment(sha)}/diff", None, max_items=3000, warn=warn)
 
 
 def compare(client: Client, project_id: int, frm: str, to: str, straight: bool = False) -> dict[str, Any]:
