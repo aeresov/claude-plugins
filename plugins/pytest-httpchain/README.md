@@ -38,13 +38,13 @@ The skill and subagent author and **statically validate** only — they never fi
 
 ## The `httpchain-author` subagent
 
-For a non-trivial scenario — a multi-stage chain, multi-file `$ref`/`$include` composition, parametrized or parallel stages, or one needing several validate→fix rounds — the skill dispatches a context-isolated subagent. It loops `write → pytest-httpchain validate --deep → fix` until clean, then returns the scenario and the command to run it. It runs only `pytest-httpchain validate` — never a live HTTP call.
+For a non-trivial scenario — a multi-stage chain, multi-file `$ref`/`$include` composition, parametrized or parallel stages, or one needing several validate→fix rounds — the skill dispatches a context-isolated subagent. It loops `write → (resolve / show, for composed or multi-stage scenarios) → validate → fix` until clean — adding `--deep` only when the scenario references `module:func` code or files — then returns the scenario and the command to run it. It runs only the read-only `pytest-httpchain` subcommands (`validate`, `resolve`, `show`, `graph`, `schema`) — never a live HTTP call.
 
 See [`agents/httpchain-author.md`](agents/httpchain-author.md).
 
 ## Commands
 
-- **`/pytest-httpchain:setup`** — confirms the dev dependency (guiding the install per your package manager, never running it), optionally sets the pytest `suffix` ini, optionally scaffolds an example scenario + `conftest.py`. Writes only files you approve.
+- **`/pytest-httpchain:setup`** — confirms the dev dependency (guiding the install per your package manager, never running it), optionally sets the `httpchain_suffix` pytest ini option (pytest-httpchain ≥0.10) in whichever pytest config table the project already uses, optionally scaffolds an example scenario + `conftest.py`. Writes only files you approve.
 - **`/pytest-httpchain:doctor`** — read-only: package manager · package installed (+ version) · scenarios discoverable · every scenario passes `validate`. One line per check, with a fix for each failure.
 
 ## Validation & inspection

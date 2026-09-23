@@ -12,8 +12,8 @@ You are running `/pytest-httpchain:doctor`: a health check. Write no files, disp
 2. Run checks **1–4 in order** against the project root, using the runner detected in check 1:
    - 1 Python project + package manager
    - 2 pytest-httpchain installed in the test env (+ version) — SKIP 3–4 if it fails
-   - 3 scenarios discoverable (`test_*.<suffix>.json`; report the suffix and count) — zero is **n/a**, not a failure
-   - 4 scenarios validate clean (`validate --format json`) — SKIP if 2 failed or 3 found zero
+   - 3 scenarios discoverable (`test_*.<suffix>.json`, suffix from `httpchain_suffix` in the pytest config table pytest reads; report the suffix and count) — zero is **n/a**, not a failure; a leftover bare `suffix` key is a **FAIL**
+   - 4 scenarios validate clean (`validate --format json`) — SKIP if 2 failed or 3 found zero. Only error-severity diagnostics make a file invalid; list warnings as `warning`, never as errors
 
 3. Print one line per check. Example with a missing package:
    ```
@@ -26,10 +26,11 @@ You are running `/pytest-httpchain:doctor`: a health check. Write no files, disp
    Example, all configured:
    ```
    PASS  1. python project — uv (runner: uv run)
-   PASS  2. pytest-httpchain installed — 0.5.0
-   PASS  3. scenarios discoverable — suffix 'http', 4 found
+   PASS  2. pytest-httpchain installed — 0.15.0
+   PASS  3. scenarios discoverable — suffix 'http' (default), 4 found
    FAIL  4. scenarios validate — 1 of 4 invalid
          → tests/test_login.http.json: error [HTTPCHAIN001]: Duplicate stage names found: ['login']
+         → tests/test_orders.http.json: warning [HTTPCHAIN005]: Stage 'cleanup' has no response validation (no verify step)
          → <check 4 remediation, verbatim>
    ```
 

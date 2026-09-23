@@ -34,7 +34,16 @@ Pass = it prints a version. This interpreter must be the one `pytest` uses — t
 
 ## Check 3 — scenarios discoverable
 
-**Probe.** Read the `suffix` ini option (default `http`) from `[tool.pytest.ini_options]` in `pyproject.toml`, or `pytest.ini`/`tox.ini`/`setup.cfg`. Then find files matching `test_*.<suffix>.json` under the project (typically `tests/`). Report the count. **Zero is not a failure** — it's an empty suite; say so.
+**Probe.**
+1. **Find the pytest config table pytest actually reads.** In the project root, the first of these that holds pytest config wins, and pytest ignores the rest:
+   `pytest.toml` / `.pytest.toml` (`[pytest]`) → `pytest.ini` / `.pytest.ini` (`[pytest]`) → `pyproject.toml` (`[tool.pytest]`, pytest 9's native table, **or** `[tool.pytest.ini_options]` — never both: pytest 9 refuses to start) → `tox.ini` (`[pytest]`) → `setup.cfg` (`[tool:pytest]`).
+2. Read `httpchain_suffix` from that table (default `http`; the name needs pytest-httpchain ≥0.10).
+3. Find files matching `test_*.<suffix>.json` under the project (typically `tests/`). Report the suffix, where it came from, and the count. **Zero is not a failure** — it's an empty suite; say so.
+
+**FAIL** if that table still has a bare `suffix` key (the pre-0.10 name). Count against the suffix pytest really uses (`httpchain_suffix`, else `http`).
+
+**Remediation (stale `suffix` key):**
+> Your pytest config sets `suffix`, an option name pytest-httpchain no longer reads: since 0.11 pytest warns `Unknown config option: suffix` (and aborts under `--strict-config` / `strict = true`), and scenarios are discovered with `httpchain_suffix` (default `http`) instead. Rename the key to `httpchain_suffix` in the same table, or run `/pytest-httpchain:setup`.
 
 **Remediation (informational, when zero found):**
 > No `test_*.<suffix>.json` scenarios found (suffix = `<suffix>`). That's fine for a fresh setup — write one (the `pytest-httpchain` skill covers the format) or run `/pytest-httpchain:setup` to scaffold an example.
