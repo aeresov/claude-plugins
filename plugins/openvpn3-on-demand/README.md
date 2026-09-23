@@ -34,7 +34,7 @@ Run `/openvpn3-on-demand:doctor` at any time for a read-only health check.
 
 Pick one in `.claude/openvpn3-on-demand.local.md`:
 
-- **BYO mode** — you `openvpn3 config-import --persistent` a profile yourself; set `profile_name` to its name. The plugin only starts/stops sessions for it.
+- **BYO mode** — you `openvpn3 config-import --persistent` a profile yourself; set `profile_name` to its name. The plugin starts/stops sessions for it, and before each start it writes the `dns-scope=tunnel` baseline plus any `config_overrides` into that profile as openvpn3 overrides. Those are stored in the profile (on disk, for a `--persistent` one), so they also apply to your own `openvpn3 session-start`. Removing a key from `config_overrides` does **not** remove it from the profile. To remove one, run `openvpn3 config-manage --config <profile_name> --unset-override <key>`, and see what's set with `openvpn3 config-manage --config <profile_name> --show`.
 - **Ephemeral mode** — set `ovpn_provision_cmd` to a shell command whose **stdout is the `.ovpn` body**. The plugin captures stdout into a mode-600 temp file, imports it as a single-use config under `ovpn3-od-$CLAUDE_CODE_SESSION_ID`, connects, deletes the temp file. Re-runs every VPN-gated turn.
 
 Setting both fields or neither is a configuration error and the skill skips the VPN.
@@ -50,7 +50,9 @@ See [`skills/vpn-on-demand/references/example-local-settings.md`](skills/vpn-on-
 | `vpn_connect_ephemeral` | `ovpn_path`, `session_id`, `overrides?` | `{status: connected \| already_connected \| error, ...}` |
 | `vpn_disconnect`        | `profile_name`                | `{status: disconnected \| not_connected \| error, ...}`  |
 
-`vpn_connect` is for already-imported BYO profiles. `vpn_connect_ephemeral` reads a freshly-written `.ovpn` and imports it single-use; the skill forwards `$CLAUDE_CODE_SESSION_ID` as `session_id` because the MCP server (a singleton across `/resume`/`/fork-session`) can't see that env var itself. Both apply `dns-scope=tunnel` as a baseline (split-DNS so the tunnel coexists with Tailscale / mDNS); pass `overrides` to override.
+`vpn_connect` is for already-imported BYO profiles. `vpn_connect_ephemeral` reads a freshly-written `.ovpn` and imports it single-use; the skill forwards `$CLAUDE_CODE_SESSION_ID` as `session_id` because the MCP server (a singleton across `/resume`/`/fork-session`) can't see that env var itself. Both apply `dns-scope=tunnel` as a baseline (split-DNS so the tunnel coexists with Tailscale / mDNS); pass `overrides` to override. Values the profile already holds aren't rewritten; in BYO mode the rest persist in your profile (see [Modes](#modes)).
+
+`already_connected` means the existing session is actually up; one that's still connecting is waited for. A session under that name in any other state (paused, failed, backend dead) comes back as an `error` naming the state and the command that clears it (`openvpn3 session-manage --disconnect --config <name>`, or `openvpn3 session-manage --cleanup` for a dead backend). The server never tears down a session it didn't start in that call.
 
 ## Security
 
@@ -66,7 +68,7 @@ See [`skills/vpn-on-demand/references/example-local-settings.md`](skills/vpn-on-
 - **`vpn_connect` says the config is unknown** — in BYO mode, import it: `openvpn3 config-import --name <profile_name> --persistent --config /path/to/file.ovpn`.
 - **Tunnel up but `*.rds.amazonaws.com` fails to resolve** — the one-time host DNS init in [Prerequisites](#prerequisites) wasn't run.
 
-Edits to `.claude/openvpn3-on-demand.local.md` take effect immediately — no restart. Only changes to the plugin's own `.mcp.json` require restarting Claude Code.
+Edits to `.claude/openvpn3-on-demand.local.md` take effect immediately — no restart — with one exception in BYO mode: a key *removed* from `config_overrides` stays set in the profile until you run `openvpn3 config-manage --config <profile_name> --unset-override <key>`. Only changes to the plugin's own `.mcp.json` require restarting Claude Code.
 
 ## License
 

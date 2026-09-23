@@ -18,6 +18,15 @@ class Wrapped:
     value: Any
 
 
+def fake_status(major: str, minor: str, message: str = "") -> dict[str, Any]:
+    """Shape of ``Session.GetStatus()``: enum-like objects exposing ``.name``, plus the message string."""
+    return {
+        "major": type("E", (), {"name": major})(),
+        "minor": type("E", (), {"name": minor})(),
+        "message": message,
+    }
+
+
 class FakeDBusException(Exception):
     def __init__(self, msg: str = "") -> None:
         super().__init__(msg)
@@ -34,6 +43,8 @@ class FakeSession:
     path: str = "/net/openvpn/v3/sessions/abc"
     properties: dict[str, str] = field(default_factory=lambda: {"config_name": "demo"})
     status: dict[str, Any] | None = None
+    # Returned one per GetStatus() call ahead of `status`; the last entry repeats once the others are used up.
+    status_sequence: list[dict[str, Any]] = field(default_factory=list)
     raise_on_properties: tuple[str, ...] = ()
     raise_on_status: bool = False
     ready_attempts_until_ok: int = 0
@@ -45,6 +56,7 @@ class FakeSession:
     ready_calls: int = 0
     connect_calls: int = 0
     disconnect_calls: int = 0
+    disconnected: bool = False
 
     def GetPath(self) -> str:
         return self.path
@@ -59,11 +71,11 @@ class FakeSession:
     def GetStatus(self) -> dict[str, Any]:
         if self.raise_on_status:
             raise FakeDBusException("status unavailable")
+        if self.status_sequence:
+            return self.status_sequence.pop(0) if len(self.status_sequence) > 1 else self.status_sequence[0]
         if self.status is not None:
             return self.status
-        major = type("E", (), {"name": "CONNECTION"})()
-        minor = type("E", (), {"name": "CONN_CONNECTED"})()
-        return {"major": major, "minor": minor, "message": "ok"}
+        return fake_status("CONNECTION", "CONN_CONNECTED", "ok")
 
     def Ready(self) -> None:
         self.ready_calls += 1
@@ -79,12 +91,16 @@ class FakeSession:
         self.disconnect_calls += 1
         if self.raise_on_disconnect:
             raise FakeDBusException(self.disconnect_error_msg)
+        self.disconnected = True
 
 
 @dataclass
 class FakeConfig:
     name: str = "demo"
     raise_on_override: str | None = None
+    raise_on_get_overrides: bool = False
+    # What the profile currently holds (the daemon's `overrides` property); SetOverride updates it.
+    overrides: dict[str, Any] = field(default_factory=dict)
     overrides_set: list[tuple[str, Any]] = field(default_factory=list)
     removed: bool = False
 
@@ -92,6 +108,12 @@ class FakeConfig:
         if self.raise_on_override == name:
             raise FakeDBusException(f"override {name!r} rejected")
         self.overrides_set.append((name, value))
+        self.overrides[name] = value
+
+    def GetOverrides(self) -> dict[str, Any]:
+        if self.raise_on_get_overrides:
+            raise FakeDBusException("overrides unavailable")
+        return dict(self.overrides)
 
     def Remove(self) -> None:
         self.removed = True
@@ -107,6 +129,7 @@ class FakeSessionManager:
         all_sessions: list[FakeSession] | None = None,
         new_tunnel_session: FakeSession | None = None,
         raise_on_lookup: bool = False,
+        raise_on_retrieve: bool = False,
         raise_on_fetch: bool = False,
         raise_on_new_tunnel: bool = False,
     ) -> None:
@@ -114,6 +137,7 @@ class FakeSessionManager:
         self.all_sessions = all_sessions or []
         self.new_tunnel_session = new_tunnel_session
         self.raise_on_lookup = raise_on_lookup
+        self.raise_on_retrieve = raise_on_retrieve
         self.raise_on_fetch = raise_on_fetch
         self.raise_on_new_tunnel = raise_on_new_tunnel
         self.new_tunnel_calls: list[Any] = []
@@ -121,9 +145,13 @@ class FakeSessionManager:
     def LookupConfigName(self, name: str) -> list[str]:
         if self.raise_on_lookup:
             raise FakeDBusException("lookup failed")
-        return [f"path-{name}-{i}" for i in range(len(self.sessions_by_name.get(name, [])))]
+        # Like the daemon, only live sessions match; a successfully disconnected one is gone.
+        return [f"path-{name}-{i}" for i, s in enumerate(self.sessions_by_name.get(name, [])) if not s.disconnected]
 
     def Retrieve(self, path: str) -> FakeSession:
+        if self.raise_on_retrieve:
+            # The real wrapper's __ping() raises RuntimeError, not a DBusException.
+            raise RuntimeError("Could not establish contact with the Session Manager")
         for name, sessions in self.sessions_by_name.items():
             prefix = f"path-{name}-"
             if path.startswith(prefix):
@@ -139,9 +167,11 @@ class FakeSessionManager:
         self.new_tunnel_calls.append(cfg)
         if self.raise_on_new_tunnel:
             raise FakeDBusException("new tunnel failed")
-        if self.new_tunnel_session is None:
-            return FakeSession()
-        return self.new_tunnel_session
+        sess = self.new_tunnel_session if self.new_tunnel_session is not None else FakeSession()
+        # The daemon registers the new session under its config name right away — a failed start that isn't
+        # torn down stays visible to the next LookupConfigName.
+        self.sessions_by_name.setdefault(cfg.name, []).append(sess)
+        return sess
 
 
 class FakeConfigManager:

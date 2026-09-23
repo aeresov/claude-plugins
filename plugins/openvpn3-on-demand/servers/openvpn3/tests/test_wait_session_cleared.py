@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from _fakes import FakeSession
+from _fakes import FakeDBusException, FakeSession
 
 
 @pytest.fixture
@@ -40,3 +40,26 @@ def test_wait_returns_false_on_timeout(server, no_sleep, monkeypatch):
     ticks = iter([0.0, 10.0, 10.1, 10.2, 10.3, 10.4, 10.5])
     monkeypatch.setattr(server.time, "monotonic", lambda: next(ticks))
     assert server._wait_session_cleared("demo", timeout=0.5) is False
+
+
+def test_wait_does_not_report_cleared_when_polls_fail(server, no_sleep, fast_clock, monkeypatch):
+    # A failing lookup proves nothing about the session — it must not read as "gone".
+    def _sf(_name: str):
+        raise FakeDBusException("lookup failed")
+
+    monkeypatch.setattr(server, "_sessions_for", _sf)
+    assert server._wait_session_cleared("demo", timeout=1.0) is False
+
+
+def test_wait_keeps_polling_past_a_transient_failure(server, no_sleep, monkeypatch):
+    state = {"n": 0}
+
+    def _sf(_name: str):
+        state["n"] += 1
+        if state["n"] == 1:
+            raise RuntimeError("Could not establish contact with the Session Manager")
+        return []
+
+    monkeypatch.setattr(server, "_sessions_for", _sf)
+    assert server._wait_session_cleared("demo", timeout=5.0) is True
+    assert state["n"] == 2

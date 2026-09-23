@@ -9,7 +9,7 @@ Bring up the project's OpenVPN3 tunnel before a command that needs it; tear it d
 
 Modes (set exactly one in `.claude/openvpn3-on-demand.local.md`):
 
-- **BYO** — `profile_name` names an openvpn3 config the user imported themselves. The plugin only starts/stops sessions for it.
+- **BYO** — `profile_name` names an openvpn3 config the user imported themselves. The plugin starts/stops sessions for it and writes the connect overrides (below) into that profile, where they persist.
 - **Ephemeral** — `ovpn_provision_cmd` is a shell command whose stdout is an `.ovpn` body. A fresh single-use profile is generated each VPN-gated turn; openvpn3 drops it once the tunnel starts.
 
 ## Preflight
@@ -29,7 +29,7 @@ Other relevant frontmatter fields (both modes, all optional):
 - `trigger_patterns` — extra regex patterns to treat as VPN-requiring, on top of the matrix below.
 - `post_connect_cmd` — shell command run after a fresh connect (not on `already_connected`). Non-fatal.
 - `post_disconnect_cmd` — shell command run after a fresh disconnect (not on `not_connected`).
-- `config_overrides` — `{name: value}` map of openvpn3 `config-manage` overrides. Pass via the `overrides` arg to `vpn_connect` / `vpn_connect_ephemeral`. The server applies `dns-scope=tunnel` as a baseline (split-DNS so the tunnel coexists with Tailscale / mDNS); entries here override on collision.
+- `config_overrides` — `{name: value}` map of openvpn3 `config-manage` overrides. Pass via the `overrides` arg to `vpn_connect` / `vpn_connect_ephemeral`. The server applies `dns-scope=tunnel` as a baseline (split-DNS so the tunnel coexists with Tailscale / mDNS); entries here override on collision. In BYO mode the baseline and these entries are written into the user's profile and persist, including for their own manual `openvpn3 session-start`. Dropping a key here doesn't unset it: if the user asks to remove one, tell them to run `openvpn3 config-manage --config <profile_name> --unset-override <key>`.
 
 Full field reference and examples: [`references/example-local-settings.md`](references/example-local-settings.md).
 
@@ -57,7 +57,7 @@ When uncertain, check `trigger_patterns` and the project's CLAUDE.md; if still u
 
 ## BYO flow
 
-1. **Connect.** `vpn_connect(profile_name=<value>, overrides=<config_overrides or omitted>)`. Idempotent — `already_connected` returns immediately (overrides skipped; they take effect at tunnel-start time only).
+1. **Connect.** `vpn_connect(profile_name=<value>, overrides=<config_overrides or omitted>)`. Idempotent — `already_connected` means the existing session is up (overrides skipped; they take effect at tunnel-start time only). A session that's still connecting is waited for first.
 2. **If the config isn't imported** (error message mentions "no openvpn3 config named" / "import it first"), **stop** and tell the user:
    `openvpn3 config-import --config /path/to/file.ovpn --name <profile_name> --persistent`. Don't run any provisioning command in this mode.
 3. **Post-connect hook** — only on `status: connected` (not `already_connected`). Run `post_connect_cmd` via Bash if set. Non-zero exit is surfaced but not fatal; do not tear down on failure.
@@ -101,6 +101,8 @@ All tools return `{"status": ...}`; `status: "error"` is a hard failure — surf
 - **`ovpn_provision_cmd` failed or produced nothing.** Surface stderr; `rm -f` the temp file; don't connect.
 - **MCP server exited 1 — `cannot import 'dbus' and/or 'openvpn3'`.** Install `openvpn3-client` + `python3-dbus`; restart Claude Code.
 - **`"Backend not ready ..."`.** Profile prompts for credentials; the server is non-interactive. Profiles need `auth-user-pass` inlined; encrypted PKCS#12 isn't supported. BYO: re-import a fixed profile. Ephemeral: fix `ovpn_provision_cmd`'s output.
+- **`"A session for '<name>' exists but isn't connected ..."` / `"... its backend isn't answering ..."`.** A session under that name is paused, failed, or stale, and it predates the call, so it may be the user's own. The server leaves it alone. Surface the message, which includes the cleanup command (`openvpn3 session-manage --disconnect --config <name>` or `--cleanup`). Don't `vpn_disconnect` it yourself unless the user says so.
+- **`"D-Bus error: ..."`.** The openvpn3 services are unreachable or denied access. This says nothing about whether a tunnel exists, so don't read it as "not connected" or "config missing". Surface it and suggest `/openvpn3-on-demand:doctor`.
 - **`vpn_status()` shows the session but the command still can't reach the host.** Tunnel up without DNS — preflight step 3 was skipped. `/openvpn3-on-demand:doctor` flags it.
 
 ## No safety net

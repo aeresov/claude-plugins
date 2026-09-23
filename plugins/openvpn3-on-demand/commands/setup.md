@@ -17,7 +17,7 @@ Run check 5. If `.claude/openvpn3-on-demand.local.md` exists, Read it, show the 
 
 ### 3. Pick the mode
 **AskUserQuestion** — "Which mode should this project use?":
-- **BYO** — "You import and maintain an openvpn3 config yourself; the plugin only starts/stops sessions for it."
+- **BYO** — "You import and maintain an openvpn3 config yourself; the plugin starts/stops sessions for it and writes its connect overrides (`dns-scope=tunnel` plus any `config_overrides`) into that profile, where they persist."
 - **Ephemeral** — "A command produces the `.ovpn` body on stdout; the plugin makes a fresh single-use config from it each VPN-gated turn. Nothing to import by hand."
 
 ### 4. Mode-specific question
@@ -40,7 +40,7 @@ Keep the command task-agnostic; Claude prepends per-task vars (`ENV=…`, `AWS_P
 - `trigger_patterns` — extra regex patterns treated as VPN-requiring. If chosen, ask for the list.
 - `post_connect_cmd` — shell command run after a fresh `vpn_connect`. Non-fatal on failure.
 - `post_disconnect_cmd` — shell command run after a fresh `vpn_disconnect` (not on `not_connected`). Non-fatal on failure.
-- `config_overrides` — openvpn3 `config-manage` overrides reapplied before each tunnel start (hyphenated: `dns-scope`, `persist-tun`, `log-level`, …). The server applies `dns-scope=tunnel` as baseline; override only if you need fully tunnel-routed DNS or other tweaks. If chosen, ask for the map.
+- `config_overrides` — openvpn3 `config-manage` overrides set before each tunnel start (hyphenated: `dns-scope`, `persist-tun`, `log-level`, …). The server applies `dns-scope=tunnel` as baseline; override only if you need fully tunnel-routed DNS or other tweaks. In BYO mode, tell the user that the baseline and these values are written into their imported profile and persist, including for their own `openvpn3 session-start`, and that removing a key later needs `openvpn3 config-manage --config <profile_name> --unset-override <key>`. If chosen, ask for the map.
 
 ### 6. Write `.claude/openvpn3-on-demand.local.md`
 Create the directory if needed. Use this template — include the chosen mode's required field and whichever optionals the user picked; comment out the other mode's line:

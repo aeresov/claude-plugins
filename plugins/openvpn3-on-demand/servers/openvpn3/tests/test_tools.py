@@ -3,7 +3,21 @@
 
 from __future__ import annotations
 
-from _fakes import FakeConfig, FakeConfigManager, FakeSession, FakeSessionManager
+import pytest
+
+from _fakes import FakeConfig, FakeConfigManager, FakeDBusException, FakeSession, FakeSessionManager, fake_status
+
+
+@pytest.fixture
+def bus_down(monkeypatch, server):
+    """Both manager getters fail the way `dbus.SystemBus()` does with no reachable system bus."""
+
+    def _raise():
+        raise FakeDBusException("Failed to connect to socket /run/dbus/system_bus_socket")
+
+    monkeypatch.setattr(server, "_get_session_mgr", _raise)
+    monkeypatch.setattr(server, "_get_config_mgr", _raise)
+
 
 # vpn_status ------------------------------------------------------------------
 
@@ -34,6 +48,13 @@ def test_vpn_connect_dispatches_to_start_session(server, patch_lookups, no_sleep
     wire_managers(session_mgr=FakeSessionManager(new_tunnel_session=FakeSession(properties={"config_name": "demo"})))
     result = server.vpn_connect("demo")
     assert isinstance(result, server.VpnConnectedOk)
+    assert result.profile_name == "demo"
+
+
+def test_vpn_connect_returns_error_when_bus_unreachable(server, bus_down):
+    result = server.vpn_connect("demo")
+    assert isinstance(result, server.VpnError)
+    assert result.message == "D-Bus error: Failed to connect to socket /run/dbus/system_bus_socket"
     assert result.profile_name == "demo"
 
 
@@ -81,6 +102,46 @@ def test_vpn_disconnect_success_waits_for_clear(server, monkeypatch, no_sleep):
     assert sess.disconnect_calls == 1
 
 
+def test_vpn_disconnect_lookup_failure_is_not_not_connected(server, wire_managers):
+    # A failed lookup must not claim there's no tunnel — it may still be up.
+    wire_managers(session_mgr=FakeSessionManager(raise_on_lookup=True))
+    result = server.vpn_disconnect("demo")
+    assert isinstance(result, server.VpnError)
+    assert result.message == "D-Bus error: lookup failed"
+    assert result.profile_name == "demo"
+
+
+def test_vpn_disconnect_returns_error_when_bus_unreachable(server, bus_down):
+    result = server.vpn_disconnect("demo")
+    assert isinstance(result, server.VpnError)
+    assert "D-Bus error" in result.message
+
+
+def test_vpn_disconnect_retrieve_failure_returns_error(server, wire_managers):
+    # The wrapper's Retrieve() pings the manager and raises RuntimeError when it can't reach it.
+    wire_managers(session_mgr=FakeSessionManager(sessions_by_name={"demo": [FakeSession()]}, raise_on_retrieve=True))
+    result = server.vpn_disconnect("demo")
+    assert isinstance(result, server.VpnError)
+    assert "Could not establish contact" in result.message
+
+
+def test_vpn_disconnect_failing_polls_do_not_report_cleared(server, monkeypatch, no_sleep, fast_clock):
+    sess = FakeSession()
+    calls = {"sessions_for": 0}
+
+    def _sessions_for(name):
+        calls["sessions_for"] += 1
+        if calls["sessions_for"] == 1:
+            return [sess]
+        raise RuntimeError("Could not establish contact with the Session Manager")
+
+    monkeypatch.setattr(server, "_sessions_for", _sessions_for)
+
+    result = server.vpn_disconnect("demo")
+    assert isinstance(result, server.VpnDisconnectedOk)
+    assert result.session_cleared is False
+
+
 # vpn_connect_ephemeral -------------------------------------------------------
 
 
@@ -97,6 +158,55 @@ def test_vpn_connect_ephemeral_returns_already_connected(server, patch_lookups):
     result = server.vpn_connect_ephemeral("/tmp/does-not-matter.ovpn", session_id="sess-1")
     assert isinstance(result, server.VpnAlreadyConnected)
     assert result.profile_name == "ovpn3-od-sess-1"
+
+
+def test_vpn_connect_ephemeral_reports_existing_paused_session(server, patch_lookups, wire_managers, tmp_path):
+    existing = FakeSession(status=fake_status("CONNECTION", "CONN_PAUSED"))
+    patch_lookups(sessions={"ovpn3-od-sess-p": [existing]})
+    cfg_mgr, _ = wire_managers()
+    ovpn = tmp_path / "x.ovpn"
+    ovpn.write_text("client\n")
+
+    result = server.vpn_connect_ephemeral(str(ovpn), session_id="sess-p")
+    assert isinstance(result, server.VpnError)
+    assert "CONN_PAUSED" in result.message
+    assert "session-manage --disconnect --config ovpn3-od-sess-p" in result.message
+    assert existing.disconnect_calls == 0
+    assert cfg_mgr.import_calls == []
+
+
+def test_vpn_connect_ephemeral_session_lookup_failure_skips_import(server, wire_managers, tmp_path):
+    # Without the already_connected guard a second tunnel could be imported under the same name.
+    cfg_mgr, _ = wire_managers(session_mgr=FakeSessionManager(raise_on_lookup=True))
+    ovpn = tmp_path / "x.ovpn"
+    ovpn.write_text("client\n")
+
+    result = server.vpn_connect_ephemeral(str(ovpn), session_id="sess-l")
+    assert isinstance(result, server.VpnError)
+    assert result.message == "D-Bus error: lookup failed"
+    assert result.profile_name == "ovpn3-od-sess-l"
+    assert cfg_mgr.import_calls == []
+
+
+def test_vpn_connect_ephemeral_returns_error_when_bus_unreachable(server, bus_down, tmp_path):
+    ovpn = tmp_path / "x.ovpn"
+    ovpn.write_text("client\n")
+    result = server.vpn_connect_ephemeral(str(ovpn), session_id="sess-b")
+    assert isinstance(result, server.VpnError)
+    assert "D-Bus error" in result.message
+
+
+def test_vpn_connect_ephemeral_non_utf8_file_names_the_file(server, patch_lookups, wire_managers, tmp_path):
+    patch_lookups()
+    cfg_mgr, _ = wire_managers()
+    ovpn = tmp_path / "latin1.ovpn"
+    ovpn.write_bytes("# Soci\u00e9t\u00e9 VPN\nclient\n".encode("latin-1"))
+
+    result = server.vpn_connect_ephemeral(str(ovpn), session_id="sess-u")
+    assert isinstance(result, server.VpnError)
+    assert str(ovpn) in result.message
+    assert "not valid UTF-8" in result.message
+    assert cfg_mgr.import_calls == []
 
 
 def test_vpn_connect_ephemeral_file_not_found(server, patch_lookups, tmp_path):
@@ -184,3 +294,25 @@ def test_vpn_connect_ephemeral_drops_the_config_when_the_tunnel_never_starts(ser
     assert isinstance(result, server.VpnError)
     assert "NewTunnel failed" in result.message
     assert imported.removed is True
+
+
+def test_vpn_connect_ephemeral_cleanup_lookup_failure_keeps_the_original_error(server, monkeypatch, wire_managers, tmp_path, no_sleep):
+    wire_managers(config_mgr=FakeConfigManager(), session_mgr=FakeSessionManager(raise_on_new_tunnel=True))
+    monkeypatch.setattr(server, "_sessions_for", lambda _n: [])
+    imported = FakeConfig(name="ovpn3-od-sess-c")
+    # stale cleanup → []; lookup for SetOverride → [imported]; post-failure cleanup → D-Bus failure.
+    states: list[object] = [[], [imported], FakeDBusException("lookup failed")]
+
+    def _configs_for(_n):
+        state = states.pop(0)
+        if isinstance(state, Exception):
+            raise state
+        return state
+
+    monkeypatch.setattr(server, "_configs_for", _configs_for)
+    ovpn = tmp_path / "x.ovpn"
+    ovpn.write_text("client\n")
+
+    result = server.vpn_connect_ephemeral(str(ovpn), session_id="sess-c")
+    assert isinstance(result, server.VpnError)
+    assert "NewTunnel failed" in result.message

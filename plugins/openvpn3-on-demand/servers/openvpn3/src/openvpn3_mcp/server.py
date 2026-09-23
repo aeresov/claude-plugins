@@ -48,12 +48,15 @@ _DBUS_ERRORS = (dbus.exceptions.DBusException, RuntimeError)
 _DISCONNECT_TIMEOUT_SECS: float = 5.0
 
 # How long we poll session status after `Connect()` waiting for CONN_CONNECTED before giving up.
-# Bounds the whole handshake (transport + TLS + route/DNS push); expiry also tears the session down,
-# so keep it generous enough for a TCP-fallback or high-latency link.
+# Bounds the whole handshake (transport + TLS + route/DNS push); expiry also tears down a session this call
+# started, so keep it generous enough for a TCP-fallback or high-latency link.
 _CONNECT_TIMEOUT_SECS: float = 30.0
 
 # StatusMinor names that mean the tunnel won't come up — fail fast instead of waiting for the timeout.
 _CONNECT_FAILURE_MINORS: frozenset[str] = frozenset({"CONN_FAILED", "CONN_AUTH_FAILED", "CONN_DISCONNECTED"})
+
+# StatusMinor names of a session still on its way up — an existing one in these states is waited for, not reported.
+_CONNECT_PENDING_MINORS: frozenset[str] = frozenset({"CONN_CONNECTING", "CONN_RECONNECTING", "CONN_RESUMING"})
 
 
 # Tagged-union result models, discriminated on `status`; FastMCP emits each tool's union as its outputSchema.
@@ -77,7 +80,10 @@ class VpnConnectedOk(BaseModel):
     session: Annotated[SessionView, Field(description="Snapshot of the new session.")]
     overrides_applied: Annotated[
         dict[str, Any],
-        Field(description="Effective overrides pushed via SetOverride before NewTunnel (baseline + caller's, caller wins)."),
+        Field(
+            description="Effective overrides set on the config before NewTunnel (baseline + caller's, caller wins); "
+            "keys the config already held with the same value aren't re-sent."
+        ),
     ]
 
 
@@ -151,11 +157,9 @@ def _session_view(sess: Any) -> SessionView:
 
 
 def _lookup(mgr: Any, profile: str) -> list:
-    try:
-        paths = mgr.LookupConfigName(profile)
-    except _DBUS_ERRORS:
-        return []
-    return [mgr.Retrieve(p) for p in paths]
+    # Both managers answer "no match" with an empty list; an exception is a real failure (access denied, service
+    # down) and propagates — reading it as "nothing there" would report not_connected / "Import it first" wrongly.
+    return [mgr.Retrieve(p) for p in mgr.LookupConfigName(profile)]
 
 
 def _sessions_for(profile: str) -> list:
@@ -166,46 +170,98 @@ def _configs_for(profile: str) -> list:
     return _lookup(_get_config_mgr(), profile)
 
 
+def _dbus_failure(profile_name: str | None, exc: BaseException) -> VpnError:
+    return VpnError(profile_name=profile_name, message=f"D-Bus error: {_dbus_error_msg(exc)}")
+
+
+def _cleanup_hint(profile_name: str, *, stale: bool = False) -> str:
+    # `--disconnect` needs a live backend; `--cleanup` is openvpn3's sweep for sessions whose backend died.
+    if stale:
+        return "clear stale sessions with `openvpn3 session-manage --cleanup`, then retry"
+    return f"disconnect it with `openvpn3 session-manage --disconnect --config {profile_name}`, then retry"
+
+
 def _wait_session_cleared(profile: str, timeout: float = _DISCONNECT_TIMEOUT_SECS) -> bool:
-    """Poll until `profile`'s session is gone or `timeout` hits; result feeds `VpnDisconnectedOk.session_cleared`."""
+    """Poll until `profile`'s session is gone or `timeout` hits; result feeds `VpnDisconnectedOk.session_cleared`.
+    A failed lookup proves nothing, so it counts as "not cleared yet" rather than as an empty result."""
     deadline = time.monotonic() + timeout
-    while time.monotonic() < deadline:
-        if not _sessions_for(profile):
-            return True
+    while True:
+        with suppress(*_DBUS_ERRORS):
+            if not _sessions_for(profile):
+                return True
+        if time.monotonic() >= deadline:
+            return False
         time.sleep(0.1)
-    return not _sessions_for(profile)
 
 
-def _await_connected(sess: Any, profile_name: str) -> VpnError | None:
+def _connect_failed(sess: Any, profile_name: str, message: str, *, teardown: bool, stale: bool = False) -> VpnError:
+    if teardown:
+        with suppress(*_DBUS_ERRORS):
+            sess.Disconnect()
+    else:
+        message += f" The session predates this call, so it was left in place; {_cleanup_hint(profile_name, stale=stale)}."
+    return VpnError(profile_name=profile_name, message=message)
+
+
+def _await_connected(sess: Any, profile_name: str, *, teardown: bool = True) -> VpnError | None:
     """Poll status after `Connect()` until CONN_CONNECTED, terminal failure, vanish, or timeout.
     Async openvpn3 core rejections (e.g. UNUSED_OPTIONS_ERROR from a malformed `.ovpn`) would
-    otherwise look like a transient `CONN_CONNECTING` and never surface."""
+    otherwise look like a transient `CONN_CONNECTING` and never surface. Failure tears the session
+    down unless `teardown=False` (a session that predates this call — possibly the user's own)."""
     deadline = time.monotonic() + _CONNECT_TIMEOUT_SECS
     last_status = "<no status yet>"
     while time.monotonic() < deadline:
         try:
             st = sess.GetStatus()
         except _DBUS_ERRORS as exc:
-            # Single-use configs whose tunnel-start fails are reaped with their session.
-            return VpnError(
-                profile_name=profile_name,
-                message=f"Connect failed — session vanished (last status: {last_status}; {_dbus_error_msg(exc)}).",
+            # Single-use configs whose tunnel-start fails are reaped with their session. If GetStatus only failed
+            # transiently the session could still come up untracked, so the teardown runs anyway (no-op if gone).
+            return _connect_failed(
+                sess,
+                profile_name,
+                f"Connect failed — session vanished (last status: {last_status}; {_dbus_error_msg(exc)}).",
+                teardown=teardown,
+                stale=True,
             )
         last_status = _format_status(st)
         minor_name = getattr(st.get("minor"), "name", "?")
         if minor_name == "CONN_CONNECTED":
             return None
         if minor_name in _CONNECT_FAILURE_MINORS:
-            with suppress(*_DBUS_ERRORS):
-                sess.Disconnect()
-            return VpnError(profile_name=profile_name, message=f"Connect failed ({last_status}).")
+            return _connect_failed(sess, profile_name, f"Connect failed ({last_status}).", teardown=teardown)
         time.sleep(0.2)
-    with suppress(*_DBUS_ERRORS):
-        sess.Disconnect()
-    return VpnError(
-        profile_name=profile_name,
-        message=f"Connect did not reach CONN_CONNECTED within {_CONNECT_TIMEOUT_SECS:g}s; last status: {last_status}.",
+    return _connect_failed(
+        sess,
+        profile_name,
+        f"Connect did not reach CONN_CONNECTED within {_CONNECT_TIMEOUT_SECS:g}s; last status: {last_status}.",
+        teardown=teardown,
     )
+
+
+def _existing_session(profile_name: str) -> VpnAlreadyConnected | VpnError | None:
+    """Idempotency guard: None when no session holds `profile_name`; `already_connected` only once it is really up.
+    The session predates this call and may be the user's own, so a non-connected one is reported, never torn down."""
+    existing = _sessions_for(profile_name)
+    if not existing:
+        return None
+    sess = existing[0]
+    try:
+        st = sess.GetStatus()
+    except _DBUS_ERRORS as exc:
+        return VpnError(
+            profile_name=profile_name,
+            message=f"A session for {profile_name!r} exists but its backend isn't answering ({_dbus_error_msg(exc)}); {_cleanup_hint(profile_name, stale=True)}.",
+        )
+    minor_name = getattr(st.get("minor"), "name", "?")
+    if minor_name in _CONNECT_PENDING_MINORS:
+        if err := _await_connected(sess, profile_name, teardown=False):
+            return err
+    elif minor_name != "CONN_CONNECTED":
+        return VpnError(
+            profile_name=profile_name,
+            message=f"A session for {profile_name!r} exists but isn't connected ({_format_status(st)}); {_cleanup_hint(profile_name)}.",
+        )
+    return VpnAlreadyConnected(profile_name=profile_name, session=_session_view(sess))
 
 
 @mcp.tool(annotations=ToolAnnotations(readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=False))
@@ -214,7 +270,7 @@ def vpn_status() -> VpnStatusResult:
     try:
         sessions = _get_session_mgr().FetchAvailableSessions()
     except _DBUS_ERRORS as exc:
-        return VpnError(message=f"D-Bus error: {_dbus_error_msg(exc)}")
+        return _dbus_failure(None, exc)
     views = [_session_view(s) for s in sessions]
     return VpnStatusOk(session_count=len(views), sessions=views)
 
@@ -230,29 +286,43 @@ def _wrap_override_value(value: Any) -> Any:
 
 
 _OVERRIDES_FIELD_DESCRIPTION = (
-    "Optional {name: value} map of openvpn3 config-manage overrides applied before NewTunnel (e.g. 'dns-scope', "
-    "'persist-tun', 'log-level'). Bools marshal as D-Bus bool; everything else stringifies (the daemon's "
-    "SetOverride only accepts bool/string). Baseline `dns-scope=tunnel` is applied automatically; caller "
-    "entries win. Skipped on `already_connected`."
+    "Optional {name: value} map of openvpn3 config-manage overrides set on the config before NewTunnel (e.g. "
+    "'dns-scope', 'persist-tun', 'log-level'). Bools marshal as D-Bus bool; everything else stringifies (the "
+    "daemon's SetOverride only accepts bool/string). Baseline `dns-scope=tunnel` is applied automatically; caller "
+    "entries win. Skipped on `already_connected`. On a BYO profile these are written into the profile itself and "
+    "persist (also for a manual `openvpn3 session-start`); dropping a key here does not unset it — that needs "
+    "`openvpn3 config-manage --config <name> --unset-override <key>`."
 )
 
 _VPN_CONNECT_EPHEMERAL_DESCRIPTION = (
     "Import a fresh single-use config from a .ovpn file and start the session under "
     "`ovpn3-od-{session_id}`. Idempotent — returns `already_connected` (without re-importing) "
-    "if that name's session is already up. For BYO profiles use `vpn_connect`."
+    "if that name's session is already up; an existing session that isn't up is reported as an "
+    "error, not torn down. For BYO profiles use `vpn_connect`."
 )
 
 
 def _start_session(profile_name: str, overrides: dict[str, Any] | None) -> VpnConnectedOk | VpnAlreadyConnected | VpnError:
-    if existing := _sessions_for(profile_name):
-        return VpnAlreadyConnected(profile_name=profile_name, session=_session_view(existing[0]))
-    configs = _configs_for(profile_name)
+    try:
+        if (found := _existing_session(profile_name)) is not None:
+            return found
+        configs = _configs_for(profile_name)
+    except _DBUS_ERRORS as exc:
+        return _dbus_failure(profile_name, exc)
     if not configs:
         return VpnError(profile_name=profile_name, message=f"No openvpn3 config named {profile_name!r}. Import it first.")
     effective_overrides = {**_DEFAULT_OVERRIDES, **(overrides or {})}
+    # SetOverride rewrites a persistent (BYO) profile on disk, so skip keys it already holds with the same value.
+    # Unreadable overrides just mean every key gets sent.
+    current: dict[str, Any] = {}
+    with suppress(*_DBUS_ERRORS):
+        current = dict(configs[0].GetOverrides())
     for name, value in effective_overrides.items():
+        wrapped = _wrap_override_value(value)
+        if current.get(name) == wrapped:
+            continue
         try:
-            configs[0].SetOverride(name, _wrap_override_value(value))
+            configs[0].SetOverride(name, wrapped)
         except _DBUS_ERRORS as exc:
             return VpnError(profile_name=profile_name, message=f"SetOverride {name!r} failed: {_dbus_error_msg(exc)}")
     try:
@@ -279,6 +349,9 @@ def _start_session(profile_name: str, overrides: dict[str, Any] | None) -> VpnCo
     try:
         sess.Connect()
     except _DBUS_ERRORS as exc:
+        # NewTunnel registered the session under the config name; left alive it would read as `already_connected`.
+        with suppress(*_DBUS_ERRORS):
+            sess.Disconnect()
         return VpnError(profile_name=profile_name, message=f"Connect failed: {_dbus_error_msg(exc)}")
     if err := _await_connected(sess, profile_name):
         return err
@@ -294,7 +367,8 @@ def vpn_connect(
     profile_name: Annotated[str, Field(description="Name of an already-imported OpenVPN3 config.")],
     overrides: Annotated[dict[str, Any] | None, Field(description=_OVERRIDES_FIELD_DESCRIPTION)] = None,
 ) -> VpnConnectResult:
-    """Start an OpenVPN3 session for a BYO profile. Idempotent. For provisioned-each-turn profiles use `vpn_connect_ephemeral`."""
+    """Start an OpenVPN3 session for a BYO profile. Idempotent — `already_connected` only if the existing session is up;
+    one that isn't is reported as an error, not torn down. For provisioned-each-turn profiles use `vpn_connect_ephemeral`."""
     return _start_session(profile_name, overrides)
 
 
@@ -329,13 +403,15 @@ def vpn_connect_ephemeral(
         return VpnError(message="session_id is required (pass $CLAUDE_CODE_SESSION_ID from the skill).")
     profile_name = _ephemeral_profile_name(session_id)
 
-    if existing := _sessions_for(profile_name):
-        return VpnAlreadyConnected(profile_name=profile_name, session=_session_view(existing[0]))
-
-    # Clean up any stale config from a prior turn whose NewTunnel didn't consume it.
-    for cfg in _configs_for(profile_name):
-        with suppress(*_DBUS_ERRORS):
-            cfg.Remove()
+    try:
+        if (found := _existing_session(profile_name)) is not None:
+            return found
+        # Clean up any stale config from a prior turn whose NewTunnel didn't consume it.
+        for cfg in _configs_for(profile_name):
+            with suppress(*_DBUS_ERRORS):
+                cfg.Remove()
+    except _DBUS_ERRORS as exc:
+        return _dbus_failure(profile_name, exc)
 
     path = Path(ovpn_path).expanduser().resolve()
     if not path.is_file():
@@ -344,6 +420,9 @@ def vpn_connect_ephemeral(
         cfg_str = path.read_text(encoding="utf-8")
     except OSError as exc:
         return VpnError(profile_name=profile_name, message=f"Cannot read {path}: {exc}")
+    except UnicodeDecodeError as exc:
+        # Import takes a D-Bus string (must be UTF-8); errors="replace" would silently mangle the profile.
+        return VpnError(profile_name=profile_name, message=f"{path} is not valid UTF-8 ({exc}); re-encode it as UTF-8.")
     # Raw contents go to ConfigurationManager.Import — openvpn3's C++ parser is authoritative.
     # DO NOT pre-parse with openvpn3.ConfigParser: argparse-backed whitelist rejected valid directives in 0.4.0.
     try:
@@ -354,9 +433,11 @@ def vpn_connect_ephemeral(
     result = _start_session(profile_name, overrides)
     if isinstance(result, VpnError):
         # NewTunnel consumes a single-use config; if we failed before that, drop it so the name is reusable.
-        for cfg in _configs_for(profile_name):
-            with suppress(*_DBUS_ERRORS):
-                cfg.Remove()
+        # Best effort — a lookup failure here must not replace the error being reported.
+        with suppress(*_DBUS_ERRORS):
+            for cfg in _configs_for(profile_name):
+                with suppress(*_DBUS_ERRORS):
+                    cfg.Remove()
     return result
 
 
@@ -367,7 +448,10 @@ def vpn_disconnect(
     """Disconnect the OpenVPN3 session for the given profile. No-op if not connected. `session_cleared` in the response reports whether teardown finished in time."""
     if not profile_name:
         return VpnError(message="profile_name is required")
-    matches = _sessions_for(profile_name)
+    try:
+        matches = _sessions_for(profile_name)
+    except _DBUS_ERRORS as exc:
+        return _dbus_failure(profile_name, exc)
     if not matches:
         return VpnNotConnected(profile_name=profile_name)
     failures: list[str] = []
