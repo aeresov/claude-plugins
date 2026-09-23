@@ -29,16 +29,6 @@ def test_basic_url():
     }
 
 
-def test_example_rds_proxy_url():
-    url = "mysql://su_ws_user:cQQo*Wvtw6DfxG^F@feat-staged-fw-hatch-userpass.endpoint.proxy-chmww1z0xozm.us-east-1.rds.amazonaws.com:3306/altecws?sslmode=require"
-    cnf = parse(url_to_cnf(url))
-    assert cnf["host"].endswith(".rds.amazonaws.com")
-    assert cnf["user"] == '"su_ws_user"'
-    assert cnf["password"] == '"cQQo*Wvtw6DfxG^F"'
-    assert cnf["database"] == '"altecws"'
-    assert cnf["ssl-mode"] == "REQUIRED"
-
-
 def test_percent_encoded_password():
     cnf = parse(url_to_cnf("mysql://u:p%40ss%2Fword@h/db"))
     assert cnf["password"] == '"p@ss/word"'
