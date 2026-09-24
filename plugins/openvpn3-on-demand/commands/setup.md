@@ -37,7 +37,6 @@ Keep the command task-agnostic; Claude prepends per-task vars (`ENV=…`, `AWS_P
 ### 5. Optional fields
 **AskUserQuestion** (multi-select), default none:
 
-- `trigger_patterns` — extra regex patterns (searched anywhere in the command line) for commands that need the tunnel. If chosen, ask for the list. Mention that Claude decides per operation and can't see targets hidden in config files; resources that are easier to describe in words ("the staging DB is VPN-only") belong in the project's `CLAUDE.md`.
 - `post_connect_cmd` — shell command run after a fresh `vpn_connect`. Non-fatal on failure.
 - `post_disconnect_cmd` — shell command run after a fresh `vpn_disconnect` (not on `not_connected`). Non-fatal on failure.
 - `config_overrides` — openvpn3 `config-manage` overrides set before each tunnel start (hyphenated: `dns-scope`, `persist-tun`, `log-level`, …). The server applies `dns-scope=tunnel` as baseline; override only if you need fully tunnel-routed DNS or other tweaks. In BYO mode, tell the user that the baseline and these values are written into their imported profile and persist, including for their own `openvpn3 session-start`, and that removing a key later needs `openvpn3 config-manage --config <profile_name> --unset-override <key>`. If chosen, ask for the map.
@@ -54,8 +53,6 @@ profile_name: <value>
 # ovpn_provision_cmd: <value>
 
 # Optional:
-# trigger_patterns:
-#   - "<regex>"
 # post_connect_cmd: <command>
 # post_disconnect_cmd: <command>
 # config_overrides:
@@ -77,4 +74,4 @@ Print the path written, which mode, and anything the user still owes —
 - BYO + profile not yet imported → the `config-import` line again.
 - Check 4 borderline / skipped → the netcfg note again.
 
-End with: "Done. No restart needed — the skill re-reads this file every turn. Run `/openvpn3-on-demand:doctor` any time to re-check." Mention they can ask Claude to do something VPN-gated and the skill picks it up, and that Claude decides per operation: for resources it can't recognise from the command (a host in a config file, another plugin's calls), a line in the project's `CLAUDE.md` saying they're VPN-only is the most reliable signal.
+End with: "Done. No restart needed — the skill re-reads this file every turn. Run `/openvpn3-on-demand:doctor` any time to re-check." Mention they can ask Claude to do something VPN-gated and the skill picks it up, and that Claude decides per operation: for resources it can't recognise from the command (a host in a config file, another plugin's calls), a line in the project's `CLAUDE.md` saying they're VPN-only is how to tell it.

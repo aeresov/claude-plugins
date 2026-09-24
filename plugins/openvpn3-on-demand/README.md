@@ -47,7 +47,6 @@ See [`skills/vpn-on-demand/references/example-local-settings.md`](skills/vpn-on-
 
 - **Built-in hints** — private AWS endpoints (`*.rds.amazonaws.com`, `*.elasticache.amazonaws.com`, …), hostnames ending in `.internal`, `.corp`, `.private` or `.vpc`, and private IP addresses used with `ssh`, `kubectl`, `mysql`, `psql`, `curl` and similar.
 - **Your project's `CLAUDE.md` / README** — anything they describe as internal or VPN-only.
-- **`trigger_patterns`** in the settings file — regexes for commands that always need the tunnel.
 
 What Claude can't see, it can't judge. Many operations never show their target in the command: a database client that reads its host from a config file or login path (the `mysql-client` plugin works this way), `kubectl` with a context from your kubeconfig, an SSH alias from `~/.ssh/config`, a `make` target or script, a secret-store CLI fetching credentials from an internal Vault, or any other tool or plugin that reads its endpoint from its own settings. For those, tell Claude:
 
@@ -55,7 +54,6 @@ What Claude can't see, it can't judge. Many operations never show their target i
   ```markdown
   The staging database, vault.corp.example and the Kubernetes API are only reachable over the VPN.
   ```
-- **With a `trigger_patterns` entry** that matches the command, e.g. `"mysql .*--defaults-file="` or `"kubectl --context prod-.*"`.
 - **Or just ask** — "connect the VPN first".
 
 If something that might be private fails with a timeout or "could not resolve host", the tunnel probably wasn't up. The skill tells Claude to suspect the VPN first, and you can always say so.

@@ -13,10 +13,6 @@ Use an openvpn3 config you imported yourself.
 profile_name: my-prod-vpn
 
 # Optional fields — see "Fields" below.
-trigger_patterns:
-  # Regexes searched anywhere in the command Claude is about to run.
-  - "mysql .*--defaults-file="    # a DB client whose host sits in a config file (e.g. the mysql-client plugin)
-  - "kubectl --context prod-.*"
 post_connect_cmd: dig +short internal-db.my-vpc.internal
 post_disconnect_cmd: sudo resolvectl flush-caches
 config_overrides:
@@ -51,8 +47,6 @@ Regenerate a throwaway profile every VPN-gated turn.
 ovpn_provision_cmd: vault read -field=config secret/vpn/my-prod
 
 # Same optional fields as BYO mode.
-trigger_patterns:
-  - "aws (rds|elasticache|memorydb|secretsmanager|ssm) "
 post_connect_cmd: dig +short internal-db.my-vpc.internal
 post_disconnect_cmd: sudo resolvectl flush-caches
 ---
@@ -77,7 +71,6 @@ even though `make infra-vpn-config` needs `ENV=<env>` and `AWS_PROFILE=<…>` �
 |---|---|---|---|
 | `profile_name` | BYO | one-of | Name of an openvpn3 config the user imported (`openvpn3 config-import --persistent`). |
 | `ovpn_provision_cmd` | ephemeral | one-of | Shell command whose stdout is the `.ovpn` body. Re-run every VPN-gated turn. |
-| `trigger_patterns` | both | no | Extra regex patterns for commands that need the tunnel, searched anywhere in the command line, on top of the skill's built-in hints. Most useful for commands whose target isn't visible (a host in a config file). Whatever is easier to say in words, write in the project's `CLAUDE.md` instead — Claude reads it too, and it covers indirect cases a regex can't. |
 | `post_connect_cmd` | both | no | Shell command run after a fresh `vpn_connect` (not on `already_connected`). Non-fatal. |
 | `post_disconnect_cmd` | both | no | Shell command run after a fresh `vpn_disconnect` (not on `not_connected`). Failures are non-fatal. |
 | `config_overrides` | both | no | `{name: value}` map of openvpn3 `config-manage` overrides set before each tunnel start. Values keep their YAML type. The server applies `dns-scope=tunnel` as a baseline (split-DNS); set `dns-scope: global` to override, or add other overrides like `log-level: 4`. In BYO mode the baseline and these entries are written into the profile and persist (also for a manual `openvpn3 session-start`); removing a key here doesn't unset it, so run `openvpn3 config-manage --config <profile_name> --unset-override <key>`. |

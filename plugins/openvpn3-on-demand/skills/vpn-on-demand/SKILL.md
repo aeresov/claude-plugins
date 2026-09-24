@@ -1,6 +1,6 @@
 ---
 name: vpn-on-demand
-description: Connect the project's OpenVPN3 tunnel before operations that reach private network resources — RDS/ElastiCache/MemoryDB hosts, internal hostnames, private kubectl contexts, RFC1918 targets of remote-access verbs, targets the project's CLAUDE.md marks as VPN-only (even when a tool hides the host in a config file), plus any trigger_patterns declared in .claude/openvpn3-on-demand.local.md — and disconnect at task end. Requires that settings file — without it the skill is a no-op. Linux only. Not for localhost, Docker/compose networks, .local mDNS names, or public endpoints.
+description: Connect the project's OpenVPN3 tunnel before operations that reach private network resources — RDS/ElastiCache/MemoryDB hosts, internal hostnames, private kubectl contexts, RFC1918 targets of remote-access verbs, targets the project's CLAUDE.md marks as VPN-only (even when a tool hides the host in a config file) — and disconnect at task end. Requires that settings file — without it the skill is a no-op. Linux only. Not for localhost, Docker/compose networks, .local mDNS names, or public endpoints.
 ---
 
 # VPN On Demand
@@ -26,7 +26,6 @@ Modes (set exactly one in `.claude/openvpn3-on-demand.local.md`):
 
 Other relevant frontmatter fields (both modes, all optional):
 
-- `trigger_patterns` — extra regex patterns to treat as VPN-requiring, on top of the matrix below.
 - `post_connect_cmd` — shell command run after a fresh connect (not on `already_connected`). Non-fatal.
 - `post_disconnect_cmd` — shell command run after a fresh disconnect (not on `not_connected`).
 - `config_overrides` — `{name: value}` map of openvpn3 `config-manage` overrides. Pass via the `overrides` arg to `vpn_connect` / `vpn_connect_ephemeral`. The server applies `dns-scope=tunnel` as a baseline (split-DNS so the tunnel coexists with Tailscale / mDNS); entries here override on collision. In BYO mode the baseline and these entries are written into the user's profile and persist, including for their own manual `openvpn3 session-start`. Dropping a key here doesn't unset it: if the user asks to remove one, tell them to run `openvpn3 config-manage --config <profile_name> --unset-override <key>`.
@@ -45,7 +44,6 @@ Full field reference and examples: [`references/example-local-settings.md`](refe
 - `aws` CLI against private services in prod accounts (RDS, ElastiCache, MemoryDB, Secrets Manager, SSM Parameter Store, ECR in a VPC, Lambda in a VPC).
 - `kubectl` / `helm` against a cluster with a private API endpoint.
 - `ssh` to a host without a public IP.
-- Any command matching `trigger_patterns` in the settings file (regexes searched anywhere in the command line; they *extend* the defaults).
 - Anything the project's CLAUDE.md / README says is only reachable over the VPN.
 
 **Targets hidden from the command count too.** Many operations never show their host: a DB client reading it from `--defaults-file`, a login path or `~/.my.cnf` (the `mysql-client` plugin's calls look like this), `kubectl` using a kubeconfig context, an `ssh` alias, a `make` target or script, a secret-store CLI (Vault, AWS Secrets Manager) fetching credentials, or any tool or skill that reads its endpoint from its own settings. If the project says that target is private, connect before the **first** step that touches it — including a credentials step that runs before the main command.
@@ -58,7 +56,7 @@ Full field reference and examples: [`references/example-local-settings.md`](refe
 - Local Docker traffic — `docker0` (`172.17.0.0/16`), compose project networks, `localhost` / `127.0.0.1` / `::1`.
 - `.local` / mDNS / Bonjour — LAN service discovery, not VPN territory.
 
-When uncertain, check `trigger_patterns` and the project's CLAUDE.md; if still uncertain, ask the user.
+When uncertain, check the project's CLAUDE.md / README; if still uncertain, ask the user.
 
 **After a failure.** If an operation fails with an unresolvable host, a timeout or a refused connection against something that could be private, and the tunnel isn't up, suspect the VPN before credentials or grants: connect and rerun it once if it's safe to repeat (a read), otherwise ask the user.
 
