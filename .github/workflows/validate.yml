@@ -13,14 +13,19 @@ jobs:
   validate:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-node@v4
+      # The Claude Code CLI needs Node >= 22; on an older Node, npm quietly installs the last
+      # release that still supported it, so CI would validate with a stale CLI.
+      - uses: actions/setup-node@v7
         with:
-          node-version: '20'
+          node-version: '24'
+          package-manager-cache: false   # no package.json here; the CLI is installed globally
 
       - name: Install Claude Code CLI
-        run: npm install --global @anthropic-ai/claude-code
+        run: |
+          npm install --global @anthropic-ai/claude-code
+          claude --version
 
       - name: Validate marketplace manifest
         run: claude plugin validate .
@@ -44,7 +49,7 @@ jobs:
         run: ./scripts/check-version-sync.sh
 
       - name: Set up uv
-        uses: astral-sh/setup-uv@v5
+        uses: astral-sh/setup-uv@v7
 
       # Runs each project's own `make check` — ruff, ruff format --check, ty, pytest — so the
       # local gate and CI are the same command by construction and cannot drift apart.
