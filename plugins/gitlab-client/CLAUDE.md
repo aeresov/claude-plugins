@@ -1,5 +1,7 @@
 # CLAUDE.md
 
+> **Deprecated — don't work on this plugin.** It is no longer maintained (last release 0.1.2). Don't fix issues, add features or apply review findings here unless the owner explicitly asks. It stays in the marketplace and CI still runs its `make check`, so a change elsewhere that breaks that gate is the only reason to touch it.
+
 Developer notes for working inside `gitlab-client`. User-facing docs: [`README.md`](README.md). Marketplace-wide conventions: repo-root `CLAUDE.md`.
 
 ## What this plugin is

@@ -1,5 +1,7 @@
 # gitlab-client
 
+> **Deprecated.** This plugin is no longer maintained: no fixes or new features are planned. It still installs and works as of 0.1.2, but known issues stay open.
+
 A Claude Code plugin that makes Claude an effective, safe user of a self-managed GitLab 15.x — repositories, merge requests, and CI — through `gl`, a small bundled REST v4 client. Reads are free; a short allow-list of writes (MRs, comments, retry/cancel/play/trigger) is permitted with guardrails; merging, approving, deleting, and settings changes are refused outright, by code, not by convention.
 
 ## Quick start
