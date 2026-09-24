@@ -11,7 +11,7 @@ A Claude Code plugin that brings an OpenVPN3 tunnel up/down on demand — no alw
 /openvpn3-on-demand:setup     # writes .claude/openvpn3-on-demand.local.md + .gitignore
 ```
 
-Then just ask Claude to do something that hits a private resource. The skill picks it up and connects before running the command.
+Then just ask Claude to do something that hits a private resource. The skill picks it up and connects before running the command — see [When does the tunnel come up?](#when-does-the-tunnel-come-up) for how Claude decides, and how to tell it about resources it can't recognise on its own.
 
 Run `/openvpn3-on-demand:doctor` at any time for a read-only health check.
 
@@ -35,11 +35,30 @@ Run `/openvpn3-on-demand:doctor` at any time for a read-only health check.
 Pick one in `.claude/openvpn3-on-demand.local.md`:
 
 - **BYO mode** — you `openvpn3 config-import --persistent` a profile yourself; set `profile_name` to its name. The plugin starts/stops sessions for it, and before each start it writes the `dns-scope=tunnel` baseline plus any `config_overrides` into that profile as openvpn3 overrides. Those are stored in the profile (on disk, for a `--persistent` one), so they also apply to your own `openvpn3 session-start`. Removing a key from `config_overrides` does **not** remove it from the profile. To remove one, run `openvpn3 config-manage --config <profile_name> --unset-override <key>`, and see what's set with `openvpn3 config-manage --config <profile_name> --show`.
-- **Ephemeral mode** — set `ovpn_provision_cmd` to a shell command whose **stdout is the `.ovpn` body**. The plugin captures stdout into a mode-600 temp file, imports it as a single-use config under `ovpn3-od-$CLAUDE_CODE_SESSION_ID`, connects, deletes the temp file. Re-runs every VPN-gated turn.
+- **Ephemeral mode** — set `ovpn_provision_cmd` to a shell command whose **stdout is the `.ovpn` body**. The plugin captures stdout into a mode-600 file in a private per-user directory, imports it as a single-use config under `ovpn3-od-$CLAUDE_CODE_SESSION_ID`, connects, and deletes the file. Re-runs every VPN-gated turn.
 
 Setting both fields or neither is a configuration error and the skill skips the VPN.
 
 See [`skills/vpn-on-demand/references/example-local-settings.md`](skills/vpn-on-demand/references/example-local-settings.md) for full commented templates of both modes.
+
+## When does the tunnel come up?
+
+**Claude decides, operation by operation.** The plugin gives it tools to connect and disconnect, and the skill tells it to connect before anything that needs your private network. But nothing in the plugin watches traffic, and it can't know on its own which resources sit behind your VPN. Claude works from:
+
+- **Built-in hints** — private AWS endpoints (`*.rds.amazonaws.com`, `*.elasticache.amazonaws.com`, …), hostnames ending in `.internal`, `.corp`, `.private` or `.vpc`, and private IP addresses used with `ssh`, `kubectl`, `mysql`, `psql`, `curl` and similar.
+- **Your project's `CLAUDE.md` / README** — anything they describe as internal or VPN-only.
+- **`trigger_patterns`** in the settings file — regexes for commands that always need the tunnel.
+
+What Claude can't see, it can't judge. Many operations never show their target in the command: a database client that reads its host from a config file or login path (the `mysql-client` plugin works this way), `kubectl` with a context from your kubeconfig, an SSH alias from `~/.ssh/config`, a `make` target or script, a secret-store CLI fetching credentials from an internal Vault, or any other tool or plugin that reads its endpoint from its own settings. For those, tell Claude:
+
+- **In the project's `CLAUDE.md`** (best — Claude reads it every session, and plain words cover indirect cases):
+  ```markdown
+  The staging database, vault.corp.example and the Kubernetes API are only reachable over the VPN.
+  ```
+- **With a `trigger_patterns` entry** that matches the command, e.g. `"mysql .*--defaults-file="` or `"kubectl --context prod-.*"`.
+- **Or just ask** — "connect the VPN first".
+
+If something that might be private fails with a timeout or "could not resolve host", the tunnel probably wasn't up. The skill tells Claude to suspect the VPN first, and you can always say so.
 
 ## MCP tools
 
@@ -56,7 +75,7 @@ See [`skills/vpn-on-demand/references/example-local-settings.md`](skills/vpn-on-
 
 ## Security
 
-- The `.ovpn` body is written to a mode-600 `mktemp` file, handed to openvpn3 over D-Bus, and deleted. Its bytes never enter the conversation transcript.
+- In ephemeral mode the `.ovpn` body is written to a mode-600 file at a fixed per-session path in a private directory — `$XDG_RUNTIME_DIR/openvpn3-on-demand/` (memory-backed, wiped at logout) or `~/.cache/openvpn3-on-demand/` where that isn't set — handed to openvpn3 over D-Bus, and deleted straight after. Its bytes never enter the conversation transcript. An interrupted turn leaves at most that one file, which the next turn overwrites; `rm -rf` the directory to clear leftovers.
 - `.claude/openvpn3-on-demand.local.md` may contain internal hostnames and provisioning commands — `/openvpn3-on-demand:setup` adds it to `.gitignore`.
 - The MCP server exits 1 if `dbus` or `openvpn3` aren't importable. It never installs anything and never runs as root.
 - The skill targets only the profile in the settings file — never a blanket disconnect. After a crash mid-task the tunnel stays up; clean it with `openvpn3 session-manage --disconnect --config <profile_name>` (BYO) or `… --config "ovpn3-od-$CLAUDE_CODE_SESSION_ID"` (ephemeral).

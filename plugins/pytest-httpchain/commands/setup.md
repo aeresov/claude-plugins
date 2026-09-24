@@ -1,6 +1,17 @@
 ---
 description: Configure pytest-httpchain for this project — confirm the package is a dev dependency (guiding the install, never running it), optionally set the `httpchain_suffix` pytest ini option and scaffold an example scenario. Conservative — it writes only files you approve and never installs packages or makes HTTP calls.
-allowed-tools: Bash(test -f *), Bash(test -d *), Bash(uv run python -c *), Bash(python -c *), Bash(poetry run python -c *), Bash(pdm run python -c *), Read, Glob, Write, Edit, AskUserQuestion
+allowed-tools:
+  - Bash(test -f *)
+  - Bash(test -d *)
+  - Bash(python -c "from importlib.metadata import version; print(version('pytest-httpchain'))")
+  - Bash(uv run python -c "from importlib.metadata import version; print(version('pytest-httpchain'))")
+  - Bash(poetry run python -c "from importlib.metadata import version; print(version('pytest-httpchain'))")
+  - Bash(pdm run python -c "from importlib.metadata import version; print(version('pytest-httpchain'))")
+  - Read
+  - Glob
+  - Write
+  - Edit
+  - AskUserQuestion
 ---
 
 You are running `/pytest-httpchain:setup`: an interactive configurator. You may write **only** files the user approves — an `httpchain_suffix` line in the project's existing pytest config and/or a scaffolded example scenario. You will **not** install or modify dependencies (you guide the user to run the install), **not** run `validate` or `pytest`, and **not** dispatch the subagent.

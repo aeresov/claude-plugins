@@ -90,7 +90,7 @@ URLs are assumed **percent-encoded** per the database-URL convention. The conver
 
 ## Security envelope
 
-- `connection_cmd`'s stdout — the URL, password and all — is piped straight into the converter and on into a mode-600 tempfile. It **never enters the conversation transcript**.
-- The tempfile is deleted at the end of every turn.
+- `connection_cmd`'s stdout — the URL, password and all — is piped straight into the converter and on into a mode-600 file at a fixed per-session path: `${XDG_RUNTIME_DIR:-$HOME/.cache}/mysql-client/<session-id>.cnf`, in a directory only you can read. It **never enters the conversation transcript**.
+- The file is deleted at the end of every turn. An interrupted turn leaves at most that one file, and the next turn overwrites it.
 - `connection_cmd` runs in your shell with your env — write it as carefully as any other credential-handling shell.
 - Stderr from `connection_cmd` and the converter may be shown; neither echoes the URL or password.

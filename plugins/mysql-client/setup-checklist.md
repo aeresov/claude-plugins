@@ -26,28 +26,32 @@ Checks 1–3 and 6 are static and read-only. Checks 4–5 are **live**: they run
 
 ### 4. `connection_cmd` resolves to a usable URL (live; only if 3 passed)
 
-- Run `connection_cmd` and pipe its output through the bundled converter:
+- Run `connection_cmd` and pipe its output through the bundled converter, in one Bash call. The file goes to a fixed per-session path in a private directory (same scheme as the skill, with a `doctor-` prefix), because shell variables don't survive into the next call:
   ```bash
   umask 077
-  cnf="$(mktemp --suffix=.cnf)"; err="$(mktemp --suffix=.err)"
+  d="${XDG_RUNTIME_DIR:-$HOME/.cache}/mysql-client"; mkdir -p "$d"
+  cnf="$d/doctor-${CLAUDE_CODE_SESSION_ID:-default}.cnf"; err="${cnf%.cnf}.err"
   set -o pipefail
-  { <connection_cmd> 2>"$err" ; } | python3 "${CLAUDE_PLUGIN_ROOT}/scripts/mysql-url-to-cnf/src/mysql_url_to_cnf/__init__.py" >"$cnf" 2>>"$err"
+  if { <connection_cmd> 2>"$err" ; } | python3 "${CLAUDE_PLUGIN_ROOT}/scripts/mysql-url-to-cnf/src/mysql_url_to_cnf/__init__.py" >"$cnf" 2>>"$err" && [ -s "$cnf" ]
+  then rm -f "$err"; echo "cnf=$cnf"
+  else cat "$err"; rm -f "$cnf" "$err"; false
+  fi
   ```
-- PASS if the pipeline exits 0 and `$cnf` is non-empty. (The converter writes a `[client]` INI on success and exits non-zero on anything that isn't a `mysql://` URL.)
-- **Never print `$cnf`'s content** — it holds a password. `$err` is safe to surface.
-- FAIL → show the captured `$err`, then: "`connection_cmd` did not produce a usable `mysql://` URL. Common causes: an expired auth token, a wrong secret path, the secret-store CLI not being logged in, or the command printing something other than a bare URL (a make recipe echo, a status line). Fix the command in `.claude/mysql-client.local.md` (or re-run `/mysql-client:setup`)."
-- Keep `$cnf` for check 5. Delete `$cnf` and `$err` once check 5 is done — or immediately, if check 5 is skipped.
+- PASS if it exits 0 and prints `cnf=<path>`. (The converter writes a `[client]` INI on success and exits non-zero on anything that isn't a `mysql://` URL.)
+- **Never print the `.cnf`'s content** — it holds a password. The stderr it prints on failure is safe to surface.
+- FAIL → show that stderr, then: "`connection_cmd` did not produce a usable `mysql://` URL. Common causes: an expired auth token, a wrong secret path, the secret-store CLI not being logged in, or the command printing something other than a bare URL (a make recipe echo, a status line). Fix the command in `.claude/mysql-client.local.md` (or re-run `/mysql-client:setup`)."
+- Keep the `.cnf` for check 5, and delete it once check 5 is done — or immediately if check 5 is skipped (the command is at the end of check 5).
 
 ### 5. Connection probe (live; only if 4 passed)
 
 - Run:
   ```bash
-  mysql --defaults-file="$cnf" --safe-updates -e \
+  mysql --defaults-file=<the cnf= path from check 4> --safe-updates -e \
     'SELECT @@hostname, @@version, @@read_only, @@super_read_only, USER(), DATABASE()'
   ```
 - PASS if it connects and returns a row. Note `@@hostname`, `@@version`, and the read-only flags for the summary line.
 - FAIL → show the `mysql` error, then: "Credentials resolved but the connection failed. Common causes: wrong host/port, `Access denied` (the grant doesn't cover this client host), an SSL mode/CA mismatch, or an auth-plugin mismatch (`caching_sha2_password` against an old client). See `skills/mysql-client/references/connecting.md`."
-- Afterwards: `rm -f "$cnf" "$err"`.
+- Afterwards (this rebuilds the path, so it works in a separate call): `rm -f "${XDG_RUNTIME_DIR:-$HOME/.cache}/mysql-client/doctor-${CLAUDE_CODE_SESSION_ID:-default}.cnf"`.
 
 ### 6. `.gitignore` covers the settings file (only if 2 passed)
 

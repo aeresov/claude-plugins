@@ -14,7 +14,8 @@ profile_name: my-prod-vpn
 
 # Optional fields — see "Fields" below.
 trigger_patterns:
-  - "mysql .* -h [^ ]*\\.internal"
+  # Regexes searched anywhere in the command Claude is about to run.
+  - "mysql .*--defaults-file="    # a DB client whose host sits in a config file (e.g. the mysql-client plugin)
   - "kubectl --context prod-.*"
 post_connect_cmd: dig +short internal-db.my-vpc.internal
 post_disconnect_cmd: sudo resolvectl flush-caches
@@ -62,7 +63,7 @@ post_disconnect_cmd: sudo resolvectl flush-caches
 Where ovpn_provision_cmd pulls from, what credentials it needs, who owns the secret.
 ```
 
-`ovpn_provision_cmd`'s **stdout** must be the `.ovpn` body — not a file path, not a status line. The plugin pipes stdout into a mode-600 temp file, imports it single-use, and deletes the file. Contents never enter the conversation transcript.
+`ovpn_provision_cmd`'s **stdout** must be the `.ovpn` body — not a file path, not a status line. The plugin pipes stdout into a mode-600 file in a private per-user directory, imports it single-use, and deletes the file. Contents never enter the conversation transcript.
 
 Keep settings files **task-agnostic**: per-task env vars (`ENV`, `AWS_PROFILE`, region, vault namespace, …) are supplied by Claude at call time from the project's `CLAUDE.md`, not hard-coded here. A Makefile-based provisioner stays as
 ```markdown
@@ -76,7 +77,7 @@ even though `make infra-vpn-config` needs `ENV=<env>` and `AWS_PROFILE=<…>` �
 |---|---|---|---|
 | `profile_name` | BYO | one-of | Name of an openvpn3 config the user imported (`openvpn3 config-import --persistent`). |
 | `ovpn_provision_cmd` | ephemeral | one-of | Shell command whose stdout is the `.ovpn` body. Re-run every VPN-gated turn. |
-| `trigger_patterns` | both | no | Extra regex patterns treated as VPN-requiring, on top of the skill's built-in defaults. |
+| `trigger_patterns` | both | no | Extra regex patterns for commands that need the tunnel, searched anywhere in the command line, on top of the skill's built-in hints. Most useful for commands whose target isn't visible (a host in a config file). Whatever is easier to say in words, write in the project's `CLAUDE.md` instead — Claude reads it too, and it covers indirect cases a regex can't. |
 | `post_connect_cmd` | both | no | Shell command run after a fresh `vpn_connect` (not on `already_connected`). Non-fatal. |
 | `post_disconnect_cmd` | both | no | Shell command run after a fresh `vpn_disconnect` (not on `not_connected`). Failures are non-fatal. |
 | `config_overrides` | both | no | `{name: value}` map of openvpn3 `config-manage` overrides set before each tunnel start. Values keep their YAML type. The server applies `dns-scope=tunnel` as a baseline (split-DNS); set `dns-scope: global` to override, or add other overrides like `log-level: 4`. In BYO mode the baseline and these entries are written into the profile and persist (also for a manual `openvpn3 session-start`); removing a key here doesn't unset it, so run `openvpn3 config-manage --config <profile_name> --unset-override <key>`. |

@@ -23,7 +23,7 @@ All probes run against the **current project root**. The package must be availab
 ```bash
 uv run python -c "from importlib.metadata import version; print(version('pytest-httpchain'))"
 ```
-Pass = it prints a version. This interpreter must be the one `pytest` uses — that is what confirms the `pytest11` plugin is actually registered for collection.
+Run it exactly as written, changing only the runner prefix: `/setup` and `/doctor` pre-approve this exact command, not `python -c` in general. Pass = it prints a version. This interpreter must be the one `pytest` uses — that is what confirms the `pytest11` plugin is actually registered for collection.
 
 **Remediation (not installed), printed for the detected manager:**
 > pytest-httpchain isn't installed in this project's test environment. Add it as a dev dependency, then re-run:

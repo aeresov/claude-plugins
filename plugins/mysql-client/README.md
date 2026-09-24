@@ -27,7 +27,7 @@ See [`skills/mysql-client/references/connecting.md`](skills/mysql-client/referen
 
 ## Connection discovery (optional)
 
-`/mysql-client:setup` configures this interactively — it asks where the project's connection URL comes from, writes `.claude/mysql-client.local.md`, and updates `.gitignore`. Or drop the file in by hand: a `connection_cmd` frontmatter field whose stdout is a `mysql://` (or `mariadb://`) URL — a build target, a vault read, AWS Secrets Manager, SOPS, 1Password. The plugin runs the command, converts the URL to a `[client]` INI with its bundled converter, writes a mode-600 tempfile, runs `mysql --defaults-file=<tmp>`, and deletes it after the turn. The URL — password and all — never enters the conversation transcript.
+`/mysql-client:setup` configures this interactively — it asks where the project's connection URL comes from, writes `.claude/mysql-client.local.md`, and updates `.gitignore`. Or drop the file in by hand: a `connection_cmd` frontmatter field whose stdout is a `mysql://` (or `mariadb://`) URL — a build target, a vault read, AWS Secrets Manager, SOPS, 1Password. The plugin runs the command, converts the URL to a `[client]` INI with its bundled converter, writes it to a mode-600 file at a fixed per-session path in a private directory (`$XDG_RUNTIME_DIR/mysql-client/`, or `~/.cache/mysql-client/` where that isn't set), runs `mysql --defaults-file=<that file>`, and deletes it after the turn. The URL — password and all — never enters the conversation transcript.
 
 Minimum file:
 
@@ -73,7 +73,7 @@ If the request crosses an "out" line, the skill names what it can't do and hands
 
 For investigations that need many `mysql` calls — schema mapping across tables, slow-query root-causing, replication-lag triage, performance_schema digest analysis — the skill dispatches a read-only subagent that does the work in an isolated context and returns a focused writeup.
 
-The subagent's tool allowlist (`Bash`, `Read`, `Grep`, `Glob`) excludes everything write-flavoured at the harness level, so even a buggy or misled investigator can't mutate the database or your filesystem.
+The subagent has no file-editing tools (only `Bash`, `Read`, `Grep`, `Glob`), and its instructions refuse writes. That refusal is instruction-level, not enforced by Claude Code: with `Bash` it *could* run a write statement or touch files. Real protection comes from the database side — **connect with a read-only database user** (a `SELECT`-only grant, plus `PROCESS` / `performance_schema` reads if you want perf triage), which the server enforces whatever the client sends. Don't pre-approve `Bash(mysql *)` on the assumption that the subagent can't write.
 
 See [`agents/mysql-investigator.md`](agents/mysql-investigator.md).
 
@@ -94,8 +94,8 @@ Loaded on demand by Claude as each step requires:
 - The skill **refuses to put passwords on the command line.** `-p<password>` leaks via `ps`; the plugin uses login-paths, `~/.my.cnf`, or `--defaults-file` exclusively.
 - The skill **runs a "where am I" probe before any query** and surfaces the answer (`@@hostname`, `@@read_only`, `USER()`, …) so you can spot a misrouted connection before it does damage.
 - The skill **sets `--safe-updates` / `sql_safe_updates` on every session.** Even if you somehow bypassed the read-only stance, accidental WHERE-less `UPDATE`/`DELETE` is server-rejected.
-- The subagent's allowlist forbids writes at the harness level — no `Edit`, no `Write`, no `Agent` recursion.
-- When `.claude/mysql-client.local.md` is in play, `connection_cmd`'s output (a URL) is piped through the bundled converter into a mode-600 tempfile and **never enters the conversation transcript**. The tempfile is deleted at the end of every turn.
+- The subagent has no `Edit`, `Write` or `Agent` tools, but it does have `Bash`, so its refusal to write is instruction-level. Use a read-only database user for real enforcement.
+- When `.claude/mysql-client.local.md` is in play, `connection_cmd`'s output (a URL) is piped through the bundled converter into a mode-600 file at a fixed per-session path in a private per-user directory, and **never enters the conversation transcript**. The file is deleted at the end of every turn; an interrupted turn leaves at most that one file, which the next turn overwrites (`rm -rf "${XDG_RUNTIME_DIR:-$HOME/.cache}/mysql-client"` clears any leftovers).
 
 ## Troubleshooting
 

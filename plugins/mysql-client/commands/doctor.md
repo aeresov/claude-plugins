@@ -1,9 +1,9 @@
 ---
 description: Diagnose the mysql-client setup — client installed, settings file present and valid, connection_cmd resolves, a probe connects, .gitignore — and report what is missing. Read-only against your project and the database; runs your connection_cmd and opens one short-lived read-only connection.
-allowed-tools: Bash(mysql --version), Bash(test -f *), Bash(mktemp *), Bash(rm -f *), Read, Glob
+allowed-tools: Bash(mysql --version), Bash(test -f *), Read, Glob
 ---
 
-You are running `/mysql-client:doctor`: a health check. Write no files, dispatch no agent. Checks 1–3 and 6 are static and read-only. Checks 4–5 are **live** — they run the project's `connection_cmd` and open one short-lived read-only `mysql` connection. Those two are arbitrary project-supplied commands, so they aren't pre-approved and will each prompt for permission once — that is expected.
+You are running `/mysql-client:doctor`: a health check. Write no files, dispatch no agent. Checks 1–3 and 6 are static and read-only. Checks 4–5 are **live** — they run the project's `connection_cmd` and open one short-lived read-only `mysql` connection. Those two are arbitrary project-supplied commands, so they aren't pre-approved and will each prompt for permission once, as will the cleanup of the credentials file — that is expected.
 
 ## Steps
 
@@ -17,7 +17,7 @@ You are running `/mysql-client:doctor`: a health check. Write no files, dispatch
    - 5 connection probe — live (SKIP if 4 failed or skipped)
    - 6 `.gitignore` covers the settings file (SKIP if 2 absent)
 
-   Use Read to parse the settings file's YAML frontmatter for checks 3–4. For checks 4–5, run `connection_cmd` and pipe its output through `${CLAUDE_PLUGIN_ROOT}/scripts/mysql-url-to-cnf/src/mysql_url_to_cnf/__init__.py` into a `umask 077` `mktemp` `.cnf` file, use that via `mysql --defaults-file=<file>`, and `rm -f` it (plus the stderr capture file) when done. **Never** echo the tempfile's contents — it holds a password.
+   Use Read to parse the settings file's YAML frontmatter for checks 3–4. For checks 4–5, follow the checklist exactly: `connection_cmd` is piped through the bundled converter into a fixed per-session `.cnf` path in a private directory, the probe uses that literal path via `mysql --defaults-file=<path>`, and the checklist's `rm -f` removes it when done. **Never** echo the file's contents — it holds a password.
 
 3. Print one line per check. When no settings file exists:
    ```

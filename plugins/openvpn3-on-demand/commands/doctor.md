@@ -1,6 +1,6 @@
 ---
 description: Diagnose the openvpn3-on-demand setup — host packages, netcfg init, settings file, BYO profile, .gitignore — and report what (if anything) is missing. Read-only; changes nothing.
-allowed-tools: Bash(openvpn3 version), Bash(uv --version), Bash(python3 -c *), Bash(test -f *), Bash(openvpn3 configs-list), Read, Glob
+allowed-tools: Bash(openvpn3 version), Bash(uv --version), Bash(python3 -c 'import dbus'), Bash(test -f *), Bash(openvpn3 configs-list), Read, Glob
 ---
 
 You are running `/openvpn3-on-demand:doctor`: a **read-only** health check. Write no files, run nothing privileged, call no `vpn_*` tool.

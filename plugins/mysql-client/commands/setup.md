@@ -1,6 +1,6 @@
 ---
 description: Configure mysql-client connection discovery for this project — record the command that prints the database's connection URL, write .claude/mysql-client.local.md, and add it to .gitignore. Read-only against the host and database; runs nothing privileged and never connects.
-allowed-tools: Bash(mysql --version), Bash(test -f *), Bash(grep *), Bash(awk *), Read, Glob, Write, Edit, AskUserQuestion
+allowed-tools: Bash(mysql --version), Bash(test -f *), Bash(grep *), Read, Glob, Write, Edit, AskUserQuestion
 ---
 
 You are running `/mysql-client:setup`: an interactive configurator. You will write **only** `.claude/mysql-client.local.md` and (if needed) a line in `.gitignore`. You will **not** run the project's `connection_cmd`, **not** connect to any database, and **not** dispatch the `mysql-investigator` agent.
@@ -16,9 +16,10 @@ Run check 1 (`mysql` client installed). If it fails, print its remediation text 
 Run check 2. If `.claude/mysql-client.local.md` already exists, do **not** `Read` it — `connection_cmd` may be a literal `echo 'mysql://user:pw@host/db'`, and reading it would put the password in the transcript. Probe it silently instead:
 
 ```bash
-grep -qE '^connection_cmd: *[^ ]' .claude/mysql-client.local.md && \
-  grep -oE '^connection_cmd: *[^ ]+' .claude/mysql-client.local.md | awk '{print $2}'
+grep -oE '^connection_cmd: *[^ ]+' .claude/mysql-client.local.md
 ```
+
+It prints `connection_cmd: <first token>` when the field is set, and nothing (exit 1) when it isn't.
 
 Report only that `connection_cmd` is set and its first token (`make`, `vault`, `aws`, `echo`, …), never the whole line. Then ask via **AskUserQuestion**: *Keep as-is* / *Reconfigure (overwrite)* / *Abort*. Stop on Keep or Abort.
 
@@ -37,7 +38,7 @@ Enforce while assembling:
 
 - The command's **stdout must be a single `mysql://` or `mariadb://` URL** — nothing else. No INI body, no log lines. For a build target, make sure the recipe is silent and add `--no-print-directory` (or the tool's equivalent) so only the URL is printed.
 - Record the command **verbatim** — exactly as the user runs it to get their URL, concrete environment values and all (`ENV=dev`, `AWS_PROFILE=…`). Don't parametrize it or invent env-var placeholders. The settings file is gitignored, per-developer, and re-read every turn, so pointing at a different environment later is just editing this one line.
-- Don't worry about the password in the URL — the plugin pipes the URL straight through its bundled converter into a mode-600 tempfile; it never reaches a command line or the transcript.
+- Don't worry about the password in the URL — the plugin pipes the URL straight through its bundled converter into a mode-600 file in a private per-user directory, deleted after each turn; it never reaches a command line or the transcript.
 
 ### 5. Write `.claude/mysql-client.local.md`
 Create the `.claude/` directory if needed. Single-line command:

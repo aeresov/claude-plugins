@@ -1,6 +1,6 @@
 ---
 name: vpn-on-demand
-description: Connect the project's OpenVPN3 tunnel before commands that touch private network resources — RDS/ElastiCache/MemoryDB hosts, internal hostnames, private kubectl contexts, RFC1918 targets of remote-access verbs, plus any trigger_patterns declared in .claude/openvpn3-on-demand.local.md — and disconnect at task end. Requires that settings file — without it the skill is a no-op. Linux only. Not for localhost, Docker/compose networks, .local mDNS names, or public endpoints.
+description: Connect the project's OpenVPN3 tunnel before operations that reach private network resources — RDS/ElastiCache/MemoryDB hosts, internal hostnames, private kubectl contexts, RFC1918 targets of remote-access verbs, targets the project's CLAUDE.md marks as VPN-only (even when a tool hides the host in a config file), plus any trigger_patterns declared in .claude/openvpn3-on-demand.local.md — and disconnect at task end. Requires that settings file — without it the skill is a no-op. Linux only. Not for localhost, Docker/compose networks, .local mDNS names, or public endpoints.
 ---
 
 # VPN On Demand
@@ -35,7 +35,9 @@ Full field reference and examples: [`references/example-local-settings.md`](refe
 
 ## When to activate
 
-**Activate** when the command targets:
+**You decide, per operation.** Nothing in the plugin watches traffic or knows which resources sit behind this VPN; the lists below are hints, not a complete detector. Judge where the operation actually connects, not just the text of the command.
+
+**Activate** when the operation reaches:
 
 - Hosts ending in `.rds.amazonaws.com`, `.elasticache.amazonaws.com`, `.memorydb.amazonaws.com`, `.redshift.amazonaws.com`, `.docdb.amazonaws.com`.
 - RFC1918 hosts (`10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`) **when targeted by a remote-access verb** (`ssh`, `kubectl`, `mysql`, `psql`, `redis-cli`, `curl` / `wget` to a non-loopback URL). A bare RFC1918 address alone isn't enough — local Docker networks live there too.
@@ -43,7 +45,10 @@ Full field reference and examples: [`references/example-local-settings.md`](refe
 - `aws` CLI against private services in prod accounts (RDS, ElastiCache, MemoryDB, Secrets Manager, SSM Parameter Store, ECR in a VPC, Lambda in a VPC).
 - `kubectl` / `helm` against a cluster with a private API endpoint.
 - `ssh` to a host without a public IP.
-- Any command matching `trigger_patterns` in the settings file (these *extend* the defaults).
+- Any command matching `trigger_patterns` in the settings file (regexes searched anywhere in the command line; they *extend* the defaults).
+- Anything the project's CLAUDE.md / README says is only reachable over the VPN.
+
+**Targets hidden from the command count too.** Many operations never show their host: a DB client reading it from `--defaults-file`, a login path or `~/.my.cnf` (the `mysql-client` plugin's calls look like this), `kubectl` using a kubeconfig context, an `ssh` alias, a `make` target or script, a secret-store CLI (Vault, AWS Secrets Manager) fetching credentials, or any tool or skill that reads its endpoint from its own settings. If the project says that target is private, connect before the **first** step that touches it — including a credentials step that runs before the main command.
 
 **Do not activate** for:
 
@@ -54,6 +59,8 @@ Full field reference and examples: [`references/example-local-settings.md`](refe
 - `.local` / mDNS / Bonjour — LAN service discovery, not VPN territory.
 
 When uncertain, check `trigger_patterns` and the project's CLAUDE.md; if still uncertain, ask the user.
+
+**After a failure.** If an operation fails with an unresolvable host, a timeout or a refused connection against something that could be private, and the tunnel isn't up, suspect the VPN before credentials or grants: connect and rerun it once if it's safe to repeat (a read), otherwise ask the user.
 
 ## BYO flow
 
@@ -72,16 +79,25 @@ Connect once at the start of the VPN-needing block, disconnect at the end. Don't
 Profile name: `N = "ovpn3-od-" + $CLAUDE_CODE_SESSION_ID`. You forward `$CLAUDE_CODE_SESSION_ID` to `vpn_connect_ephemeral` as `session_id`; the MCP server can't read that env var itself (it's a singleton across `/resume`/`/fork-session`). You reconstruct `N` only for disconnect. If `CLAUDE_CODE_SESSION_ID` is unset, **stop**: tell the user (their Claude Code may be too old) and handle the request without VPN.
 
 1. **Provision → connect:**
-   1. `tmp="$(mktemp --suffix=.ovpn)"`.
-   2. Run `ovpn_provision_cmd` with stdout redirected to `$tmp`, prefixing any per-task env (see "Environment" below) — e.g. `{ ENV=<env> <provision-cmd> ; } > "$tmp"`. The command's stdout bytes must **not** appear in your output (the `.ovpn` is sensitive); stderr may.
-   3. Non-zero exit or empty `$tmp` → tell the user (show stderr), `rm -f "$tmp"`, **stop**.
-   4. `vpn_connect_ephemeral(ovpn_path=<$tmp>, session_id="$CLAUDE_CODE_SESSION_ID", overrides=<config_overrides or omitted>)`. The server reads the file, drops any stale config under `N`, imports single-use, and connects atomically.
-   5. `rm -f "$tmp"` — regardless of outcome.
+   1. Run `ovpn_provision_cmd` into the session's fixed path, in **one** Bash call, prefixing any per-task env (see "Environment" below):
+      ```bash
+      umask 077
+      d="${XDG_RUNTIME_DIR:-$HOME/.cache}/openvpn3-on-demand"; mkdir -p "$d"
+      ovpn="$d/$CLAUDE_CODE_SESSION_ID.ovpn"
+      if { ENV=<env> <provision-cmd> ; } > "$ovpn" && [ -s "$ovpn" ]
+      then echo "ovpn=$ovpn"
+      else rm -f "$ovpn"; false
+      fi
+      ```
+      The command's stdout (the `.ovpn`, which is sensitive) goes only to the file and must **not** appear in your output; stderr may. `$XDG_RUNTIME_DIR` is per-user, memory-backed and wiped at logout; `~/.cache` is the fallback where it isn't set. The path is fixed per session because shell variables don't survive between Bash calls: it can always be rebuilt from the environment.
+   2. Non-zero exit → the call already removed the file. Tell the user (show stderr), **stop**.
+   3. `vpn_connect_ephemeral(ovpn_path=<the printed ovpn= path>, session_id="$CLAUDE_CODE_SESSION_ID", overrides=<config_overrides or omitted>)`. The server reads the file, drops any stale config under `N`, imports single-use, and connects atomically.
+   4. Delete the file, regardless of outcome. This rebuilds the path, so it works in this separate call: `rm -f "${XDG_RUNTIME_DIR:-$HOME/.cache}/openvpn3-on-demand/$CLAUDE_CODE_SESSION_ID.ovpn"`.
 2. **Post-connect hook** — only on `status: connected`. Same rules as BYO.
 3. **Run the user's command.** Reuse the tunnel within the task.
 4. **Disconnect at task end.** Reconstruct `N` (or echo `profile_name` from the connect response). `vpn_disconnect(profile_name=N)`. Run `post_disconnect_cmd` on a fresh disconnect.
 
-**Environment.** The provision command inherits the parent process's env. Keep settings files **task-agnostic**: prepend per-task vars (target environment, AWS profile, region, vault namespace) inline from the project's CLAUDE.md / README — `{ ENV=dev AWS_PROFILE=acme-dev <provision-cmd> ; } > "$tmp"`. Baking them into `ovpn_provision_cmd` locks the settings file to one task context.
+**Environment.** The provision command inherits the parent process's env. Keep settings files **task-agnostic**: prepend per-task vars (target environment, AWS profile, region, vault namespace) inline from the project's CLAUDE.md / README — `{ ENV=dev AWS_PROFILE=acme-dev <provision-cmd> ; } > "$ovpn"` inside the provisioning call. Baking them into `ovpn_provision_cmd` locks the settings file to one task context.
 
 `ovpn_provision_cmd` runs every VPN-gated turn — by design. The server skips re-import on `already_connected`, but provisioning is paid each turn.
 
@@ -98,7 +114,7 @@ All tools return `{"status": ...}`; `status: "error"` is a hard failure — surf
 
 - **Misconfigured mode** (both or neither). Surface the config error; call no `vpn_*` tool; proceed without VPN.
 - **`CLAUDE_CODE_SESSION_ID` unset** (ephemeral). Tell the user; proceed without VPN; don't guess a name.
-- **`ovpn_provision_cmd` failed or produced nothing.** Surface stderr; `rm -f` the temp file; don't connect.
+- **`ovpn_provision_cmd` failed or produced nothing.** Surface stderr (the provisioning call already removed the file); don't connect.
 - **MCP server exited 1 — `cannot import 'dbus' and/or 'openvpn3'`.** Install `openvpn3-client` + `python3-dbus`; restart Claude Code.
 - **`"Backend not ready ..."`.** Profile prompts for credentials; the server is non-interactive. Profiles need `auth-user-pass` inlined; encrypted PKCS#12 isn't supported. BYO: re-import a fixed profile. Ephemeral: fix `ovpn_provision_cmd`'s output.
 - **`"A session for '<name>' exists but isn't connected ..."` / `"... its backend isn't answering ..."`.** A session under that name is paused, failed, or stale, and it predates the call, so it may be the user's own. The server leaves it alone. Surface the message, which includes the cleanup command (`openvpn3 session-manage --disconnect --config <name>` or `--cleanup`). Don't `vpn_disconnect` it yourself unless the user says so.

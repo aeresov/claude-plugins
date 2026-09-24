@@ -18,18 +18,26 @@ The converter ships at `${CLAUDE_PLUGIN_ROOT}/scripts/mysql-url-to-cnf/src/mysql
 Flow when the file is present:
 
 1. **Read the frontmatter.** Verify `connection_cmd` is set and non-empty. Missing or malformed → tell the user and stop. Do not guess.
-2. **Provision lazily** (first time mysql is needed this turn):
+2. **Provision lazily** (first time mysql is needed this turn), in **one** Bash call:
    ```bash
    umask 077
-   tmp="$(mktemp --suffix=.cnf)"; err="$(mktemp --suffix=.err)"
+   d="${XDG_RUNTIME_DIR:-$HOME/.cache}/mysql-client"; mkdir -p "$d"
+   cnf="$d/${CLAUDE_CODE_SESSION_ID:-default}.cnf"; err="${cnf%.cnf}.err"
    set -o pipefail
-   { <connection_cmd> 2>"$err" ; } | python3 "${CLAUDE_PLUGIN_ROOT}/scripts/mysql-url-to-cnf/src/mysql_url_to_cnf/__init__.py" >"$tmp" 2>>"$err"
+   if { <connection_cmd> 2>"$err" ; } | python3 "${CLAUDE_PLUGIN_ROOT}/scripts/mysql-url-to-cnf/src/mysql_url_to_cnf/__init__.py" >"$cnf" 2>>"$err" && [ -s "$cnf" ]
+   then rm -f "$err"; echo "cnf=$cnf"
+   else cat "$err"; rm -f "$cnf" "$err"; false
+   fi
    ```
-   `connection_cmd`'s stdout (a URL with a password) and the converter's output (the INI) **must not** appear in your output. Do not `cat "$tmp"`. The captured `$err` is safe to surface — neither `connection_cmd` nor the converter echoes the URL.
-3. **Pipeline exit non-zero, or `$tmp` empty** → show `$err`, `rm -f "$tmp" "$err"`, **stop**. A non-URL from `connection_cmd` (recipe echo, an error line, empty output) makes the converter exit non-zero here — that's the intended guard.
-4. **Use the tempfile** for every mysql call this turn: `mysql --defaults-file="$tmp" --safe-updates -e '...'`. Combine with the safety perimeter below.
-5. **Dispatching `mysql-investigator`** → pass the tempfile path to the agent as the connection method (e.g. "use `mysql --defaults-file=/tmp/abc.cnf`"). The skill — not the agent — owns the tempfile's lifecycle.
-6. **Cleanup at end of turn:** `rm -f "$tmp" "$err"`, whether you dispatched the agent or not.
+   The file lives at a **fixed path per Claude Code session**, in a private directory: `$XDG_RUNTIME_DIR` is per-user, memory-backed and wiped at logout; `~/.cache` is the fallback where it isn't set. Shell variables don't survive between Bash calls, but this path can be rebuilt from the environment in any call, and a re-provision overwrites it rather than leaving another file behind.
+   `connection_cmd`'s stdout (a URL with a password) and the converter's output (the INI) **must not** appear in your output. Never `cat` the `.cnf`. The captured stderr is safe to surface — neither `connection_cmd` nor the converter echoes the URL.
+3. **Non-zero exit** → the call has already printed the stderr and removed both files. Show it and **stop**. A non-URL from `connection_cmd` (recipe echo, an error line, empty output) makes the converter exit non-zero here — that's the intended guard.
+4. **Use the printed `cnf=` path** for every mysql call this turn: `mysql --defaults-file=<that path> --safe-updates -e '...'`. Write the literal path, not `$cnf` (the variable is gone in the next call). Combine with the safety perimeter below.
+5. **Dispatching `mysql-investigator`** → pass the literal path to the agent as the connection method (e.g. "use `mysql --defaults-file=/run/user/1000/mysql-client/<session>.cnf`"). The skill — not the agent — owns the file's lifecycle.
+6. **Cleanup at end of turn**, whether you dispatched the agent or not. This rebuilds the path, so it works in any call:
+   ```bash
+   rm -f "${XDG_RUNTIME_DIR:-$HOME/.cache}/mysql-client/${CLAUDE_CODE_SESSION_ID:-default}.cnf"
+   ```
 
 If `.claude/mysql-client.local.md` is absent, either ask the user for a connection method (a login-path name, a `--defaults-file` path, or a full `mysql` command prefix — see [`references/connecting.md`](references/connecting.md)), or suggest `/mysql-client:setup` to generate the settings file.
 
