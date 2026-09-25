@@ -1,8 +1,6 @@
 # Example `.claude/openvpn3-on-demand.local.md`
 
-Drop one of the templates below at `.claude/openvpn3-on-demand.local.md` in the project root and add `.claude/*.local.md` to `.gitignore`. `/openvpn3-on-demand:setup` writes the same shape interactively.
-
-Set **exactly one** of `profile_name` / `ovpn_provision_cmd`. Both, or neither, is a configuration error.
+Save one template as `.claude/openvpn3-on-demand.local.md` in the project root and gitignore `.claude/*.local.md`; `/openvpn3-on-demand:setup` writes the same shape. Set **exactly one** of `profile_name` / `ovpn_provision_cmd`; both or neither is a configuration error.
 
 ## BYO mode
 
@@ -13,7 +11,7 @@ Use an openvpn3 config you imported yourself.
 profile_name: my-prod-vpn
 
 # Optional fields — see "Fields" below.
-post_connect_cmd: dig +short internal-db.my-vpc.internal
+post_connect_cmd: getent ahosts internal-db.my-vpc.internal
 post_disconnect_cmd: sudo resolvectl flush-caches
 config_overrides:
   log-level: 4
@@ -31,7 +29,7 @@ openvpn3 config-import --config /path/to/my-prod-vpn.ovpn \
                        --name my-prod-vpn --persistent
 ```
 
-The plugin never creates or removes a BYO config, but it does write the `dns-scope=tunnel` baseline and any `config_overrides` into it (see `config_overrides` below).
+The plugin never creates or removes a BYO config, but writes the `dns-scope=tunnel` baseline and any `config_overrides` into it.
 
 ## Ephemeral mode
 
@@ -47,7 +45,7 @@ Regenerate a throwaway profile every VPN-gated turn.
 ovpn_provision_cmd: vault read -field=config secret/vpn/my-prod
 
 # Same optional fields as BYO mode.
-post_connect_cmd: dig +short internal-db.my-vpc.internal
+post_connect_cmd: getent ahosts internal-db.my-vpc.internal
 post_disconnect_cmd: sudo resolvectl flush-caches
 ---
 
@@ -57,13 +55,13 @@ post_disconnect_cmd: sudo resolvectl flush-caches
 Where ovpn_provision_cmd pulls from, what credentials it needs, who owns the secret.
 ```
 
-`ovpn_provision_cmd`'s **stdout** must be the `.ovpn` body — not a file path, not a status line. The plugin pipes stdout into a mode-600 file in a private per-user directory, imports it single-use, and deletes the file. Contents never enter the conversation transcript.
+`ovpn_provision_cmd`'s **stdout** must be the `.ovpn` body — not a path or status line. The plugin writes it to a mode-600 file in a private per-user directory, imports it single-use and deletes the file; contents never enter the transcript.
 
-Keep settings files **task-agnostic**: per-task env vars (`ENV`, `AWS_PROFILE`, region, vault namespace, …) are supplied by Claude at call time from the project's `CLAUDE.md`, not hard-coded here. A Makefile-based provisioner stays as
+Keep the settings file **task-agnostic**: don't hard-code per-task values (`ENV`, `AWS_PROFILE`, region, vault namespace, …); Claude adds them at call time from the project's `CLAUDE.md`. A Makefile provisioner stays as
 ```markdown
 ovpn_provision_cmd: make infra-vpn-config OUTPUT=/dev/stdout
 ```
-even though `make infra-vpn-config` needs `ENV=<env>` and `AWS_PROFILE=<…>` — the agent prepends those each turn.
+and Claude runs `AWS_PROFILE=<…> make infra-vpn-config OUTPUT=/dev/stdout ENV=<env>` each turn — `ENV` as a make argument, since Claude Code refuses a leading `ENV=` in worktree-isolated sessions.
 
 ## Fields
 
@@ -71,13 +69,13 @@ even though `make infra-vpn-config` needs `ENV=<env>` and `AWS_PROFILE=<…>` �
 |---|---|---|---|
 | `profile_name` | BYO | one-of | Name of an openvpn3 config the user imported (`openvpn3 config-import --persistent`). |
 | `ovpn_provision_cmd` | ephemeral | one-of | Shell command whose stdout is the `.ovpn` body. Re-run every VPN-gated turn. |
-| `post_connect_cmd` | both | no | Shell command run after a fresh `vpn_connect` (not on `already_connected`). Non-fatal. |
-| `post_disconnect_cmd` | both | no | Shell command run after a fresh `vpn_disconnect` (not on `not_connected`). Failures are non-fatal. |
-| `config_overrides` | both | no | `{name: value}` map of openvpn3 `config-manage` overrides set before each tunnel start. Values keep their YAML type. The server applies `dns-scope=tunnel` as a baseline (split-DNS); set `dns-scope: global` to override, or add other overrides like `log-level: 4`. In BYO mode the baseline and these entries are written into the profile and persist (also for a manual `openvpn3 session-start`); removing a key here doesn't unset it, so run `openvpn3 config-manage --config <profile_name> --unset-override <key>`. |
+| `post_connect_cmd` | both | no | Run after a fresh `vpn_connect` (not on `already_connected`). Non-fatal. The skill's DNS check runs anyway; for a probe here use `getent` (resolves like programs do), not `dig` (asks `/etc/resolv.conf`'s server directly). |
+| `post_disconnect_cmd` | both | no | Run after a fresh `vpn_disconnect` (not on `not_connected`). Non-fatal. |
+| `config_overrides` | both | no | `{name: value}` openvpn3 `config-manage` overrides set before each tunnel start; values keep their YAML type. The server applies a `dns-scope=tunnel` (split-DNS) baseline; `dns-scope: global` overrides it, other entries like `log-level: 4` add to it. In BYO mode the baseline and these entries persist in the profile (also for a manual `openvpn3 session-start`); removing a key doesn't unset it — run `openvpn3 config-manage --config <profile_name> --unset-override <key>`. |
 
 ## Gitignore
 
-The settings file may contain internal hostnames and provisioning commands — keep it out of git:
+The file may hold internal hostnames and provisioning commands:
 
 ```gitignore
 .claude/*.local.md

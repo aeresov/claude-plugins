@@ -1,48 +1,50 @@
 ---
 description: Configure openvpn3-on-demand for this project — pick BYO vs ephemeral mode, write .claude/openvpn3-on-demand.local.md, and add it to .gitignore. Read-only against the host; runs nothing privileged.
-allowed-tools: Bash(openvpn3 version), Bash(uv --version), Bash(python3 -c 'import dbus'), Bash(test -f *), Bash(openvpn3 configs-list), Read, Glob, Write, Edit, AskUserQuestion
+allowed-tools: Bash(openvpn3 version), Bash(uv --version), Bash(python3 -c 'import dbus'), Bash(test -f *), Bash(openvpn3 configs-list), Bash(python3 "${CLAUDE_PLUGIN_ROOT}/servers/openvpn3/src/openvpn3_mcp/dnscheck.py"), Read, Glob, Write, Edit, AskUserQuestion
 ---
 
-You are running `/openvpn3-on-demand:setup`: an interactive configurator. You will write **only** `.claude/openvpn3-on-demand.local.md` and (if needed) a line in `.gitignore`. You will **not** run anything privileged, **not** import an openvpn3 config, and **not** call any `vpn_*` MCP tool.
+You are running `/openvpn3-on-demand:setup`, an interactive configurator. Write **only** `.claude/openvpn3-on-demand.local.md` and, if needed, a `.gitignore` line. **Never** run anything privileged, import an openvpn3 config, or call a `vpn_*` MCP tool.
 
-First read the shared checklist at `${CLAUDE_PLUGIN_ROOT}/setup-checklist.md` — it defines checks 1–8 and the remediation text. Use that text verbatim on failures.
+First read `${CLAUDE_PLUGIN_ROOT}/setup-checklist.md` (checks 1–9 and their remediation text); use that text verbatim on failures.
 
 ## Flow
 
 ### 1. Host prerequisites
-Run checks 1, 2, 3, and 4 from the checklist. If any fails, print its remediation text and **stop** — tell the user to re-run `/openvpn3-on-demand:setup` after fixing. Check 4 (netcfg) is instruct-only: show the `sudo` lines, don't run them.
+Run checks 1–4. If any fails, print its remediation and **stop**; tell the user to re-run `/openvpn3-on-demand:setup` after fixing. Check 4 (netcfg) is instruct-only: show the `sudo` lines, don't run them.
+
+Then run check 9 without a hostname — exactly `python3 "${CLAUDE_PLUGIN_ROOT}/servers/openvpn3/src/openvpn3_mcp/dnscheck.py"`. On WARN or FAIL print its output but **don't stop**; its root-only fix goes in the summary.
 
 ### 2. Existing settings file?
-Run check 5. If `.claude/openvpn3-on-demand.local.md` exists, Read it, show the current frontmatter, and ask via **AskUserQuestion**: *Keep as-is* / *Reconfigure (overwrite)* / *Abort*. Stop on Keep or Abort.
+Run check 5. If the file exists, Read it, show its frontmatter, and ask via **AskUserQuestion**: *Keep as-is* / *Reconfigure (overwrite)* / *Abort*. Stop on Keep or Abort.
 
 ### 3. Pick the mode
 **AskUserQuestion** — "Which mode should this project use?":
-- **BYO** — "You import and maintain an openvpn3 config yourself; the plugin starts/stops sessions for it and writes its connect overrides (`dns-scope=tunnel` plus any `config_overrides`) into that profile, where they persist."
-- **Ephemeral** — "A command produces the `.ovpn` body on stdout; the plugin makes a fresh single-use config from it each VPN-gated turn. Nothing to import by hand."
+- **BYO** — "You import and maintain an openvpn3 config; the plugin starts/stops its sessions and writes its connect overrides (`dns-scope=tunnel` plus any `config_overrides`) into it, where they persist."
+- **Ephemeral** — "A command prints the `.ovpn` body on stdout; the plugin makes a fresh single-use config from it each VPN-gated turn. Nothing to import."
 
 ### 4. Mode-specific question
 
-**BYO** → Ask for the `profile_name` (the `--name` they'll use with `openvpn3 config-import`). Run check 7 (`openvpn3 configs-list`). If the name isn't listed, print check 7's remediation text verbatim from the checklist, noting it applies *after* this command writes the settings file. Don't import it yourself.
+**BYO** → Ask for `profile_name` (the `--name` for `openvpn3 config-import`). Run check 7; if the name isn't listed, print check 7's remediation verbatim, noting it applies *after* this command writes the settings file. Don't import it yourself.
 
-**Ephemeral** → Ask for the `ovpn_provision_cmd`. Show these example shapes:
+**Ephemeral** → Ask for `ovpn_provision_cmd`, showing these shapes:
 
 - `vault read -field=config secret/vpn/my-prod`
 - `aws s3 cp s3://my-bucket/vpn/my-prod.ovpn -`
 - `cat ~/.config/openvpn3/my-prod-vpn.ovpn`
 - `make get_vpn_client_config OUTPUT=/dev/stdout`
 
-Stress: stdout must be the `.ovpn` body — not a file path, not a status line.
-Keep the command task-agnostic; Claude prepends per-task vars (`ENV=…`, `AWS_PROFILE=…`) at call time from the project's CLAUDE.md. Hard-coding them here locks the settings file to one task.
+Stress: stdout must be the `.ovpn` body — not a path or status line.
+Keep it task-agnostic; hard-coded per-task values lock the file to one task. Claude adds them at call time from the project's CLAUDE.md — as arguments where the command takes them (`make … ENV=dev`), else as a leading assignment (`AWS_PROFILE=… vault read …`), never a leading `ENV=` (Claude Code refuses it in worktree-isolated sessions).
 
 ### 5. Optional fields
-**AskUserQuestion** (multi-select), default none:
+**AskUserQuestion** (multi-select, default none):
 
-- `post_connect_cmd` — shell command run after a fresh `vpn_connect`. Non-fatal on failure.
-- `post_disconnect_cmd` — shell command run after a fresh `vpn_disconnect` (not on `not_connected`). Non-fatal on failure.
-- `config_overrides` — openvpn3 `config-manage` overrides set before each tunnel start (hyphenated: `dns-scope`, `persist-tun`, `log-level`, …). The server applies `dns-scope=tunnel` as baseline; override only if you need fully tunnel-routed DNS or other tweaks. In BYO mode, tell the user that the baseline and these values are written into their imported profile and persist, including for their own `openvpn3 session-start`, and that removing a key later needs `openvpn3 config-manage --config <profile_name> --unset-override <key>`. If chosen, ask for the map.
+- `post_connect_cmd` — shell command run after a fresh `vpn_connect`. Non-fatal.
+- `post_disconnect_cmd` — shell command run after a fresh `vpn_disconnect` (not on `not_connected`). Non-fatal.
+- `config_overrides` — openvpn3 `config-manage` overrides set before each tunnel start (hyphenated: `dns-scope`, `persist-tun`, `log-level`, …) on top of the `dns-scope=tunnel` baseline; override only for fully tunnel-routed DNS or other tweaks. In BYO mode, tell the user the baseline and these values persist in their profile (also for their own `openvpn3 session-start`) and that removing a key needs `openvpn3 config-manage --config <profile_name> --unset-override <key>`. If chosen, ask for the map.
 
 ### 6. Write `.claude/openvpn3-on-demand.local.md`
-Create the directory if needed. Use this template — include the chosen mode's required field and whichever optionals the user picked; comment out the other mode's line:
+Create the directory if needed. Use this template: the chosen mode's field uncommented, the other's commented out, each chosen optional uncommented with its value:
 
 ```markdown
 ---
@@ -64,14 +66,13 @@ profile_name: <value>
 Which account this profile is for, how to rotate its credentials, who to ping when it breaks.
 ```
 
-Emit the chosen mode's field uncommented; emit chosen optional fields uncommented with their values.
-
 ### 7. `.gitignore`
-Run check 8. If `.gitignore` doesn't already cover the settings file, append `.claude/*.local.md` (create `.gitignore` if absent). If already covered, say so and change nothing.
+Run check 8. If not covered, append `.claude/*.local.md` (create `.gitignore` if absent); if covered, say so and change nothing.
 
 ### 8. Summary
-Print the path written, which mode, and anything the user still owes —
-- BYO + profile not yet imported → the `config-import` line again.
+Print the path written, the mode, and what the user still owes:
+- BYO + profile not imported → the `config-import` line again.
 - Check 4 borderline / skipped → the netcfg note again.
+- Check 9 WARN / FAIL → its fix lines again, and say that until they're applied programs may not resolve private names even with the tunnel up.
 
-End with: "Done. No restart needed — the skill re-reads this file every turn. Run `/openvpn3-on-demand:doctor` any time to re-check." Mention they can ask Claude to do something VPN-gated and the skill picks it up, and that Claude decides per operation: for resources it can't recognise from the command (a host in a config file, another plugin's calls), a line in the project's `CLAUDE.md` saying they're VPN-only is how to tell it.
+End with: "Done. No restart needed — the skill re-reads this file every turn. Run `/openvpn3-on-demand:doctor` any time to re-check." Add that asking Claude for something VPN-gated triggers the skill, that Claude decides per operation, and that a line in the project's `CLAUDE.md` marking resources VPN-only covers what it can't recognise from the command (a host in a config file, another plugin's calls).

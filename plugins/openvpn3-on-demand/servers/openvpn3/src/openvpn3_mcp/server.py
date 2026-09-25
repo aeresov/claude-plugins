@@ -38,7 +38,8 @@ except ImportError:
 
 mcp = FastMCP("openvpn3")
 
-# Split-DNS baseline so the tunnel doesn't fight Tailscale / mDNS / other VPNs. Caller wins on key collision.
+# Split-DNS baseline: only the VPN's pushed domains go to its DNS servers, so inside systemd-resolved the tunnel doesn't
+# fight Tailscale / mDNS / other VPNs. Programs only benefit if they query systemd-resolved (dnscheck.py). Caller wins on collision.
 _DEFAULT_OVERRIDES: dict[str, Any] = {"dns-scope": "tunnel"}
 
 # openvpn3 failure surface: D-Bus method errors + RuntimeError from manager __ping().
@@ -382,8 +383,8 @@ def vpn_connect_ephemeral(
         Field(
             description=(
                 "Path to a .ovpn file (~ expansion supported). Imported as single-use under "
-                "`ovpn3-od-{session_id}`, then connected. Callers should write it via `mktemp` "
-                "and `rm` after the call so contents stay out of the conversation transcript."
+                "`ovpn3-od-{session_id}`, then connected. Callers should write it to a private mode-600 "
+                "file and `rm` it after the call so contents stay out of the conversation transcript."
             )
         ),
     ],
