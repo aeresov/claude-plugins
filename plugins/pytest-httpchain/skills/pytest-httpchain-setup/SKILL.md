@@ -14,13 +14,13 @@ First read the shared checklist at `<plugin-root>/setup-checklist.md` — it def
 ## Flow
 
 ### 1. Project + package manager
-Run check 1. If no Python project is found, print its remediation text and **stop**. Otherwise note the detected manager and its runner (`uv run` / `poetry run` / `pdm run` / active `python`) for the steps below.
+Run check 1. If no Python project is found, print its remediation text and **stop**. Otherwise retain the detected manager and existing test interpreter's absolute path for the steps below. Do not create an environment or invoke a package-manager run command.
 
 ### 2. Is the package installed?
-Run check 2's probe with the detected runner. If it prints a version, say so and go to step 3. If not, print check 2's remediation for the detected manager and tell the user to run the add command themselves then **stop** and ask them to re-run `pytest-httpchain-setup` once it's added. Do **not** add the dependency yourself.
+Run check 2's probe with that existing interpreter. If it prints a version, say so and go to step 3. If the interpreter is missing, report the missing test environment; otherwise print check 2's package remediation for the detected manager. Tell the user to create/sync the environment or run the add command themselves, then **stop** and ask them to re-run `pytest-httpchain-setup`. Do **not** add dependencies, create a venv, or update a lockfile yourself.
 
 ### 3. Test file suffix (optional)
-Scenarios are discovered as `test_<name>.<suffix>.json`; the `httpchain_suffix` ini option defaults to `http`. That name needs pytest-httpchain ≥0.10 — if step 2 found an older version, suggest upgrading and skip this step. Locate the pytest config table pytest actually reads and the current value exactly as check 3 does. If that table still has a bare `suffix` key (ignored since 0.11), say so and offer to rename it to `httpchain_suffix` as part of this step. Ask the user — "Keep the default test suffix `http`, or set a custom one?":
+Scenarios are discovered as `test_<name>.<suffix>.json`, plus `.jsonc` on pytest-httpchain ≥0.16; the `httpchain_suffix` ini option defaults to `http`. That name needs pytest-httpchain ≥0.10 — if step 2 found an older version, suggest upgrading and skip this step. Locate the pytest config table pytest actually reads and the current value exactly as check 3 does, using only its static config-reading steps; do not run doctor validation here. If that table still has a bare `suffix` key (ignored since 0.11), say so and offer to rename it to `httpchain_suffix` as part of this step. Ask the user — "Keep the default test suffix `http`, or set a custom one?":
 - **Keep `http`** — most projects; change nothing.
 - **Set custom** — ask for the value (letters, digits, `_`, `-`; at most 32 characters — anything else aborts pytest), then add/replace `httpchain_suffix` **in the table check 3 found**, replacing any bare `suffix` key there: `httpchain_suffix = "<value>"` in a TOML table (`[tool.pytest]`, `[tool.pytest.ini_options]`, `pytest.toml`'s `[pytest]`), unquoted `httpchain_suffix = <value>` in an INI file (`pytest.ini`, `tox.ini`, `setup.cfg`). **Never add a second pytest table** — pytest 9 refuses to start when `pyproject.toml` has both `[tool.pytest]` and `[tool.pytest.ini_options]`, and a table in a lower-precedence file is silently ignored. Only when no pytest config exists at all, create `[tool.pytest.ini_options]` in `pyproject.toml`. Restate the file, table, and resulting discovery pattern (`test_<name>.<value>.json`) and confirm before writing.
 
@@ -52,4 +52,4 @@ Ask the user — "Scaffold a minimal example scenario + conftest?":
 - **No** — change nothing.
 
 ### 5. Summary
-Print what you wrote (paths), the detected manager/runner, and the active `httpchain_suffix` (and which config table it's in). End with: "Done. Run `pytest-httpchain-doctor` to confirm the install, discovery, and that every scenario validates. Ask me to write a scenario any time — I'll validate it and follow the shared authoring procedure for multi-stage ones."
+Print what you wrote (paths), the detected manager and existing interpreter path, and the active `httpchain_suffix` (and which config table it's in). End with: "Done. Run `pytest-httpchain-doctor` to confirm the install, discovery, and that every scenario validates. Ask me to write a scenario any time — I'll validate it and follow the shared authoring procedure for multi-stage ones."

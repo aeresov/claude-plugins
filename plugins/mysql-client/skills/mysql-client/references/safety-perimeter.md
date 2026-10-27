@@ -34,30 +34,32 @@ SET SESSION sql_safe_updates = 1;
 Before any other SQL, run:
 
 ```sql
-SELECT @@hostname, @@version, @@read_only, @@super_read_only, USER(), DATABASE();
+SELECT @@hostname, @@version, @@version_comment, @@read_only, USER(), CURRENT_USER(), DATABASE();
+SHOW GLOBAL VARIABLES LIKE 'super_read_only';
 ```
 
-Surface the answer verbatim in chat. The two checks that matter:
+Surface the answer verbatim in chat. The first query works on MySQL and MariaDB. `SHOW` returns no rows when `super_read_only` is unavailable, including MariaDB; report it as unavailable, not disabled. Use the version/comment to identify the server flavor. The checks that matter:
 
 - **`@@hostname`** — confirms you hit the host you meant to. Critical when the user provides a DSN you can't visually verify; critical when reader/writer endpoints look similar (`my-cluster-ro.<id>.<region>.rds.amazonaws.com` vs `my-cluster.<id>.<region>.rds.amazonaws.com`).
-- **`@@read_only` / `@@super_read_only`** — if either is `1`, the server itself refuses non-temporary writes from anyone but `SUPER`/`CONNECTION_ADMIN`. That's a hard backstop; if both are `0`, you have no backstop and `--safe-updates` is doing all the work.
+- **`@@read_only` and the optional `super_read_only` value** — report the server's write restrictions, but keep the investigation rules and `--safe-updates` in place. MySQL's `read_only` can be bypassed by `SUPER`/`CONNECTION_ADMIN`; MariaDB allows `SUPER`/`READ ONLY ADMIN`. MySQL's `super_read_only` also restricts privileged clients, with documented exceptions. A read-only flag does not establish that the connected account has read-only grants.
 
-Then set the statement timeout — **always**, writable server or replica, since a runaway `SELECT` is just as likely on a reader:
+Then set the statement timeout appropriate to that server — **always**, writable server or replica, since a runaway `SELECT` is just as likely on a reader. Execute only the matching statement:
 
 ```sql
 SET SESSION max_execution_time = 30000;   -- MySQL: milliseconds, SELECT-only
--- MariaDB equivalent:
+-- On MariaDB, use this instead:
 -- SET SESSION max_statement_time = 30;   -- seconds (DECIMAL), broader scope
 ```
 
-And add the write guard only when the server is writable (`@@read_only` and `@@super_read_only` both `0`) — on a
-read-only server the engine is already the backstop:
+Use `--safe-updates` on every invocation; if reconnecting inside a persistent client, reapply its write guard regardless of the read-only flags:
 
 ```sql
 SET SESSION sql_safe_updates = 1;
 ```
 
 `max_execution_time` (MySQL 5.7.4+) cancels `SELECT` statements past the limit. It **does not** cancel `UPDATE`, `DELETE`, or DDL — those run to completion. MariaDB's `max_statement_time` does cover more statement kinds.
+
+Session variables last only for the current connection. Every fresh `mysql` invocation must apply its timeout **in the same invocation as the workload queries**; setting it in a separate probe connection does not protect later queries. Re-run the probe and reapply the guards after reconnecting.
 
 ## 4. No DDL, DML, `KILL`, `SET GLOBAL`, `FLUSH`, `RESET` without explicit confirmation
 

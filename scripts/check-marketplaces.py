@@ -79,9 +79,13 @@ def check(root: Path) -> None:
             wrapper = (plugin / "commands" / f"{verb}.md").read_text()
             if f"/skills/{name}-{verb}/SKILL.md" not in wrapper:
                 raise ValueError(f"{name}: {verb} must wrap the shared skill")
-        if (plugin / "mcp.json").exists():
-            portable_mcp = load(plugin / "mcp.json")["mcpServers"]
-            legacy_mcp = load(plugin / ".mcp.json")["mcpServers"]
+        portable_mcp_path = plugin / "mcp.json"
+        legacy_mcp_path = plugin / ".mcp.json"
+        if portable_mcp_path.exists() != legacy_mcp_path.exists():
+            raise ValueError(f"{name}: MCP manifests must be present for both clients or neither")
+        if portable_mcp_path.exists():
+            portable_mcp = load(portable_mcp_path)["mcpServers"]
+            legacy_mcp = load(legacy_mcp_path)["mcpServers"]
             if set(portable_mcp) != set(legacy_mcp):
                 raise ValueError(f"{name}: MCP server names differ")
             for server, config in portable_mcp.items():

@@ -3,14 +3,14 @@ description: Diagnose the pytest-httpchain setup — Python project + package ma
 allowed-tools:
   - Bash(test -f *)
   - Bash(test -d *)
-  - Bash(python -c "from importlib.metadata import version; print(version('pytest-httpchain'))")
-  - Bash(uv run python -c "from importlib.metadata import version; print(version('pytest-httpchain'))")
-  - Bash(poetry run python -c "from importlib.metadata import version; print(version('pytest-httpchain'))")
-  - Bash(pdm run python -c "from importlib.metadata import version; print(version('pytest-httpchain'))")
-  - Bash(pytest-httpchain validate *)
-  - Bash(uv run pytest-httpchain validate *)
-  - Bash(poetry run pytest-httpchain validate *)
-  - Bash(pdm run pytest-httpchain validate *)
+  - Bash(test -x *)
+  - Bash(poetry env info --executable)
+  - Bash(poetry config virtualenvs.create)
+  - Bash(poetry env info --no-ansi)
+  - Bash(python* -B -c "from importlib.metadata import version; print(version('pytest-httpchain'))")
+  - Bash(*/bin/python* -B -c "from importlib.metadata import version; print(version('pytest-httpchain'))")
+  - Bash(python* -B -m pytest_httpchain.cli validate *)
+  - Bash(*/bin/python* -B -m pytest_httpchain.cli validate *)
   - Read
   - Glob
 ---

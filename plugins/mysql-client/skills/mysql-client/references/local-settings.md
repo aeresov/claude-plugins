@@ -78,7 +78,7 @@ mysql://<user>:<password>@<host>[:<port>]/[<database>][?sslmode=<mode>]
 
 ## How the URL becomes a connection
 
-The bundled converter (`scripts/mysql-url-to-cnf/`) parses the URL into a `[client]` option-file block: it splits the userinfo on the **last** `@` (so a raw `@`, `:`, or `/` in the password survives), percent-decodes `user` / `password` / `database`, and double-quotes every value so a `#`, backslash, or space in the password can't corrupt the INI. A broken `connection_cmd` — empty output, make's recipe echo, anything that isn't a URL — makes the converter exit non-zero, so the failure surfaces instead of producing a garbage config.
+The bundled converter (`scripts/mysql-url-to-cnf/`) parses the URL into a `[client]` option-file block: it splits the userinfo on the **last** `@` (so a raw `@`, `:`, or `/` in the password survives), percent-decodes `user` / `password` / `database`, rejects control characters (including encoded newlines and NUL), and double-quotes each decoded value so a `#`, backslash, or space in the password can't corrupt the INI. A broken `connection_cmd` — empty output, make's recipe echo, anything that isn't a URL — makes the converter exit non-zero, so the failure surfaces instead of producing a garbage config.
 
 URLs are assumed **percent-encoded** per the database-URL convention. The converter tolerates a raw `@` / `:` / `/` in a non-encoded password, but a literal `%` followed by two hex digits would be mis-decoded — percent-encode the password at the source if it can contain `%`.
 
@@ -91,6 +91,6 @@ URLs are assumed **percent-encoded** per the database-URL convention. The conver
 ## Security envelope
 
 - `connection_cmd`'s stdout — the URL, password and all — is piped straight into the converter and on into a mode-600 file at a unique path created by `mktemp`: `${XDG_RUNTIME_DIR:-$HOME/.cache}/mysql-client/client.XXXXXXXX.cnf`, in a directory only you can read. It **never enters the conversation transcript**.
-- The file is deleted at the end of every turn. An interrupted turn leaves at most that one file, and the next turn overwrites it.
+- The file is deleted at the end of every turn. An interrupted turn can leave it behind; remove only that retained path. Future turns create new unique files and do not overwrite or clean up the orphan.
 - `connection_cmd` runs in your shell with your env — write it as carefully as any other credential-handling shell.
 - Stderr from `connection_cmd` and the converter may be shown; neither echoes the URL or password.

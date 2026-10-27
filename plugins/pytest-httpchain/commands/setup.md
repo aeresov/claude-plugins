@@ -3,10 +3,12 @@ description: Configure pytest-httpchain for this project — confirm the package
 allowed-tools:
   - Bash(test -f *)
   - Bash(test -d *)
-  - Bash(python -c "from importlib.metadata import version; print(version('pytest-httpchain'))")
-  - Bash(uv run python -c "from importlib.metadata import version; print(version('pytest-httpchain'))")
-  - Bash(poetry run python -c "from importlib.metadata import version; print(version('pytest-httpchain'))")
-  - Bash(pdm run python -c "from importlib.metadata import version; print(version('pytest-httpchain'))")
+  - Bash(test -x *)
+  - Bash(poetry env info --executable)
+  - Bash(poetry config virtualenvs.create)
+  - Bash(poetry env info --no-ansi)
+  - Bash(python* -B -c "from importlib.metadata import version; print(version('pytest-httpchain'))")
+  - Bash(*/bin/python* -B -c "from importlib.metadata import version; print(version('pytest-httpchain'))")
   - Read
   - Glob
   - Write

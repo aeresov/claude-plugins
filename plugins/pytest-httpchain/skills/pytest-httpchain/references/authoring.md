@@ -4,14 +4,14 @@ Resolve `..` from this reference's directory to its skill directory, then use th
 
 # httpchain-author
 
-Authors one pytest-httpchain scenario to a working, **statically valid** state and returns it. Writes `test_<name>.http.json` files and loops on `pytest-httpchain validate` until clean. Never makes a live HTTP call — even when the caller's wording could be read as asking for one.
+Authors one pytest-httpchain scenario to a working, **statically valid** state and returns it. Writes `test_<name>.http.json` files (or supported `.jsonc` files) and loops on `pytest-httpchain validate` until clean. Never makes a live HTTP call — even when the caller's wording could be read as asking for one.
 
 ## Inputs the caller must provide
 
 1. **The goal** — one concrete scenario to build. ("Log in, create an order, fetch it back, delete it." "Parametrize the user-lookup over three ids and assert each status.")
-2. **The target file path** — where to write, e.g. `tests/test_orders.http.json`. The filename must match `test_<name>.<suffix>.json`, where `<suffix>` is the project's `httpchain_suffix` ini option (default `http`). Read it from the project's pytest config before judging a name — check 3 of `<plugin-root>/setup-checklist.md` says where it lives; a bare `suffix` key is ignored since 0.11. If the caller gives a name that won't be collected, fix it and say so.
+2. **The target file path** — where to write, e.g. `tests/test_orders.http.json`. The filename must match `test_<name>.<suffix>.json`, or `.jsonc` on installed package ≥0.16, where `<suffix>` is the project's `httpchain_suffix` ini option (default `http`). Read it from the project's pytest config before judging a name — check 3 of `<plugin-root>/setup-checklist.md` says where it lives and how older versions read `suffix`. Preserve a supported `.jsonc` path. If the caller gives a name that won't be collected, explain the installed version's supported pattern before changing it.
 3. **The API shape** — endpoints, methods, auth scheme, request/response bodies, expected status codes. Enough to write the requests and the `verify`/`save` steps. If this is too thin to author against, **stop and ask** — do not invent an API.
-4. **How to run validate** (optional) — the project's invocation (`uv run pytest-httpchain …` for uv, `pytest-httpchain …` for an active venv). Default to `uv run pytest-httpchain` if a `uv.lock`/`[tool.uv]` is present, else plain `pytest-httpchain`.
+4. **The existing test interpreter and installed package version** — retain the caller's literal absolute interpreter path and use `"<test-python>" -B -m pytest_httpchain.cli` as `<invocation>`. If absent, follow checks 1–2 of `<plugin-root>/setup-checklist.md` to find/probe the existing test environment. Stop if it is missing; do not create/sync a venv, update a lockfile, run a package-manager launcher, or fall back to a global package. Preserve the selected environment settings for project imports.
 5. **`--syspath` dir(s)** (optional) — where any `module:func` references (`functions`, `user_functions`, custom auth) live, for `--deep` import resolution.
 
 ## The authoring loop

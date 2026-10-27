@@ -139,14 +139,15 @@ SELECT
   @@version,
   @@version_comment,        -- "MySQL Community Server" / "MariaDB" / "Percona Server"
   @@read_only,
-  @@super_read_only,
   USER(),                   -- "reader@10.0.1.42" — the connection the server sees
   CURRENT_USER(),           -- "reader@%" — the granted identity
-  DATABASE(),               -- NULL if no default set
-  @@global.transaction_isolation;
+  DATABASE();               -- NULL if no default set
+SHOW GLOBAL VARIABLES LIKE 'super_read_only';
 ```
 
-Cross-check `USER()` vs `CURRENT_USER()`: if they differ on the host part, the server matched a wildcard `%` grant, which often means the principal-of-least-privilege design has gaps.
+The first query is portable across MySQL and MariaDB. `SHOW` returns no rows if `super_read_only` is unsupported (including MariaDB); report it as unavailable. Use the version/comment to choose the server-specific timeout in [`safety-perimeter.md`](safety-perimeter.md), and set it in every connection before workload queries. Do not carry a `SET SESSION` from one `mysql` invocation into another.
+
+Cross-check `USER()` vs `CURRENT_USER()`: they distinguish the connecting identity from the account whose grants apply. A wildcard host match is useful context; inspect its grants rather than assuming it is overprivileged.
 
 Then check what you can actually do:
 

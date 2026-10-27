@@ -1,7 +1,7 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "pytest-httpchain",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Author, validate, and maintain pytest-httpchain JSON HTTP-API test scenarios, with static validation and setup and doctor workflows.",
   "author": {
     "name": "aeresov"

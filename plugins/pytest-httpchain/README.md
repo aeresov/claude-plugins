@@ -31,6 +31,8 @@ Claude registers the named subagent described below. Codex reads the same proced
 
 A Python project whose test environment has `pytest-httpchain` as a dev dependency. `/pytest-httpchain:setup` detects your package manager (uv / poetry / pdm / pip) and prints the add command; it never installs for you. No servers, credentials, or network are needed to author and validate — running the scenarios (the live HTTP calls) is `pytest`'s job, which you drive.
 
+Setup, doctor and authoring use the existing test interpreter directly. Create/sync that environment yourself first; these workflows report a missing environment and leave dependency files and lockfiles alone. Doctor uses package-owned directory validation on pytest-httpchain ≥0.16, including both `.json` and `.jsonc` scenarios. Older versions retain JSON-file validation and report JSONC as unsupported.
+
 ## What triggers the skill
 
 Authoring or editing a scenario, composing one from `$ref`/`$include` fragments, debugging or validating one, fixing an `HTTPCHAINxxx` diagnostic, or setting up pytest-httpchain. It does **not** fire on general HTTP client code (requests/httpx scripts) or non-pytest API tests.

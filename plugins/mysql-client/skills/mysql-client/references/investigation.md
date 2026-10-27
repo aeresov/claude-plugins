@@ -22,17 +22,19 @@ If the connection method is missing, **stop and ask** — never guess a host, ne
 Before any other query, run:
 
 ```sql
-SELECT @@hostname, @@version, @@read_only, @@super_read_only, USER(), DATABASE();
+SELECT @@hostname, @@version, @@version_comment, @@read_only, USER(), CURRENT_USER(), DATABASE();
+SHOW GLOBAL VARIABLES LIKE 'super_read_only';
 ```
 
-Surface the result at the top of the writeup, verbatim. If `@@read_only = 0` and `@@super_read_only = 0`, immediately set:
+Surface the result at the top of the writeup, verbatim. The `SHOW` returns no rows on MariaDB and any server without that variable; report it as unavailable. Identify MySQL or MariaDB from the version/comment, then set the timeout before workload queries on writable servers **and replicas**:
 
 ```sql
-SET SESSION sql_safe_updates = 1;
-SET SESSION max_execution_time = 30000;  -- ms; MariaDB: SET SESSION max_statement_time = 30;
+SET SESSION max_execution_time = 30000;  -- MySQL: milliseconds
+-- On MariaDB, use this instead:
+-- SET SESSION max_statement_time = 30;  -- seconds
 ```
 
-These cost nothing and prevent an accidental WHERE-less `UPDATE`/`DELETE` from running even though we don't intend to write.
+Pass `--safe-updates` on **every** `mysql` invocation, regardless of the read-only flags. Apply the server-appropriate timeout in the same invocation as its workload queries; a setting in a previous connection does not carry over. Re-run the probe after a reconnect and re-apply both guards. Privileged users can still write with `read_only = 1`, so it is not a substitute for the read-only investigation rules.
 
 ## Methodology rules
 

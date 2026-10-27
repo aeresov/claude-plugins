@@ -48,9 +48,9 @@ Checks 1–3 and 6 are static and read-only. Checks 4–5 are **live**: they run
 - Run:
   ```bash
   mysql --defaults-file=<the cnf= path from check 4> --safe-updates -e \
-    'SELECT @@hostname, @@version, @@read_only, @@super_read_only, USER(), DATABASE()'
+    "SELECT @@hostname, @@version, @@version_comment, @@read_only, USER(), CURRENT_USER(), DATABASE(); SHOW GLOBAL VARIABLES LIKE 'super_read_only';"
   ```
-- PASS if it connects and returns a row. Note `@@hostname`, `@@version`, and the read-only flags for the summary line.
+- PASS if the first query connects and returns a row. Note `@@hostname`, `@@version`, the server flavor from the version/comment, and the read-only flags for the summary line. `SHOW` returns no rows on MariaDB and other servers without `super_read_only`; report that flag as unavailable, not a failed connection. The probe only reads system variables; subsequent investigation must apply the flavor-specific session timeout described in `skills/mysql-client/references/safety-perimeter.md`.
 - FAIL → show the `mysql` error, then: "Credentials resolved but the connection failed. Common causes: wrong host/port, `Access denied` (the grant doesn't cover this client host), an SSL mode/CA mismatch, or an auth-plugin mismatch (`caching_sha2_password` against an old client). See `skills/mysql-client/references/connecting.md`."
 - Afterwards, even if the probe fails or is skipped: `rm -f '<the literal cnf= path from check 4>'`. Do not use `$cnf` in a separate call or remove other chats' files.
 

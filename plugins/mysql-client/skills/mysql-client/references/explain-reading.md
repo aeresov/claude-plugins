@@ -97,7 +97,7 @@ Output is an iterator tree (rooted at the top). Each node shows:
 
 Compare against the planner's `rows` estimate; large discrepancies are stale stats or misestimated selectivity.
 
-**`EXPLAIN ANALYZE` runs the query.** It can be slow. It acquires the same locks the query would. Do not run on a write statement; do not run on a long-running SELECT on a busy table without an `LIMIT` or a `max_execution_time` guard.
+**`EXPLAIN ANALYZE` runs the query.** It can be slow. It acquires the same locks the query would. Do not run on a write statement; bound a long-running SELECT on a busy table with a `LIMIT` and the server-appropriate session timeout (`max_execution_time` on MySQL, `max_statement_time` on MariaDB), set in the same connection.
 
 ## Cardinality and statistics
 

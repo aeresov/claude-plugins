@@ -1,7 +1,7 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "mysql-client",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "description": "Drive the mysql CLI safely against MySQL or MariaDB databases — read-only-first, with a workflow for multi-step investigations.",
   "author": {
     "name": "aeresov"

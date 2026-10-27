@@ -64,6 +64,16 @@ class CatalogTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "missing or escaping reference"):
             CHECKER.check(self.root)
 
+    def test_missing_portable_mcp_manifest_is_rejected(self):
+        (self.root / "plugins/openvpn3-on-demand/mcp.json").unlink()
+        with self.assertRaisesRegex(ValueError, "MCP manifests must be present for both clients"):
+            CHECKER.check(self.root)
+
+    def test_missing_claude_mcp_manifest_is_rejected(self):
+        (self.root / "plugins/openvpn3-on-demand/.mcp.json").unlink()
+        with self.assertRaisesRegex(ValueError, "MCP manifests must be present for both clients"):
+            CHECKER.check(self.root)
+
 
 class RecipeTests(unittest.TestCase):
     def setUp(self):

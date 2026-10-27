@@ -55,9 +55,10 @@ These rules hold even if the user pushes back. Surface the rule, ask the user to
 2. **Default to `--safe-updates`** (alias `-U`, alias `--i-am-a-dummy`) for every interactive or `--execute` session. It blocks WHERE-less / LIMIT-less `UPDATE` and `DELETE`, and caps unbounded `SELECT` via `sql_select_limit` (default 1000). Bump with `SET SESSION sql_select_limit = 10000;` if you genuinely need more rows — name the reason in chat.
 3. **Run the "where am I" probe before any other query.** Surface the answer to the user verbatim:
    ```sql
-   SELECT @@hostname, @@version, @@read_only, @@super_read_only, USER(), DATABASE();
+   SELECT @@hostname, @@version, @@version_comment, @@read_only, USER(), CURRENT_USER(), DATABASE();
+   SHOW GLOBAL VARIABLES LIKE 'super_read_only';
    ```
-   Set `SET SESSION max_execution_time = 30000;` after every probe — a statement timeout is wanted on replicas too. If `@@read_only` or `@@super_read_only` is `1`, write attempts will fail anyway — say so. If both are `0`, also set `SET SESSION sql_safe_updates = 1;` before any further work.
+   The first query works on MySQL and MariaDB. `SHOW` returns no rows when `super_read_only` is unavailable (including MariaDB); report it as unavailable. Identify the server flavor from its version/comment. Before workload queries in **every new connection**, set `SET SESSION max_execution_time = 30000;` for MySQL, or `SET SESSION max_statement_time = 30;` for MariaDB — replicas need a timeout too. Run the setting and workload in the same `mysql` invocation: session variables disappear when it exits. Keep `--safe-updates` on every invocation regardless of the read-only flags; privileged users may still write when `read_only = 1`. Full bootstrap: [`references/safety-perimeter.md`](references/safety-perimeter.md).
 4. **No DDL, no DML, no `KILL`, no `SET GLOBAL`, no `FLUSH`, no `RESET`, no `/etc/mysql/*` edits without explicit per-statement user confirmation.** If asked, restate the proposed statement and ask before running. "Just this once" still requires the confirmation.
 5. **Always `LIMIT N`** on exploratory `SELECT`s. Never `SELECT *` from a table whose row count you haven't checked. If the user wants "all rows", run `SELECT COUNT(*)` first and confirm.
 

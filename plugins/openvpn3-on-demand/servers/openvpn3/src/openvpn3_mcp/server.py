@@ -407,9 +407,10 @@ def vpn_connect_ephemeral(
         if (found := _existing_session(profile_name)) is not None:
             return found
         # Clean up any stale config from a prior turn whose NewTunnel didn't consume it.
+        # Failure must stop the import: a second config with this name could leave
+        # _start_session selecting the stale profile instead of the fresh one.
         for cfg in _configs_for(profile_name):
-            with suppress(*_DBUS_ERRORS):
-                cfg.Remove()
+            cfg.Remove()
     except _DBUS_ERRORS as exc:
         return _dbus_failure(profile_name, exc)
 

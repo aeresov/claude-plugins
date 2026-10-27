@@ -246,6 +246,29 @@ def test_vpn_connect_ephemeral_removes_stale_config(server, monkeypatch, patch_l
     ]
 
 
+@pytest.mark.parametrize("error_type", [FakeDBusException, RuntimeError])
+def test_vpn_connect_ephemeral_stale_removal_failure_stops_before_import(server, monkeypatch, patch_lookups, wire_managers, tmp_path, error_type):
+    stale = FakeConfig(name="ovpn3-od-sess-stale")
+    patch_lookups(configs={stale.name: [stale]})
+    cfg_mgr, session_mgr = wire_managers()
+
+    def _remove():
+        raise error_type("stale config removal failed")
+
+    monkeypatch.setattr(stale, "Remove", _remove)
+    ovpn = tmp_path / "fresh.ovpn"
+    ovpn.write_text("client\nremote new-environment.example.com 1194\n")
+
+    result = server.vpn_connect_ephemeral(str(ovpn), session_id="sess-stale")
+
+    assert isinstance(result, server.VpnError)
+    assert result.profile_name == stale.name
+    assert result.message == "D-Bus error: stale config removal failed"
+    assert cfg_mgr.import_calls == []
+    assert session_mgr.new_tunnel_calls == []
+    assert stale.overrides_set == []
+
+
 def test_vpn_connect_ephemeral_import_failure(server, patch_lookups, wire_managers, tmp_path):
     patch_lookups()  # no sessions, no stale configs
     cfg_mgr = FakeConfigManager(raise_on_import=True)

@@ -13,15 +13,15 @@ You are running `pytest-httpchain-doctor`: a health check. Write no files, dispa
 
 1. Read the shared checklist at `<plugin-root>/setup-checklist.md` — it defines checks 1–4 with probes and remediation text.
 
-2. Run checks **1–4 in order** against the project root, using the runner detected in check 1:
+2. Run checks **1–4 in order** against the project root, using the existing test interpreter selected in check 1. Never create/sync an environment or update its lockfile:
    - 1 Python project + package manager
-   - 2 pytest-httpchain installed in the test env (+ version) — SKIP 3–4 if it fails
-   - 3 scenarios discoverable (`test_*.<suffix>.json`, suffix from `httpchain_suffix` in the pytest config table pytest reads; report the suffix and count) — zero is **n/a**, not a failure; a leftover bare `suffix` key is a **FAIL**
-   - 4 scenarios validate clean (`validate --format json`) — SKIP if 2 failed or 3 found zero. Only error-severity diagnostics make a file invalid; list warnings as `warning`, never as errors
+   - 2 pytest-httpchain installed in the test env (+ version) — a missing interpreter is a failure too; SKIP 3–4 if it fails
+   - 3 scenarios discoverable — report the suffix, version-supported extension(s), and count. On package ≥0.16, run the checklist's directory-validation command once so both `.json` and `.jsonc` are included; retain its response for Check 4. Only a sole `HTTPCHAIN039` directory result means an empty suite; other failures must be reported. On older packages, find the JSON paths as the checklist describes. Zero is **n/a**, not a failure; a leftover bare `suffix` key is a **FAIL** on ≥0.11
+   - 4 scenarios validate clean (`validate --format json`) — reuse the directory response on ≥0.16; on older packages validate the discovered files. SKIP if 2 failed or 3 found zero. Only error-severity diagnostics make a file invalid; list warnings as `warning`, never as errors
 
 3. Print one line per check. Example with a missing package:
    ```
-   PASS  1. python project — uv (runner: uv run)
+   PASS  1. python project — uv (existing interpreter: /project/.venv/bin/python)
    FAIL  2. pytest-httpchain installed
          → <check 2 remediation, verbatim, for uv>
    SKIP  3. scenarios discoverable — package not installed
@@ -29,18 +29,18 @@ You are running `pytest-httpchain-doctor`: a health check. Write no files, dispa
    ```
    Example, all configured:
    ```
-   PASS  1. python project — uv (runner: uv run)
-   PASS  2. pytest-httpchain installed — 0.15.0
-   PASS  3. scenarios discoverable — suffix 'http' (default), 4 found
+   PASS  1. python project — uv (existing interpreter: /project/.venv/bin/python)
+   PASS  2. pytest-httpchain installed — 0.16.0
+   PASS  3. scenarios discoverable — suffix 'http' (default), .json + .jsonc, 4 found
    FAIL  4. scenarios validate — 1 of 4 invalid
          → tests/test_login.http.json: error [HTTPCHAIN001]: Duplicate stage names found: ['login']
-         → tests/test_orders.http.json: warning [HTTPCHAIN005]: Stage 'cleanup' has no response validation (no verify step)
+         → tests/test_orders.http.jsonc: warning [HTTPCHAIN005]: Stage 'cleanup' has no response validation (no verify step)
          → <check 4 remediation, verbatim>
    ```
 
 4. End with a one-line summary:
    - All green → `OK — pytest-httpchain ready · <manager> · <N> scenario(s) valid`.
-   - Package missing → `Not set up — add pytest-httpchain as a dev dependency (see check 2), then re-run, or pytest-httpchain-setup`.
+   - Environment/package missing → `Not set up — create/sync the test environment or add pytest-httpchain as a dev dependency (see check 2), then re-run, or pytest-httpchain-setup`.
    - Otherwise → `<n> issue(s) — see the FAIL lines above`.
 
 Keep it terse. Don't fix anything here — point at `pytest-httpchain-setup` or the shared authoring procedure only where the checklist's remediation already does.

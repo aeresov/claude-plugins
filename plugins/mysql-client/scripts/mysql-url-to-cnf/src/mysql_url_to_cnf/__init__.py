@@ -24,7 +24,15 @@ SSL_MODES = {
 }
 
 
+def reject_control_characters(value):
+    if any(ord(char) < 32 or ord(char) == 127 for char in value):
+        # Do not include the value: it may contain credentials.
+        raise ValueError("URL contains unsupported control characters")
+
+
 def ini_value(value):
+    # Newlines must never become option-file lines after URL decoding.
+    reject_control_characters(value)
     # MySQL option files: '#' starts a comment, surrounding space is trimmed,
     # '\' escapes. Double-quote + backslash-escape keeps any value intact.
     return '"' + value.replace("\\", "\\\\").replace('"', '\\"') + '"'
@@ -40,6 +48,7 @@ def url_to_cnf(raw):
     raw = raw.strip()
     if not raw:
         raise ValueError("empty input — connection_cmd produced nothing")
+    reject_control_characters(raw)
     if raw.split() != [raw]:
         # A URL never contains whitespace, so anything here is extra output (a `make` banner,
         # a log line). Fail loudly rather than embed it in the option file.

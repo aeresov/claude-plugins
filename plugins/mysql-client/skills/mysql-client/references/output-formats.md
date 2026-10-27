@@ -102,26 +102,29 @@ mysql --login-path=prod-reader --batch --quick \
 
 ## Heredoc + script patterns
 
-One-off multi-statement script, no temp file:
+One-off multi-statement script after the connection probe has identified a MySQL server, no temp file:
 
 ```bash
-mysql --login-path=prod-reader -BN <<'SQL'
-SET SESSION sql_safe_updates = 1;
+mysql --login-path=prod-reader --safe-updates -BN <<'SQL'
 SET SESSION max_execution_time = 30000;
 SELECT @@hostname, @@read_only;
 SELECT table_schema, COUNT(*) FROM information_schema.tables GROUP BY table_schema;
 SQL
 ```
 
+For a MariaDB server, use its supported connection method and replace the timeout statement with `SET SESSION max_statement_time = 30;`. Keep the timeout and workload in the same invocation; session settings from the earlier probe do not persist here.
+
 Quote the heredoc tag (`<<'SQL'`) to disable shell variable expansion inside — keeps `$var` literal, which is almost always what SQL wants.
 
 For sourcing a `.sql` file:
 
 ```bash
-mysql --login-path=prod-reader -BN < /path/to/queries.sql
+mysql --login-path=prod-reader --safe-updates -BN < /path/to/queries.sql
 # inside an interactive session:
 # mysql> source /path/to/queries.sql
 ```
+
+The SQL file must set the server-appropriate session timeout before its workload statements too.
 
 ## Exit codes
 
