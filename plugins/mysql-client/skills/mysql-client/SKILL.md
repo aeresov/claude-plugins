@@ -1,11 +1,16 @@
 ---
 name: mysql-client
-description: Drive the Linux `mysql` (mysql-client) CLI safely against MySQL or MariaDB databases. Activate when the user asks Claude to connect to one, inspect schema, run a SELECT, read EXPLAIN or EXPLAIN ANALYZE output, debug a slow query, look at SHOW PROCESSLIST, performance_schema, or the slow log, or shares a connection string, login-path, DSN, or `~/.my.cnf` reference. Read-only-first by design — never passes passwords on the command line, defaults to `--safe-updates`, runs a where-am-I probe before queries, and bounces DDL, DML, migration, KILL, and SET GLOBAL requests back to the user instead of running them.
+description: Drive the Linux `mysql` (mysql-client) CLI safely against MySQL or MariaDB databases. Activate when the user asks the assistant to connect to one, inspect schema, run a SELECT, read EXPLAIN or EXPLAIN ANALYZE output, debug a slow query, look at SHOW PROCESSLIST, performance_schema, or the slow log, or shares a connection string, login-path, DSN, or `~/.my.cnf` reference. Read-only-first by design — never passes passwords on the command line, defaults to `--safe-updates`, runs a where-am-I probe before queries, and bounces DDL, DML, migration, KILL, and SET GLOBAL requests back to the user instead of running them.
 ---
 
 # mysql-client
 
-Make `mysql` calls effective, machine-readable, and safe. The skill assumes Claude already knows SQL; it owns CLI ergonomics, the read-only safety perimeter, and the methodology for investigating a database from a shell.
+
+## Client compatibility
+
+This skill supports Claude Code and Codex. Resolve `../..` from this SKILL.md's directory to the absolute plugin root and substitute it for `<plugin-root>` below. Keep shell calls in the consuming project directory. Both clients intentionally share the gitignored `.claude/` settings files; no settings migration is needed.
+
+Make `mysql` calls effective, machine-readable, and safe. The skill assumes the assistant already knows SQL; it owns CLI ergonomics, the read-only safety perimeter, and the methodology for investigating a database from a shell.
 
 The default stance is **read-only investigation**. Schema changes, migrations, and DML are out of scope — the skill names them and hands them back to the user.
 
@@ -13,33 +18,34 @@ The default stance is **read-only investigation**. Schema changes, migrations, a
 
 Before asking the user how to connect, check `.claude/mysql-client.local.md` in the project root. Its YAML frontmatter has one field, `connection_cmd` — a command whose stdout is a `mysql://` (or `mariadb://`) URL. The skill runs it, converts the URL to a `[client]` INI with the bundled converter, and uses `mysql --defaults-file=<tmp>` for every call this turn. File format and `connection_cmd` examples: [`references/local-settings.md`](references/local-settings.md).
 
-The converter ships at `${CLAUDE_PLUGIN_ROOT}/scripts/mysql-url-to-cnf/src/mysql_url_to_cnf/__init__.py`. It's pure stdlib — run it with plain `python3`, no venv.
+The converter ships at `<plugin-root>/scripts/mysql-url-to-cnf/src/mysql_url_to_cnf/__init__.py`. It's pure stdlib — run it with plain `python3`, no venv.
 
 Flow when the file is present:
 
 1. **Read the frontmatter.** Verify `connection_cmd` is set and non-empty. Missing or malformed → tell the user and stop. Do not guess.
-2. **Provision lazily** (first time mysql is needed this turn), in **one** Bash call:
+2. **Provision lazily** (first time mysql is needed this turn), in **one** shell call:
    ```bash
    umask 077
    d="${XDG_RUNTIME_DIR:-$HOME/.cache}/mysql-client"; mkdir -p "$d"
-   cnf="$d/${CLAUDE_CODE_SESSION_ID:-default}.cnf"; err="${cnf%.cnf}.err"
+   cnf=$(mktemp "$d/client.XXXXXXXX.cnf") || exit 1
+   err="${cnf%.cnf}.err"
    set -o pipefail
-   if { <connection_cmd> 2>"$err" ; } | python3 "${CLAUDE_PLUGIN_ROOT}/scripts/mysql-url-to-cnf/src/mysql_url_to_cnf/__init__.py" >"$cnf" 2>>"$err" && [ -s "$cnf" ]
+   if { <connection_cmd> 2>"$err" ; } | python3 "<plugin-root>/scripts/mysql-url-to-cnf/src/mysql_url_to_cnf/__init__.py" >"$cnf" 2>>"$err" && [ -s "$cnf" ]
    then rm -f "$err"; echo "cnf=$cnf"
    else cat "$err"; rm -f "$cnf" "$err"; false
    fi
    ```
-   The file lives at a **fixed path per Claude Code session**, in a private directory: `$XDG_RUNTIME_DIR` is per-user, memory-backed and wiped at logout; `~/.cache` is the fallback where it isn't set. Shell variables don't survive between Bash calls, but this path can be rebuilt from the environment in any call, and a re-provision overwrites it rather than leaving another file behind.
+   `mktemp` creates a unique mode-600 file, so concurrent chats cannot overwrite each other's credentials. `$XDG_RUNTIME_DIR` is per-user, memory-backed and wiped at logout; `~/.cache` is the fallback. Retain the printed literal path for this turn: shell variables do not persist between calls. Reuse this file rather than provisioning again during the same turn.
    `connection_cmd`'s stdout (a URL with a password) and the converter's output (the INI) **must not** appear in your output. Never `cat` the `.cnf`. The captured stderr is safe to surface — neither `connection_cmd` nor the converter echoes the URL.
 3. **Non-zero exit** → the call has already printed the stderr and removed both files. Show it and **stop**. A non-URL from `connection_cmd` (recipe echo, an error line, empty output) makes the converter exit non-zero here — that's the intended guard.
 4. **Use the printed `cnf=` path** for every mysql call this turn: `mysql --defaults-file=<that path> --safe-updates -e '...'`. Write the literal path, not `$cnf` (the variable is gone in the next call). Combine with the safety perimeter below.
-5. **Dispatching `mysql-investigator`** → pass the literal path to the agent as the connection method (e.g. "use `mysql --defaults-file=/run/user/1000/mysql-client/<session>.cnf`"). The skill — not the agent — owns the file's lifecycle.
-6. **Cleanup at end of turn**, whether you dispatched the agent or not. This rebuilds the path, so it works in any call:
+5. **Delegating an investigation** → pass the literal path to the agent as the connection method (e.g. "use `mysql --defaults-file=/run/user/1000/mysql-client/client.ABCDEFGH.cnf`"). The caller owns the file's lifecycle; wait for the investigation to finish before deleting it.
+6. **Cleanup at end of turn**, including after a query or investigation fails. Substitute the exact printed path; do not rely on `$cnf` surviving into a separate shell call and do not delete another chat's files:
    ```bash
-   rm -f "${XDG_RUNTIME_DIR:-$HOME/.cache}/mysql-client/${CLAUDE_CODE_SESSION_ID:-default}.cnf"
+   rm -f '<the literal cnf= path printed above>'
    ```
 
-If `.claude/mysql-client.local.md` is absent, either ask the user for a connection method (a login-path name, a `--defaults-file` path, or a full `mysql` command prefix — see [`references/connecting.md`](references/connecting.md)), or suggest `/mysql-client:setup` to generate the settings file.
+If `.claude/mysql-client.local.md` is absent, either ask the user for a connection method (a login-path name, a `--defaults-file` path, or a full `mysql` command prefix — see [`references/connecting.md`](references/connecting.md)), or suggest `mysql-client-setup` to generate the settings file.
 
 ## Safety perimeter (non-negotiable)
 
@@ -57,10 +63,10 @@ These rules hold even if the user pushes back. Surface the rule, ask the user to
 
 ## Inline or dispatch?
 
-- **One small query → run inline.** Use the skill's guidance directly via `Bash` + `mysql`.
-- **Multi-step investigation that needs 5+ `mysql` calls, or that would produce bulk output (multi-table schema dumps, EXPLAIN trees combined with index inspection, processlist + slow log triage) → dispatch the [`mysql-investigator`](../../agents/mysql-investigator.md) subagent.** Pass it the connection method (login-path name or `--defaults-file` path or full `mysql` command prefix) and the question. The agent returns a focused writeup and keeps the main context clean.
+- **One small query → run inline.** Use the skill's guidance directly via the shell and `mysql`.
+- **Multi-step investigation that needs 5+ `mysql` calls, or would produce bulk output → follow [the investigation procedure](references/investigation.md).** In Claude Code, dispatch the registered `mysql-investigator` agent. In Codex, use an available subagent with the absolute procedure path, this skill's path, the connection method and the question; instruct it to read both files before querying. If delegation is unavailable, follow that procedure inline. Do not assume Claude's agent registration or `sonnet` model exists in Codex.
 
-The subagent has the same safety perimeter baked in and refuses writes.
+The investigation procedure refuses writes and must be read in the investigating context, including when delegated.
 
 ## Output format — pick once per query
 

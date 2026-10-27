@@ -1,0 +1,53 @@
+{
+  "name": "aeresov-codex-plugins",
+  "interface": {
+    "displayName": "aeresov plugins"
+  },
+  "plugins": [
+    {
+      "name": "openvpn3-on-demand",
+      "source": {
+        "source": "local",
+        "path": "./plugins/openvpn3-on-demand"
+      },
+      "description": "Bring up an OpenVPN3 tunnel on demand before commands against private network resources, and tear it down at task end.",
+      "version": "0.11.0",
+      "license": "AGPL-3.0-only",
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Developer tools"
+    },
+    {
+      "name": "mysql-client",
+      "source": {
+        "source": "local",
+        "path": "./plugins/mysql-client"
+      },
+      "description": "Drive the mysql CLI safely against MySQL or MariaDB databases — read-only-first, with a workflow for multi-step investigations.",
+      "version": "0.5.0",
+      "license": "AGPL-3.0-only",
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Developer tools"
+    },
+    {
+      "name": "pytest-httpchain",
+      "source": {
+        "source": "local",
+        "path": "./plugins/pytest-httpchain"
+      },
+      "description": "Author, validate, and maintain pytest-httpchain JSON HTTP-API test scenarios, with static validation and setup and doctor workflows.",
+      "version": "0.2.0",
+      "license": "AGPL-3.0-only",
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Developer tools"
+    }
+  ]
+}

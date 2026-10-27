@@ -1,6 +1,6 @@
 # openvpn3-on-demand
 
-A Claude Code plugin that brings an OpenVPN3 tunnel up and down on demand — no always-on VPN, no `Bash(openvpn3 *)` permission grants.
+A Claude Code and Codex plugin that brings an OpenVPN3 tunnel up and down on demand — no always-on VPN, no `Bash(openvpn3 *)` permission grants.
 **Linux only.** Talks to `openvpn3-linux` over D-Bus via the `openvpn3` Python module from `openvpn3-client`.
 
 ## Quick start
@@ -11,7 +11,18 @@ A Claude Code plugin that brings an OpenVPN3 tunnel up and down on demand — no
 /openvpn3-on-demand:setup     # writes .claude/openvpn3-on-demand.local.md + .gitignore
 ```
 
-Then ask Claude for something that hits a private resource; the skill connects first. See [When does the tunnel come up?](#when-does-the-tunnel-come-up). `/openvpn3-on-demand:doctor` is a read-only health check.
+Then ask the assistant for something that hits a private resource; the skill connects first. See [When does the tunnel come up?](#when-does-the-tunnel-come-up). `/openvpn3-on-demand:doctor` is a read-only health check.
+
+## Codex
+
+Register this repository and install `openvpn3-on-demand`:
+
+```bash
+codex plugin marketplace add aeresov/claude-plugins
+codex plugin add openvpn3-on-demand@aeresov-codex-plugins
+```
+
+Use `$openvpn3-on-demand:openvpn3-on-demand-setup` and `$openvpn3-on-demand:openvpn3-on-demand-doctor` in a Codex prompt. The main skill is `$openvpn3-on-demand:vpn-on-demand`. Both clients use the same skills, implementation and (where applicable) gitignored `.claude/` project settings. These workflows need local execution with the prerequisites below. No global Codex configuration is changed by cloning this repository.
 
 ## Prerequisites
 
@@ -33,20 +44,20 @@ Then ask Claude for something that hits a private resource; the skill connects f
 Set exactly one in `.claude/openvpn3-on-demand.local.md` (both or neither is an error; the skill then skips the VPN):
 
 - **BYO** — `profile_name` names a profile you imported with `openvpn3 config-import --persistent`. Before each start the plugin writes the `dns-scope=tunnel` baseline and any `config_overrides` into that profile, so they also apply to your own `openvpn3 session-start`. Removing a key from `config_overrides` doesn't remove it from the profile: run `openvpn3 config-manage --config <profile_name> --unset-override <key>` (`openvpn3 config-manage --config <profile_name> --show` lists what's set).
-- **Ephemeral** — `ovpn_provision_cmd` prints the `.ovpn` body on **stdout**. Each VPN-gated turn the plugin runs it, writes the output to a mode-600 file in a private per-user directory, imports it single-use as `ovpn3-od-$CLAUDE_CODE_SESSION_ID`, connects, and deletes the file.
+- **Ephemeral** — `ovpn_provision_cmd` prints the `.ovpn` body on **stdout**. Each VPN-gated turn the plugin runs it, writes the output to a mode-600 file in a private per-user directory, imports it single-use as `ovpn3-od-<task-id>`, connects, and deletes the file.
 
 Commented templates: [`skills/vpn-on-demand/references/example-local-settings.md`](skills/vpn-on-demand/references/example-local-settings.md).
 
 ## When does the tunnel come up?
 
-**Claude decides per operation.** Nothing in the plugin watches traffic or knows on its own what sits behind your VPN. Claude goes by:
+**The assistant decides per operation.** Nothing in the plugin watches traffic or knows on its own what sits behind your VPN. It goes by:
 
 - **Built-in hints** — private AWS endpoints (`*.rds.amazonaws.com`, `*.elasticache.amazonaws.com`, …), hostnames ending in `.internal`, `.corp`, `.private` or `.vpc`, and private IPs used with `ssh`, `kubectl`, `mysql`, `psql`, `curl` and similar.
-- **Your project's `CLAUDE.md` / README** — anything described as internal or VPN-only.
+- **Your project's `AGENTS.md` / `CLAUDE.md` / README** — anything described as internal or VPN-only.
 
-Many operations don't show their target in the command: a DB client reading its host from a config file or login path (like the `mysql-client` plugin), a kubeconfig context, an SSH alias, a `make` target or script, a secret-store CLI fetching from an internal Vault, any tool or plugin that reads its endpoint from its own settings. Tell Claude about those:
+Many operations don't show their target in the command: a DB client reading its host from a config file or login path (like the `mysql-client` plugin), a kubeconfig context, an SSH alias, a `make` target or script, a secret-store CLI fetching from an internal Vault, any tool or plugin that reads its endpoint from its own settings. Describe those in the project instructions:
 
-- **In the project's `CLAUDE.md`** (best — read every session):
+- **In the project's `AGENTS.md` (Codex) or `CLAUDE.md` (Claude)** (best — read every session):
   ```markdown
   The staging database, vault.corp.example and the Kubernetes API are only reachable over the VPN.
   ```
@@ -63,25 +74,25 @@ A timeout or "could not resolve host" on something private usually means the tun
 | `vpn_connect_ephemeral` | `ovpn_path`, `session_id`, `overrides?` | `{status: connected \| already_connected \| error, ...}` |
 | `vpn_disconnect`        | `profile_name`                | `{status: disconnected \| not_connected \| error, ...}`  |
 
-`vpn_connect` is for imported BYO profiles; `vpn_connect_ephemeral` imports a fresh `.ovpn` single-use. The skill passes `$CLAUDE_CODE_SESSION_ID` as `session_id` because the MCP server (a singleton across `/resume`/`/fork-session`) can't see it. Both apply a `dns-scope=tunnel` baseline — split DNS: only the VPN's pushed domains go to its DNS, so inside systemd-resolved it coexists with Tailscale, mDNS and other VPNs. `overrides` override it; values the profile already holds aren't rewritten.
+`vpn_connect` is for imported BYO profiles; `vpn_connect_ephemeral` imports a fresh `.ovpn` single-use. The skill passes a retained task identifier as `session_id`: `CLAUDE_CODE_SESSION_ID` in Claude or `CODEX_THREAD_ID` in Codex when available, otherwise a generated UUID. The MCP server cannot infer the calling chat's identity. Both apply a `dns-scope=tunnel` baseline — split DNS: only the VPN's pushed domains go to its DNS, so inside systemd-resolved it coexists with Tailscale, mDNS and other VPNs. `overrides` override it; values the profile already holds aren't rewritten.
 
 `already_connected` means the session is up; one still connecting is waited for. Any other state (paused, failed, dead backend) returns an `error` naming it and the command that clears it (`openvpn3 session-manage --disconnect --config <name>`, or `openvpn3 session-manage --cleanup` for a dead backend). The server never tears down a session it didn't start in that call.
 
 ## Security
 
-- Ephemeral mode writes the `.ovpn` to a mode-600 file at a fixed per-session path — `$XDG_RUNTIME_DIR/openvpn3-on-demand/` (memory-backed, wiped at logout), or `~/.cache/openvpn3-on-demand/` when `$XDG_RUNTIME_DIR` isn't set — hands it to openvpn3 over D-Bus and deletes it. Its contents never enter the transcript. An interrupted turn leaves at most that one file, which the next turn overwrites; `rm -rf` the directory to clear it.
+- Ephemeral mode writes the `.ovpn` to a mode-600 file at the retained task-specific path — `$XDG_RUNTIME_DIR/openvpn3-on-demand/` (memory-backed, wiped at logout), or `~/.cache/openvpn3-on-demand/` when `$XDG_RUNTIME_DIR` isn't set — hands it to openvpn3 over D-Bus and deletes it. Its contents never enter the transcript. An interrupted turn can leave that file behind. Remove only its retained path; another chat may still be using files in the same directory.
 - `.claude/openvpn3-on-demand.local.md` may hold internal hostnames and commands; `/openvpn3-on-demand:setup` adds it to `.gitignore`.
 - The MCP server exits 1 if `dbus` or `openvpn3` can't be imported. It installs nothing and never runs as root.
-- The skill only disconnects the profile in the settings file. After a crash the tunnel stays up: `openvpn3 session-manage --disconnect --config <profile_name>` (BYO) or `… --config "ovpn3-od-$CLAUDE_CODE_SESSION_ID"` (ephemeral).
+- The skill disconnects the configured BYO profile or its own ephemeral profile returned by the connect tool. After a crash the tunnel stays up: `openvpn3 session-manage --disconnect --config <profile_name>` (BYO) or `… --config "ovpn3-od-<task-id>"` (ephemeral).
 
 ## Troubleshooting
 
 - **Anything looks broken** — `/openvpn3-on-demand:doctor` tests every prerequisite and prints the fix.
-- **`cannot import 'dbus' and/or 'openvpn3'`** — install `openvpn3-client` and `python3-dbus`, restart Claude Code.
+- **`cannot import 'dbus' and/or 'openvpn3'`** — install `openvpn3-client` and `python3-dbus`, restart the client.
 - **`vpn_connect` says the config is unknown** — BYO: `openvpn3 config-import --name <profile_name> --persistent --config /path/to/file.ovpn`.
 - **Tunnel up, but private names fail, resolve to `0.0.0.0`, or connections hang** — [below](#tunnel-up-but-private-names-dont-resolve).
 
-Settings-file edits apply immediately, except a key removed from `config_overrides` in BYO mode (see [Modes](#modes)). Only changes to the plugin's `.mcp.json` need a restart.
+Settings-file edits apply immediately, except a key removed from `config_overrides` in BYO mode (see [Modes](#modes)). Refresh/reinstall the plugin after package changes; restart the client if its MCP configuration or skills are stale.
 
 ### Tunnel up, but private names don't resolve
 

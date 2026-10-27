@@ -45,8 +45,11 @@ jobs:
             echo "No plugins found under plugins/ — skipping per-plugin validation."
           fi
 
-      - name: Check version sync (plugin.json ↔ marketplace.json ↔ pyproject.toml)
+      - name: Check shared Claude and Codex package metadata
         run: ./scripts/check-version-sync.sh
+
+      - name: Test marketplace validation and portable credential recipes
+        run: python3 -m unittest discover -s scripts/tests -v
 
       - name: Set up uv
         uses: astral-sh/setup-uv@v7

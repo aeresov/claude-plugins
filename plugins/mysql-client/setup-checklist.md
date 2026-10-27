@@ -1,6 +1,6 @@
 # Setup checklist (shared reference)
 
-Read by `/mysql-client:setup` and `/mysql-client:doctor` via `${CLAUDE_PLUGIN_ROOT}/setup-checklist.md`. Single source of truth for the 6 checks and their remediation text — `doctor` reports all of them, `setup` runs the static ones it owns (1, 2, 6) and writes the settings file. Lives at the plugin root (not under `commands/`) so it isn't itself a slash command.
+Read by `mysql-client-setup` and `mysql-client-doctor`. Single source of truth for the 6 checks and their remediation text — `doctor` reports all of them, `setup` runs the static ones it owns (1, 2, 6) and writes the settings file. Lives at the plugin root (not under `commands/`) so it isn't itself a slash command.
 
 Checks 1–3 and 6 are static and read-only. Checks 4–5 are **live**: they run the project's `connection_cmd` and open one short-lived `mysql` connection. Every check runs from the project root; none needs `sudo`.
 
@@ -16,30 +16,31 @@ Checks 1–3 and 6 are static and read-only. Checks 4–5 are **live**: they run
 
 - Run: `test -f .claude/mysql-client.local.md`
 - PASS if it exists.
-- **Absent is not a failure.** Connection discovery via a settings file is optional — the plugin also works with a connection method passed inline each turn (a login-path name, a `--defaults-file` path, a full `mysql` command prefix). When absent, report the check as `n/a` and SKIP checks 3, 4, 5, and 6. Mention `/mysql-client:setup` for users who want auto-discovery.
+- **Absent is not a failure.** Connection discovery via a settings file is optional — the plugin also works with a connection method passed inline each turn (a login-path name, a `--defaults-file` path, a full `mysql` command prefix). When absent, report the check as `n/a` and SKIP checks 3, 4, 5, and 6. Mention `mysql-client-setup` for users who want auto-discovery.
 
 ### 3. Settings file valid (only if 2 passed)
 
 - Parse the YAML frontmatter; look at `connection_cmd`.
 - PASS if `connection_cmd` is present and non-empty.
-- FAIL → "`.claude/mysql-client.local.md` has no usable `connection_cmd`. The frontmatter needs exactly that one field — a shell command whose stdout is a `mysql://` (or `mariadb://`) URL. Re-run `/mysql-client:setup`, or see `skills/mysql-client/references/local-settings.md`."
+- FAIL → "`.claude/mysql-client.local.md` has no usable `connection_cmd`. The frontmatter needs exactly that one field — a shell command whose stdout is a `mysql://` (or `mariadb://`) URL. Re-run `mysql-client-setup`, or see `skills/mysql-client/references/local-settings.md`."
 
 ### 4. `connection_cmd` resolves to a usable URL (live; only if 3 passed)
 
-- Run `connection_cmd` and pipe its output through the bundled converter, in one Bash call. The file goes to a fixed per-session path in a private directory (same scheme as the skill, with a `doctor-` prefix), because shell variables don't survive into the next call:
+- Run `connection_cmd` and pipe its output through the bundled converter, in one shell call. Create a unique private file and retain its printed literal path for check 5 and cleanup; shell variables don't survive into the next call:
   ```bash
   umask 077
   d="${XDG_RUNTIME_DIR:-$HOME/.cache}/mysql-client"; mkdir -p "$d"
-  cnf="$d/doctor-${CLAUDE_CODE_SESSION_ID:-default}.cnf"; err="${cnf%.cnf}.err"
+  cnf=$(mktemp "$d/doctor.XXXXXXXX.cnf") || exit 1
+  err="${cnf%.cnf}.err"
   set -o pipefail
-  if { <connection_cmd> 2>"$err" ; } | python3 "${CLAUDE_PLUGIN_ROOT}/scripts/mysql-url-to-cnf/src/mysql_url_to_cnf/__init__.py" >"$cnf" 2>>"$err" && [ -s "$cnf" ]
+  if { <connection_cmd> 2>"$err" ; } | python3 "<plugin-root>/scripts/mysql-url-to-cnf/src/mysql_url_to_cnf/__init__.py" >"$cnf" 2>>"$err" && [ -s "$cnf" ]
   then rm -f "$err"; echo "cnf=$cnf"
   else cat "$err"; rm -f "$cnf" "$err"; false
   fi
   ```
 - PASS if it exits 0 and prints `cnf=<path>`. (The converter writes a `[client]` INI on success and exits non-zero on anything that isn't a `mysql://` URL.)
 - **Never print the `.cnf`'s content** — it holds a password. The stderr it prints on failure is safe to surface.
-- FAIL → show that stderr, then: "`connection_cmd` did not produce a usable `mysql://` URL. Common causes: an expired auth token, a wrong secret path, the secret-store CLI not being logged in, or the command printing something other than a bare URL (a make recipe echo, a status line). Fix the command in `.claude/mysql-client.local.md` (or re-run `/mysql-client:setup`)."
+- FAIL → show that stderr, then: "`connection_cmd` did not produce a usable `mysql://` URL. Common causes: an expired auth token, a wrong secret path, the secret-store CLI not being logged in, or the command printing something other than a bare URL (a make recipe echo, a status line). Fix the command in `.claude/mysql-client.local.md` (or re-run `mysql-client-setup`)."
 - Keep the `.cnf` for check 5, and delete it once check 5 is done — or immediately if check 5 is skipped (the command is at the end of check 5).
 
 ### 5. Connection probe (live; only if 4 passed)
@@ -51,7 +52,7 @@ Checks 1–3 and 6 are static and read-only. Checks 4–5 are **live**: they run
   ```
 - PASS if it connects and returns a row. Note `@@hostname`, `@@version`, and the read-only flags for the summary line.
 - FAIL → show the `mysql` error, then: "Credentials resolved but the connection failed. Common causes: wrong host/port, `Access denied` (the grant doesn't cover this client host), an SSL mode/CA mismatch, or an auth-plugin mismatch (`caching_sha2_password` against an old client). See `skills/mysql-client/references/connecting.md`."
-- Afterwards (this rebuilds the path, so it works in a separate call): `rm -f "${XDG_RUNTIME_DIR:-$HOME/.cache}/mysql-client/doctor-${CLAUDE_CODE_SESSION_ID:-default}.cnf"`.
+- Afterwards, even if the probe fails or is skipped: `rm -f '<the literal cnf= path from check 4>'`. Do not use `$cnf` in a separate call or remove other chats' files.
 
 ### 6. `.gitignore` covers the settings file (only if 2 passed)
 

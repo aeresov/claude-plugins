@@ -1,0 +1,31 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "openvpn3-on-demand",
+  "version": "0.11.0",
+  "description": "Bring up an OpenVPN3 tunnel on demand before commands against private network resources, and tear it down at task end.",
+  "author": {
+    "name": "aeresov"
+  },
+  "homepage": "https://github.com/aeresov/claude-plugins/tree/main/plugins/openvpn3-on-demand",
+  "repository": "https://github.com/aeresov/claude-plugins",
+  "keywords": [
+    "vpn",
+    "openvpn3",
+    "networking",
+    "security",
+    "on-demand"
+  ],
+  "license": "AGPL-3.0-only",
+  "extensions": {
+    "com.openai": {
+      "requires_local_executor": true,
+      "onboardingSkill": "./skills/openvpn3-on-demand-setup/SKILL.md",
+      "interface": {
+        "displayName": "OpenVPN3 On Demand",
+        "shortDescription": "Connect OpenVPN3 for private network tasks",
+        "developerName": "aeresov",
+        "category": "Developer tools"
+      }
+    }
+  }
+}

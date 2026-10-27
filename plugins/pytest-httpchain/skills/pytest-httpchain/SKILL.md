@@ -1,9 +1,14 @@
 ---
 name: pytest-httpchain
-description: Author, edit, and validate pytest-httpchain HTTP API test scenarios — declarative JSON files (test_<name>.http.json) with multi-stage request chaining, {{ template }} expressions, $ref/$include composition, JMESPath saves, and verify steps. Activate when the user writes, edits, debugs, or validates an httpchain scenario, asks to chain HTTP calls in a test, fix an HTTPCHAINxxx diagnostic, or set up pytest-httpchain. Validates after authoring; dispatches the httpchain-author subagent for multi-stage work.
+description: Author, edit, and validate pytest-httpchain HTTP API test scenarios — declarative JSON files (test_*.http.json) with multi-stage request chaining, {{ template }} expressions, $ref/$include composition, JMESPath saves, and verify steps. Activate when the user writes, edits, debugs, or validates an httpchain scenario, asks to chain HTTP calls in a test, fix an HTTPCHAINxxx diagnostic, or set up pytest-httpchain. Validates after authoring and follows a shared authoring procedure for multi-stage work.
 ---
 
 # pytest-httpchain test authoring
+
+
+## Client compatibility
+
+This skill supports Claude Code and Codex. Resolve `../..` from this SKILL.md's directory to the absolute plugin root and substitute it for `<plugin-root>` below. Keep shell calls in the consuming project directory.
 
 pytest-httpchain is a pytest plugin for declarative HTTP API integration testing. Test scenarios are JSON files discovered by pattern `test_<name>.http.json` (the `http` suffix is the default of the `httpchain_suffix` ini option — named `suffix` before 0.10, and that old name is ignored since 0.11).
 
@@ -18,12 +23,12 @@ uv run python -c "import pytest_httpchain" 2>/dev/null && echo ok   # uv project
 python   -c "import pytest_httpchain" 2>/dev/null && echo ok        # active venv
 ```
 
-Missing? Stop and run `/pytest-httpchain:setup` (or have the user add it as a dev dependency) — without it you can't `validate`.
+Missing? Stop and run `pytest-httpchain-setup` (or have the user add it as a dev dependency) — without it you can't `validate`.
 
 ## Inline or dispatch the subagent?
 
 - **A single small scenario, or a one-line edit → do it inline** with the reference below, then validate.
-- **A multi-stage chain, multi-file `$ref`/`$include` composition, parametrized/parallel stages, or anything needing several validate→fix rounds → dispatch the [`httpchain-author`](../../agents/httpchain-author.md) subagent.** Hand it the goal, the target `test_*.http.json` path, the API shape (endpoints, auth, expected codes), and any `--syspath` directory where `module:func` references live. It authors and statically validates in an isolated context and returns the finished scenario. It **never makes live HTTP calls** — it only writes JSON and runs the read-only `pytest-httpchain` subcommands (`validate`, `resolve`, `show`, `graph`, `schema`).
+- **A multi-stage chain, multi-file `$ref`/`$include` composition, parametrized/parallel stages, or several validate→fix rounds → follow [the authoring procedure](references/authoring.md).** In Claude Code, dispatch the registered `httpchain-author` agent. In Codex, use an available subagent with the absolute procedure path, this skill's path, the goal, target `test_*.http.json` path, API shape and any `--syspath` directories; instruct it to read both files before authoring. If delegation is unavailable, follow the procedure inline. Do not assume Claude's agent registration or `sonnet` model exists in Codex. The author **never makes live HTTP calls** — it only writes JSON and runs `validate`, `resolve`, `show`, `graph`, `schema`.
 
 Always `validate` after authoring, inline or not (see *Validate your scenario* below).
 
@@ -206,7 +211,7 @@ For a deeper check that imports your `module:func` references (confirming they r
 uv run pytest-httpchain validate --deep --syspath . test_<name>.http.json
 ```
 
-Fix every reported issue and re-validate until clean. Then hand the user the run command (`uv run pytest -k <name>`) — do **not** run the suite yourself; firing the live HTTP calls is the user's call, not this skill's. For a whole-suite health check, use `/pytest-httpchain:doctor`.
+Fix every reported issue and re-validate until clean. Then hand the user the run command (`uv run pytest -k <name>`) — do **not** run the suite yourself; firing the live HTTP calls is the user's call, not this skill's. For a whole-suite health check, use `pytest-httpchain-doctor`.
 
 Note: in response-step templates only the `response.status`/`reason`/`headers`/`elapsed_ms` metadata is ambient — the response **body** is not; `save` what you need from it first, then reference the saved variable.
 

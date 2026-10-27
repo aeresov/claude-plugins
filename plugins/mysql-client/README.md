@@ -1,6 +1,6 @@
 # mysql-client
 
-A Claude Code plugin that makes Claude an effective, safe user of the Linux `mysql` (mysql-client) CLI against MySQL or MariaDB servers. Read-only-first by design — it teaches investigation, not modification.
+A Claude Code and Codex plugin that makes the assistant an effective, safe user of the Linux `mysql` (mysql-client) CLI against MySQL or MariaDB servers. Read-only-first by design — it teaches investigation, not modification.
 
 ## Quick start
 
@@ -10,9 +10,22 @@ A Claude Code plugin that makes Claude an effective, safe user of the Linux `mys
 /mysql-client:setup     # optional — configure connection discovery (see below)
 ```
 
-Then ask Claude to do something against a MySQL/MariaDB database. As long as the request fits "connect, look, summarise" (rather than "alter, migrate, drop"), the skill picks it up.
+Then ask the assistant to do something against a MySQL/MariaDB database. As long as the request fits "connect, look, summarise" (rather than "alter, migrate, drop"), the skill picks it up.
 
 Run `/mysql-client:doctor` any time for a read-only health check of the setup.
+
+## Codex
+
+Register this repository and install `mysql-client`:
+
+```bash
+codex plugin marketplace add aeresov/claude-plugins
+codex plugin add mysql-client@aeresov-codex-plugins
+```
+
+Use `$mysql-client:mysql-client-setup` and `$mysql-client:mysql-client-doctor` in a Codex prompt. The main skill is `$mysql-client:mysql-client`. Both clients use the same skills, implementation and (where applicable) gitignored `.claude/` project settings. These workflows need local execution with the prerequisites below. No global Codex configuration is changed by cloning this repository.
+
+Claude registers the named subagent described below. Codex reads the same procedure, delegates through its available subagents when possible, and otherwise follows it inline. Claude-specific model/tool declarations do not carry over to Codex.
 
 ## Prerequisites
 
@@ -27,7 +40,7 @@ See [`skills/mysql-client/references/connecting.md`](skills/mysql-client/referen
 
 ## Connection discovery (optional)
 
-`/mysql-client:setup` configures this interactively — it asks where the project's connection URL comes from, writes `.claude/mysql-client.local.md`, and updates `.gitignore`. Or drop the file in by hand: a `connection_cmd` frontmatter field whose stdout is a `mysql://` (or `mariadb://`) URL — a build target, a vault read, AWS Secrets Manager, SOPS, 1Password. The plugin runs the command, converts the URL to a `[client]` INI with its bundled converter, writes it to a mode-600 file at a fixed per-session path in a private directory (`$XDG_RUNTIME_DIR/mysql-client/`, or `~/.cache/mysql-client/` where that isn't set), runs `mysql --defaults-file=<that file>`, and deletes it after the turn. The URL — password and all — never enters the conversation transcript.
+`/mysql-client:setup` configures this interactively — it asks where the project's connection URL comes from, writes `.claude/mysql-client.local.md`, and updates `.gitignore`. Or drop the file in by hand: a `connection_cmd` frontmatter field whose stdout is a `mysql://` (or `mariadb://`) URL — a build target, a vault read, AWS Secrets Manager, SOPS, 1Password. The plugin runs the command, converts the URL to a `[client]` INI with its bundled converter, writes it to a mode-600 file at a unique temporary path in a private directory (`$XDG_RUNTIME_DIR/mysql-client/`, or `~/.cache/mysql-client/` where that isn't set), runs `mysql --defaults-file=<that file>`, and deletes it after the turn. The URL — password and all — never enters the conversation transcript.
 
 Minimum file:
 
@@ -43,7 +56,7 @@ URL format, `connection_cmd` examples, and how the converter works: [`skills/mys
 
 ## What triggers the skill
 
-The skill loads when you ask Claude to:
+The skill loads when you ask the assistant to:
 
 - Connect to a MySQL/MariaDB database (e.g. "use the `prod-reader` login-path and …").
 - Inspect schema (`SHOW`, `INFORMATION_SCHEMA`, "what tables …", "how do X and Y relate").
@@ -75,11 +88,11 @@ For investigations that need many `mysql` calls — schema mapping across tables
 
 The subagent has no file-editing tools (only `Bash`, `Read`, `Grep`, `Glob`), and its instructions refuse writes. That refusal is instruction-level, not enforced by Claude Code: with `Bash` it *could* run a write statement or touch files. Real protection comes from the database side — **connect with a read-only database user** (a `SELECT`-only grant, plus `PROCESS` / `performance_schema` reads if you want perf triage), which the server enforces whatever the client sends. Don't pre-approve `Bash(mysql *)` on the assumption that the subagent can't write.
 
-See [`agents/mysql-investigator.md`](agents/mysql-investigator.md).
+See the shared [investigation procedure](skills/mysql-client/references/investigation.md) and the [Claude agent wrapper](agents/mysql-investigator.md).
 
 ## Reference index
 
-Loaded on demand by Claude as each step requires:
+Loaded on demand by the assistant as each step requires:
 
 - [`connecting.md`](skills/mysql-client/references/connecting.md)
 - [`local-settings.md`](skills/mysql-client/references/local-settings.md)
@@ -95,7 +108,7 @@ Loaded on demand by Claude as each step requires:
 - The skill **runs a "where am I" probe before any query** and surfaces the answer (`@@hostname`, `@@read_only`, `USER()`, …) so you can spot a misrouted connection before it does damage.
 - The skill **sets `--safe-updates` / `sql_safe_updates` on every session.** Even if you somehow bypassed the read-only stance, accidental WHERE-less `UPDATE`/`DELETE` is server-rejected.
 - The subagent has no `Edit`, `Write` or `Agent` tools, but it does have `Bash`, so its refusal to write is instruction-level. Use a read-only database user for real enforcement.
-- When `.claude/mysql-client.local.md` is in play, `connection_cmd`'s output (a URL) is piped through the bundled converter into a mode-600 file at a fixed per-session path in a private per-user directory, and **never enters the conversation transcript**. The file is deleted at the end of every turn; an interrupted turn leaves at most that one file, which the next turn overwrites (`rm -rf "${XDG_RUNTIME_DIR:-$HOME/.cache}/mysql-client"` clears any leftovers).
+- When `.claude/mysql-client.local.md` is in play, `connection_cmd`'s output (a URL) is piped through the bundled converter into a mode-600 file at a unique temporary path in a private per-user directory, and **never enters the conversation transcript**. The file is deleted at the end of every turn; an interrupted turn can leave its file behind; remove only that retained path, taking care not to delete credentials used by another chat.
 
 ## Troubleshooting
 

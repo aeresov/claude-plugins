@@ -1,0 +1,12 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
+  "mcpServers": {
+    "openvpn3": {
+      "type": "stdio",
+      "command": "bash",
+      "args": [
+        "${PLUGIN_ROOT}/servers/openvpn3/scripts/launch.sh"
+      ]
+    }
+  }
+}

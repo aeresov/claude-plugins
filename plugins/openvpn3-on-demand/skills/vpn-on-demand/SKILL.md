@@ -1,10 +1,14 @@
 ---
 name: vpn-on-demand
-description: Connect the project's OpenVPN3 tunnel before operations that reach private network resources — RDS/ElastiCache/MemoryDB hosts, internal hostnames, private kubectl contexts, RFC1918 targets of remote-access verbs, targets the project's CLAUDE.md marks as VPN-only (even when a tool hides the host in a config file) — and disconnect at task end. Requires that settings file — without it the skill is a no-op. Linux only. Not for localhost, Docker/compose networks, .local mDNS names, or public endpoints.
-allowed-tools: Bash(python3 "${CLAUDE_PLUGIN_ROOT}/servers/openvpn3/src/openvpn3_mcp/dnscheck.py" *)
+description: Connect the project's OpenVPN3 tunnel before operations that reach private network resources — RDS/ElastiCache/MemoryDB hosts, internal hostnames, private kubectl contexts, RFC1918 targets of remote-access verbs, targets the project's AGENTS.md / CLAUDE.md marks as VPN-only (even when a tool hides the host in a config file) — and disconnect at task end. Requires that settings file — without it the skill is a no-op. Linux only. Not for localhost, Docker/compose networks, .local mDNS names, or public endpoints.
 ---
 
 # VPN On Demand
+
+
+## Client compatibility
+
+This skill supports Claude Code and Codex. Resolve `../..` from this SKILL.md's directory to the absolute plugin root and substitute it for `<plugin-root>` below. Keep shell calls in the consuming project directory. Both clients intentionally share the gitignored `.claude/` settings files; no settings migration is needed.
 
 Bring the project's OpenVPN3 tunnel up before a command that needs it and down at task end. The plugin's `openvpn3` MCP server provides the tools; this skill decides *when* to call them.
 
@@ -15,8 +19,8 @@ Modes (exactly one in `.claude/openvpn3-on-demand.local.md`):
 
 ## Preflight
 
-1. **Settings file present?** `test -f .claude/openvpn3-on-demand.local.md`. If absent, **stop**: call no `vpn_*` tool, handle the request normally. If the user clearly wants the tunnel, point them at `/openvpn3-on-demand:setup`.
-2. **Mode valid?** Exactly one of `profile_name` / `ovpn_provision_cmd` must be present and non-empty in the YAML frontmatter. Otherwise tell the user, call no `vpn_*` tool, proceed without VPN; `/openvpn3-on-demand:setup` rewrites the file.
+1. **Settings file present?** `test -f .claude/openvpn3-on-demand.local.md`. If absent, **stop**: call no `vpn_*` tool, handle the request normally. If the user clearly wants the tunnel, point them at `openvpn3-on-demand-setup`.
+2. **Mode valid?** Exactly one of `profile_name` / `ovpn_provision_cmd` must be present and non-empty in the YAML frontmatter. Otherwise tell the user, call no `vpn_*` tool, proceed without VPN; `openvpn3-on-demand-setup` rewrites the file.
 3. **Tunnel DNS can reach systemd-resolved?** (Once per session, before the first connect.) `test -f /var/lib/openvpn3/netcfg.json` (no sudo). If absent, **stop** and tell the user to run, once per machine:
    ```bash
    sudo openvpn3-admin init-config --write-configs --force
@@ -41,16 +45,16 @@ Field reference and examples: [`references/example-local-settings.md`](reference
 
 - Hosts ending in `.rds.amazonaws.com`, `.elasticache.amazonaws.com`, `.memorydb.amazonaws.com`, `.redshift.amazonaws.com`, `.docdb.amazonaws.com`.
 - RFC1918 hosts (`10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`) **targeted by a remote-access verb** (`ssh`, `kubectl`, `mysql`, `psql`, `redis-cli`, `curl` / `wget` to a non-loopback URL). A bare RFC1918 address isn't enough — Docker networks live there too.
-- Hostnames ending in `.internal`, `.corp`, `.private`, `.vpc`, or marked internal by the project's CLAUDE.md / README.
+- Hostnames ending in `.internal`, `.corp`, `.private`, `.vpc`, or marked internal by the project's AGENTS.md / CLAUDE.md / README.
 - `aws` CLI against private services in prod accounts (RDS, ElastiCache, MemoryDB, Secrets Manager, SSM Parameter Store, ECR or Lambda in a VPC).
 - `kubectl` / `helm` against a cluster with a private API endpoint; `ssh` to a host without a public IP.
-- Anything the project's CLAUDE.md / README says is VPN-only.
+- Anything the project's AGENTS.md / CLAUDE.md / README says is VPN-only.
 
 **Hidden targets count.** A DB client reading its host from `--defaults-file`, a login path or `~/.my.cnf` (like `mysql-client` plugin calls), a kubeconfig context, an `ssh` alias, a `make` target or script, a secret-store CLI (Vault, AWS Secrets Manager), any tool or skill reading its endpoint from its own settings. If the project says the target is private, connect before the **first** step that touches it — including a credentials step.
 
 **Do not activate** for local file operations; obviously public endpoints (`github.com`, `pypi.org`, `npmjs.com`, `docker.io`, public APIs); local builds, docs and offline tests; local Docker traffic (`docker0` `172.17.0.0/16`, compose networks, `localhost` / `127.0.0.1` / `::1`); `.local` / mDNS.
 
-Unsure? Check the project's CLAUDE.md / README; if still unsure, ask the user.
+Unsure? Check the project's AGENTS.md / CLAUDE.md / README; if still unsure, ask the user.
 
 **After a failure** (unresolvable host, timeout or refused connection to something possibly private): tunnel down → suspect the VPN before credentials or grants; connect and rerun once if safe to repeat (a read), else ask. Tunnel up → run the [DNS check](#dns-check) on that host first.
 
@@ -66,29 +70,32 @@ Unsure? Check the project's CLAUDE.md / README; if still unsure, ask the user.
 
 ## Ephemeral flow
 
-Profile name `N = "ovpn3-od-" + $CLAUDE_CODE_SESSION_ID`. Pass `$CLAUDE_CODE_SESSION_ID` as `session_id` — the MCP server can't read it (it's a singleton across `/resume`/`/fork-session`). Rebuild `N` only to disconnect. If `CLAUDE_CODE_SESSION_ID` is unset, **stop**: tell the user (Claude Code may be too old), don't guess a name, proceed without VPN.
+Profile name `N = "ovpn3-od-" + task_id`. Use the host's session/thread identifier when present (`CLAUDE_CODE_SESSION_ID` or `CODEX_THREAD_ID`), otherwise generate a UUID once for this VPN-gated block. Retain the printed `task_id` and `ovpn` path and pass the identifier literally as the MCP `session_id` argument. The MCP process cannot be assumed to inherit the chat's identity. Reuse the same identifier for the whole block, including delegated work; never use a shared `default` identifier.
 
 1. **Provision → connect:**
-   1. Run `ovpn_provision_cmd` into the session's fixed path in **one** Bash call, adding per-task values (see "Environment"):
+   1. Run `ovpn_provision_cmd` into the session's fixed path in **one** shell call, adding per-task values (see "Environment"):
       ```bash
       umask 077
       d="${XDG_RUNTIME_DIR:-$HOME/.cache}/openvpn3-on-demand"; mkdir -p "$d"
-      ovpn="$d/$CLAUDE_CODE_SESSION_ID.ovpn"
+      task_id="${CLAUDE_CODE_SESSION_ID:-${CODEX_THREAD_ID:-}}"
+      if [ -z "$task_id" ]; then task_id=$(python3 -c 'import uuid; print(uuid.uuid4())') || exit 1; fi
+      case "$task_id" in *[!a-zA-Z0-9_-]*) echo 'Invalid VPN task identifier' >&2; exit 1 ;; esac
+      ovpn="$d/$task_id.ovpn"
       if { <provision-cmd> ; } > "$ovpn" && [ -s "$ovpn" ]
-      then echo "ovpn=$ovpn"
+      then printf 'task_id=%s\novpn=%s\n' "$task_id" "$ovpn"
       else rm -f "$ovpn"; false
       fi
       ```
-      The `.ovpn` is sensitive: stdout goes only to the file and must **not** appear in your output (stderr may). The path is fixed per session so later Bash calls can rebuild it; shell variables don't persist.
+      The `.ovpn` is sensitive: stdout goes only to the file and must **not** appear in your output (stderr may). Retain the printed literal path and identifier for later calls; shell variables don't persist. If re-provisioning while the tunnel is already up, reuse the retained identifier instead of generating another one.
    2. Non-zero exit → the file is already removed. Show stderr, **stop**.
-   3. `vpn_connect_ephemeral(ovpn_path=<the printed ovpn= path>, session_id="$CLAUDE_CODE_SESSION_ID", overrides=<config_overrides or omitted>)` — drops any stale config under `N`, imports single-use, connects atomically.
-   4. Delete the file regardless of outcome: `rm -f "${XDG_RUNTIME_DIR:-$HOME/.cache}/openvpn3-on-demand/$CLAUDE_CODE_SESSION_ID.ovpn"`.
+   3. `vpn_connect_ephemeral(ovpn_path=<the printed ovpn= path>, session_id=<the printed task_id>, overrides=<config_overrides or omitted>)` — drops any stale config under `N`, imports single-use, connects atomically. Pass the literal values, not shell variable expressions.
+   4. Delete the exact file regardless of outcome: `rm -f '<the literal ovpn= path printed above>'`.
 2. **Post-connect hook** — only on `connected`, as in BYO.
 3. **[DNS check](#dns-check)** — on `connected` and `already_connected`, per private host.
 4. **Run the user's command**, reusing the tunnel within the task.
 5. **Disconnect at task end.** `vpn_disconnect(profile_name=N)` (or the `profile_name` from the connect response); run `post_disconnect_cmd` on a fresh disconnect.
 
-**Environment.** Keep settings files **task-agnostic**: add per-task values (target environment, AWS profile, region, vault namespace) from the project's CLAUDE.md / README inside the provisioning call — as arguments where the command takes them, `{ make vpn-config OUTPUT=/dev/stdout ENV=dev ; }` (GNU make exports command-line variables to recipes), else as a leading assignment, `{ AWS_PROFILE=acme-dev vault read -field=config secret/vpn ; }`. Never a leading `ENV=…`: like `BASH_ENV` it names a file shells run at startup, so Claude Code refuses it in worktree-isolated sessions. If a provisioner reads `ENV` only from its environment, ask the user to make it an argument.
+**Environment.** Keep settings files **task-agnostic**: add per-task values (target environment, AWS profile, region, vault namespace) from the project's AGENTS.md / CLAUDE.md / README inside the provisioning call — as arguments where the command takes them, `{ make vpn-config OUTPUT=/dev/stdout ENV=dev ; }` (GNU make exports command-line variables to recipes), else as a leading assignment, `{ AWS_PROFILE=acme-dev vault read -field=config secret/vpn ; }`. Never a leading `ENV=…`: like `BASH_ENV` it names a file shells run at startup, so Claude Code refuses it in worktree-isolated sessions. If a provisioner reads `ENV` only from its environment, ask the user to make it an argument.
 
 `ovpn_provision_cmd` runs every VPN-gated turn, even when the server then skips re-import on `already_connected`.
 
@@ -97,10 +104,10 @@ Profile name `N = "ovpn3-od-" + $CLAUDE_CODE_SESSION_ID`. Pass `$CLAUDE_CODE_SES
 After connecting (`connected` or `already_connected`), check each private host before the first command that connects to it:
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/servers/openvpn3/src/openvpn3_mcp/dnscheck.py" --connected '<hostname>'
+python3 "<plugin-root>/servers/openvpn3/src/openvpn3_mcp/dnscheck.py" --connected '<hostname>'
 ```
 
-- Pass the bare host. If it's in a URL with a password (`rediss://`, `mysql://`, printed by a command or in a variable), pipe the URL in, in one call: `<command that prints the URL> | python3 "${CLAUDE_PLUGIN_ROOT}/servers/openvpn3/src/openvpn3_mcp/dnscheck.py" --connected --url-stdin` (variable: `printf '%s' "$X_URL" | …`). The script never prints the URL. Never echo, cat or Read anything holding a secret; for a host found only in a credentials file, take it from the project's CLAUDE.md or ask the user. Skip IP-literal targets.
+- Pass the bare host. If it's in a URL with a password (`rediss://`, `mysql://`, printed by a command or in a variable), pipe the URL in, in one call: `<command that prints the URL> | python3 "<plugin-root>/servers/openvpn3/src/openvpn3_mcp/dnscheck.py" --connected --url-stdin` (variable: `printf '%s' "$X_URL" | …`). The script never prints the URL. Never echo, cat or Read anything holding a secret; for a host found only in a credentials file, take it from the project's AGENTS.md / CLAUDE.md or ask the user. Skip IP-literal targets.
 - Check a host learned mid-task (e.g. from a step that fetches a URL) as soon as it's known, before connecting to it. A run without a hostname only reports the resolver setup — it isn't a pass for any host.
 - **Exit 0 (OK)** → proceed.
 - **Exit 3 (WARN)** → proceed and relay the WARN line. Exception: a WARN saying `/etc/hosts pins it` is a FAIL for clients that follow cluster topology (MemoryDB, ElastiCache cluster mode, `redis-cli -c`, `RedisCluster`) — they connect to node names the pin doesn't cover.
@@ -122,11 +129,11 @@ All tools return `{"status": ...}`; `status: "error"` is a hard failure — surf
 
 Mode, session-ID and provisioning failures: see [Preflight](#preflight) and [Ephemeral flow](#ephemeral-flow).
 
-- **MCP server exited 1 — `cannot import 'dbus' and/or 'openvpn3'`.** Install `openvpn3-client` + `python3-dbus`; restart Claude Code.
+- **MCP server exited 1 — `cannot import 'dbus' and/or 'openvpn3'`.** Install `openvpn3-client` + `python3-dbus`; restart the client.
 - **`"Backend not ready ..."`.** The profile prompts for credentials; the server is non-interactive. Profiles need `auth-user-pass` inlined; encrypted PKCS#12 isn't supported. BYO: re-import a fixed profile. Ephemeral: fix `ovpn_provision_cmd`'s output.
 - **`"A session for '<name>' exists but isn't connected ..."` / `"... its backend isn't answering ..."`.** The session predates the call and may be the user's own, so the server leaves it alone. Surface the message (it includes `openvpn3 session-manage --disconnect --config <name>` or `--cleanup`). Don't `vpn_disconnect` it unless the user says so.
-- **`"D-Bus error: ..."`.** openvpn3's services are unreachable or denied. It says nothing about whether a tunnel exists — not "not connected", not "config missing". Surface it; suggest `/openvpn3-on-demand:doctor`.
-- **Tunnel up (`vpn_status()` shows it) but a private name fails, resolves to `0.0.0.0`, or the command hangs.** Both DNS layers must work: netcfg → systemd-resolved (preflight step 3) and programs → systemd-resolved (the [DNS check](#dns-check)). Run the DNS check on that host (`/openvpn3-on-demand:doctor <hostname>` reports the same). If both pass, look past DNS: routes, security groups, wrong environment's VPN.
+- **`"D-Bus error: ..."`.** openvpn3's services are unreachable or denied. It says nothing about whether a tunnel exists — not "not connected", not "config missing". Surface it; suggest `openvpn3-on-demand-doctor`.
+- **Tunnel up (`vpn_status()` shows it) but a private name fails, resolves to `0.0.0.0`, or the command hangs.** Both DNS layers must work: netcfg → systemd-resolved (preflight step 3) and programs → systemd-resolved (the [DNS check](#dns-check)). Run the DNS check on that host (`openvpn3-on-demand-doctor <hostname>` reports the same). If both pass, look past DNS: routes, security groups, wrong environment's VPN.
 
 ## No safety net
 

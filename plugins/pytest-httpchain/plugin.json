@@ -1,0 +1,32 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "pytest-httpchain",
+  "version": "0.2.0",
+  "description": "Author, validate, and maintain pytest-httpchain JSON HTTP-API test scenarios, with static validation and setup and doctor workflows.",
+  "author": {
+    "name": "aeresov"
+  },
+  "homepage": "https://github.com/aeresov/claude-plugins/tree/main/plugins/pytest-httpchain",
+  "repository": "https://github.com/aeresov/claude-plugins",
+  "keywords": [
+    "pytest",
+    "httpchain",
+    "http",
+    "api-testing",
+    "integration-testing",
+    "json"
+  ],
+  "license": "AGPL-3.0-only",
+  "extensions": {
+    "com.openai": {
+      "requires_local_executor": true,
+      "onboardingSkill": "./skills/pytest-httpchain-setup/SKILL.md",
+      "interface": {
+        "displayName": "pytest-httpchain",
+        "shortDescription": "Author and statically validate HTTP API scenarios",
+        "developerName": "aeresov",
+        "category": "Developer tools"
+      }
+    }
+  }
+}

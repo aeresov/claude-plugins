@@ -10,8 +10,8 @@
     {
       "name": "openvpn3-on-demand",
       "source": "./plugins/openvpn3-on-demand",
-      "description": "Bring up an OpenVPN3 tunnel on demand before Claude runs commands against private network resources, and tear it down at task end.",
-      "version": "0.10.0",
+      "description": "Bring up an OpenVPN3 tunnel on demand before commands against private network resources, and tear it down at task end.",
+      "version": "0.11.0",
       "license": "AGPL-3.0-only",
       "homepage": "https://github.com/aeresov/claude-plugins/tree/main/plugins/openvpn3-on-demand",
       "repository": "https://github.com/aeresov/claude-plugins"
@@ -19,8 +19,8 @@
     {
       "name": "mysql-client",
       "source": "./plugins/mysql-client",
-      "description": "Drive the `mysql` CLI safely against MySQL or MariaDB databases — read-only-first, with a subagent for multi-step investigations.",
-      "version": "0.4.3",
+      "description": "Drive the mysql CLI safely against MySQL or MariaDB databases — read-only-first, with a workflow for multi-step investigations.",
+      "version": "0.5.0",
       "license": "AGPL-3.0-only",
       "homepage": "https://github.com/aeresov/claude-plugins/tree/main/plugins/mysql-client",
       "repository": "https://github.com/aeresov/claude-plugins"
@@ -28,8 +28,8 @@
     {
       "name": "pytest-httpchain",
       "source": "./plugins/pytest-httpchain",
-      "description": "Author, validate, and maintain pytest-httpchain JSON HTTP-API test scenarios — ships the authoring skill, a static-validating subagent, and /setup + /doctor.",
-      "version": "0.1.2",
+      "description": "Author, validate, and maintain pytest-httpchain JSON HTTP-API test scenarios, with static validation and setup and doctor workflows.",
+      "version": "0.2.0",
       "license": "AGPL-3.0-only",
       "homepage": "https://github.com/aeresov/claude-plugins/tree/main/plugins/pytest-httpchain",
       "repository": "https://github.com/aeresov/claude-plugins"

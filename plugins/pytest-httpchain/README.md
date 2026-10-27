@@ -1,6 +1,6 @@
 # pytest-httpchain
 
-A Claude Code plugin for authoring and validating [pytest-httpchain](https://github.com/aeresov/pytest-httpchain) scenarios — the declarative JSON format for HTTP API integration tests (`test_<name>.http.json`: multi-stage request chaining, `{{ template }}` expressions, `$ref`/`$include` composition, JMESPath saves, verify steps).
+A Claude Code and Codex plugin for authoring and validating [pytest-httpchain](https://github.com/aeresov/pytest-httpchain) scenarios — the declarative JSON format for HTTP API integration tests (`test_<name>.http.json`: multi-stage request chaining, `{{ template }}` expressions, `$ref`/`$include` composition, JMESPath saves, verify steps).
 
 It's a **companion** to the package, not a copy of it: the package supplies the `validate` CLI and the pytest collection that run scenarios; this plugin supplies the authoring skill, a static-validating subagent, and `/setup` + `/doctor`.
 
@@ -12,7 +12,20 @@ It's a **companion** to the package, not a copy of it: the package supplies the 
 /pytest-httpchain:setup     # confirm the dev dependency, optionally scaffold an example
 ```
 
-Then ask Claude to write or fix an HTTP API test ("a scenario that logs in, creates an order, deletes it") — the skill authors the JSON and validates it. Run `/pytest-httpchain:doctor` for a read-only health check.
+Then ask the assistant to write or fix an HTTP API test ("a scenario that logs in, creates an order, deletes it") — the skill authors the JSON and validates it. Run `/pytest-httpchain:doctor` for a read-only health check.
+
+## Codex
+
+Register this repository and install `pytest-httpchain`:
+
+```bash
+codex plugin marketplace add aeresov/claude-plugins
+codex plugin add pytest-httpchain@aeresov-codex-plugins
+```
+
+Use `$pytest-httpchain:pytest-httpchain-setup` and `$pytest-httpchain:pytest-httpchain-doctor` in a Codex prompt. The main skill is `$pytest-httpchain:pytest-httpchain`. Both clients use the same skills, implementation and (where applicable) gitignored `.claude/` project settings. These workflows need local execution with the prerequisites below. No global Codex configuration is changed by cloning this repository.
+
+Claude registers the named subagent described below. Codex reads the same procedure, delegates through its available subagents when possible, and otherwise follows it inline. Claude-specific model/tool declarations do not carry over to Codex.
 
 ## Prerequisites
 
@@ -40,7 +53,7 @@ The skill and subagent author and **statically validate** only — they never fi
 
 For a non-trivial scenario — a multi-stage chain, multi-file `$ref`/`$include` composition, parametrized or parallel stages, or one needing several validate→fix rounds — the skill dispatches a context-isolated subagent. It loops `write → (resolve / show, for composed or multi-stage scenarios) → validate → fix` until clean — adding `--deep` only when the scenario references `module:func` code or files — then returns the scenario and the command to run it. It runs only the read-only `pytest-httpchain` subcommands (`validate`, `resolve`, `show`, `graph`, `schema`) — never a live HTTP call.
 
-See [`agents/httpchain-author.md`](agents/httpchain-author.md).
+See the shared [authoring procedure](skills/pytest-httpchain/references/authoring.md) and the [Claude agent wrapper](agents/httpchain-author.md).
 
 ## Commands
 

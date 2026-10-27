@@ -1,6 +1,6 @@
 # Example `.claude/openvpn3-on-demand.local.md`
 
-Save one template as `.claude/openvpn3-on-demand.local.md` in the project root and gitignore `.claude/*.local.md`; `/openvpn3-on-demand:setup` writes the same shape. Set **exactly one** of `profile_name` / `ovpn_provision_cmd`; both or neither is a configuration error.
+Save one template as `.claude/openvpn3-on-demand.local.md` in the project root and gitignore `.claude/*.local.md`; `openvpn3-on-demand-setup` writes the same shape. Set **exactly one** of `profile_name` / `ovpn_provision_cmd`; both or neither is a configuration error.
 
 ## BYO mode
 
@@ -57,11 +57,11 @@ Where ovpn_provision_cmd pulls from, what credentials it needs, who owns the sec
 
 `ovpn_provision_cmd`'s **stdout** must be the `.ovpn` body — not a path or status line. The plugin writes it to a mode-600 file in a private per-user directory, imports it single-use and deletes the file; contents never enter the transcript.
 
-Keep the settings file **task-agnostic**: don't hard-code per-task values (`ENV`, `AWS_PROFILE`, region, vault namespace, …); Claude adds them at call time from the project's `CLAUDE.md`. A Makefile provisioner stays as
+Keep the settings file **task-agnostic**: don't hard-code per-task values (`ENV`, `AWS_PROFILE`, region, vault namespace, …); The assistant adds them at call time from the project's `AGENTS.md` / `CLAUDE.md`. A Makefile provisioner stays as
 ```markdown
 ovpn_provision_cmd: make infra-vpn-config OUTPUT=/dev/stdout
 ```
-and Claude runs `AWS_PROFILE=<…> make infra-vpn-config OUTPUT=/dev/stdout ENV=<env>` each turn — `ENV` as a make argument, since Claude Code refuses a leading `ENV=` in worktree-isolated sessions.
+and the assistant runs `AWS_PROFILE=<…> make infra-vpn-config OUTPUT=/dev/stdout ENV=<env>` each turn — `ENV` as a make argument, since Claude Code refuses a leading `ENV=` in worktree-isolated sessions.
 
 ## Fields
 

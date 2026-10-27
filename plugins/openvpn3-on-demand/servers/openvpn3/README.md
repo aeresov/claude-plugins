@@ -1,8 +1,8 @@
 # openvpn3-mcp
 
-MCP server for `openvpn3-linux`. Talks to its D-Bus services (`net.openvpn.v3.configuration`, `net.openvpn.v3.sessions`) via the `openvpn3` Python module — no CLI shell-out. Ships as part of the `openvpn3-on-demand` Claude Code plugin; not published to PyPI.
+MCP server for `openvpn3-linux`. Talks to its D-Bus services (`net.openvpn.v3.configuration`, `net.openvpn.v3.sessions`) via the `openvpn3` Python module — no CLI shell-out. Ships as part of the `openvpn3-on-demand` Claude Code and Codex plugin; not published to PyPI.
 
-Launched by the plugin's `.mcp.json` via `scripts/launch.sh`:
+Launched by Claude's `.mcp.json` or Codex's portable `mcp.json` via the same `scripts/launch.sh`. The Claude wiring is:
 
 ```json
 {
@@ -14,6 +14,8 @@ Launched by the plugin's `.mcp.json` via `scripts/launch.sh`:
   }
 }
 ```
+
+Codex uses `${PLUGIN_ROOT}` in its portable configuration instead of `${CLAUDE_PLUGIN_ROOT}`. The launcher is identical and keeps its system-Python/D-Bus bootstrap.
 
 Tools: `vpn_status`, `vpn_connect` (BYO), `vpn_connect_ephemeral` (provision-and-connect), `vpn_disconnect`. See the plugin's top-level README for semantics.
 

@@ -1,0 +1,32 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "mysql-client",
+  "version": "0.5.0",
+  "description": "Drive the mysql CLI safely against MySQL or MariaDB databases — read-only-first, with a workflow for multi-step investigations.",
+  "author": {
+    "name": "aeresov"
+  },
+  "homepage": "https://github.com/aeresov/claude-plugins/tree/main/plugins/mysql-client",
+  "repository": "https://github.com/aeresov/claude-plugins",
+  "keywords": [
+    "mysql",
+    "mariadb",
+    "database",
+    "cli",
+    "read-only",
+    "investigation"
+  ],
+  "license": "AGPL-3.0-only",
+  "extensions": {
+    "com.openai": {
+      "requires_local_executor": true,
+      "onboardingSkill": "./skills/mysql-client-setup/SKILL.md",
+      "interface": {
+        "displayName": "MySQL Client",
+        "shortDescription": "Investigate MySQL and MariaDB from the CLI",
+        "developerName": "aeresov",
+        "category": "Developer tools"
+      }
+    }
+  }
+}

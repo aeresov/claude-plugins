@@ -1,6 +1,6 @@
 # Setup checklist (shared reference)
 
-Read by `/openvpn3-on-demand:setup` and `/openvpn3-on-demand:doctor` via `${CLAUDE_PLUGIN_ROOT}/setup-checklist.md`: the single source for the 9 checks and their remediation text. `doctor` reports them; `setup` reports, then fixes the ones it owns. Kept at the plugin root so it isn't a slash command.
+Read by `openvpn3-on-demand-setup` and `openvpn3-on-demand-doctor`: the single source for the 9 checks and their remediation text. `doctor` reports them; `setup` reports, then fixes the ones it owns. Kept at the plugin root so it isn't a slash command.
 
 All checks are read-only, need no `sudo`, and run from the project root.
 
@@ -16,7 +16,7 @@ All checks are read-only, need no `sudo`, and run from the project root.
 
 ### 3. `uv` installed
 - Run: `uv --version` — PASS if it prints a version.
-- FAIL → "`uv` isn't on `PATH`. It runs the MCP server (`servers/openvpn3/scripts/launch.sh`); without it no `vpn_*` tool exists. Install it (https://docs.astral.sh/uv/), then restart Claude Code."
+- FAIL → "`uv` isn't on `PATH`. It runs the MCP server (`servers/openvpn3/scripts/launch.sh`); without it no `vpn_*` tool exists. Install it (https://docs.astral.sh/uv/), then restart the client."
 
 ### 4. Host DNS / netcfg initialized (once per machine)
 - Run: `test -f /var/lib/openvpn3/netcfg.json` — PASS if it exists.
@@ -30,12 +30,12 @@ All checks are read-only, need no `sudo`, and run from the project root.
 
 ### 5. Settings file present
 - Run: `test -f .claude/openvpn3-on-demand.local.md` — PASS if it exists.
-- FAIL → "Not configured for this project. Run `/openvpn3-on-demand:setup`."
+- FAIL → "Not configured for this project. Run `openvpn3-on-demand-setup`."
 
 ### 6. Settings file valid (only if check 5 passed)
 - Parse the YAML frontmatter — PASS if exactly one of `profile_name` / `ovpn_provision_cmd` is present and non-empty.
-- FAIL (both) → "`profile_name` and `ovpn_provision_cmd` are mutually exclusive — pick one. Re-run `/openvpn3-on-demand:setup` to fix."
-- FAIL (neither) → "The settings file must declare `profile_name` (BYO) or `ovpn_provision_cmd` (ephemeral). Re-run `/openvpn3-on-demand:setup` to fix."
+- FAIL (both) → "`profile_name` and `ovpn_provision_cmd` are mutually exclusive — pick one. Re-run `openvpn3-on-demand-setup` to fix."
+- FAIL (neither) → "The settings file must declare `profile_name` (BYO) or `ovpn_provision_cmd` (ephemeral). Re-run `openvpn3-on-demand-setup` to fix."
 - Record the mode for the summary: `profile_name` → BYO, `ovpn_provision_cmd` → ephemeral.
 
 ### 7. BYO profile imported (only if check 6 passed AND mode is BYO)

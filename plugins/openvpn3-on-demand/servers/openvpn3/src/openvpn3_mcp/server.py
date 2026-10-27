@@ -392,16 +392,15 @@ def vpn_connect_ephemeral(
         str,
         Field(
             description=(
-                "Per-task tag for the ephemeral profile name (`ovpn3-od-{session_id}`). The skill forwards "
-                "`$CLAUDE_CODE_SESSION_ID`; the server can't read it itself (Claude Code doesn't propagate it "
-                "to MCP subprocesses since the server outlives `/resume`/`/fork-session`)."
+                "Per-task tag for the ephemeral profile name (`ovpn3-od-{session_id}`). The caller supplies "
+                "a session/thread identifier or a generated UUID; the server cannot infer the caller's identity."
             )
         ),
     ],
     overrides: Annotated[dict[str, Any] | None, Field(description=_OVERRIDES_FIELD_DESCRIPTION)] = None,
 ) -> VpnConnectResult:
     if not (session_id := session_id.strip()):
-        return VpnError(message="session_id is required (pass $CLAUDE_CODE_SESSION_ID from the skill).")
+        return VpnError(message="session_id is required (pass the task identifier from the skill).")
     profile_name = _ephemeral_profile_name(session_id)
 
     try:

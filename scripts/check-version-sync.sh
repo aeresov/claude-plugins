@@ -3,6 +3,7 @@
 #
 # Assert each plugin's version is in sync: .claude-plugin/plugin.json ==
 # its .claude-plugin/marketplace.json entry == any in-tree pyproject.toml.
+# Also check Codex catalog/portable metadata and shared package paths.
 # Run from the repo root; exits non-zero on drift. Called by CI.
 
 set -euo pipefail
@@ -22,4 +23,5 @@ for p in plugins/*/; do
     [ "$tv" = "$pv" ] || err "$name: $proj ${tv:-<no version>} != plugin.json $pv"
   done < <(find "$p" -name pyproject.toml -not -path '*/.venv/*')
 done
-exit "$fail"
+[ "$fail" -eq 0 ] || exit "$fail"
+python3 scripts/check-marketplaces.py

@@ -1,6 +1,6 @@
 # pytest-httpchain setup checklist
 
-Shared by `/pytest-httpchain:setup` and `/pytest-httpchain:doctor` so the two can't drift. Each check has a probe and **remediation text to print verbatim** on failure. Run checks in order; a check that depends on an earlier one is **SKIP**ped when that earlier one fails.
+Shared by `pytest-httpchain-setup` and `pytest-httpchain-doctor` so the two can't drift. Each check has a probe and **remediation text to print verbatim** on failure. Run checks in order; a check that depends on an earlier one is **SKIP**ped when that earlier one fails.
 
 All probes run against the **current project root**. The package must be available in the same environment `pytest` runs under — so prefer the project runner: `uv run …` when a `uv.lock` or `[tool.uv]` is present, otherwise the active interpreter.
 
@@ -23,7 +23,7 @@ All probes run against the **current project root**. The package must be availab
 ```bash
 uv run python -c "from importlib.metadata import version; print(version('pytest-httpchain'))"
 ```
-Run it exactly as written, changing only the runner prefix: `/setup` and `/doctor` pre-approve this exact command, not `python -c` in general. Pass = it prints a version. This interpreter must be the one `pytest` uses — that is what confirms the `pytest11` plugin is actually registered for collection.
+Run it as written, changing only the runner prefix, subject to the host client's approval policy. Pass = it prints a version. This interpreter must be the one `pytest` uses — that is what confirms the `pytest11` plugin is actually registered for collection.
 
 **Remediation (not installed), printed for the detected manager:**
 > pytest-httpchain isn't installed in this project's test environment. Add it as a dev dependency, then re-run:
@@ -43,10 +43,10 @@ Run it exactly as written, changing only the runner prefix: `/setup` and `/docto
 **FAIL** if that table still has a bare `suffix` key (the pre-0.10 name). Count against the suffix pytest really uses (`httpchain_suffix`, else `http`).
 
 **Remediation (stale `suffix` key):**
-> Your pytest config sets `suffix`, an option name pytest-httpchain no longer reads: since 0.11 pytest warns `Unknown config option: suffix` (and aborts under `--strict-config` / `strict = true`), and scenarios are discovered with `httpchain_suffix` (default `http`) instead. Rename the key to `httpchain_suffix` in the same table, or run `/pytest-httpchain:setup`.
+> Your pytest config sets `suffix`, an option name pytest-httpchain no longer reads: since 0.11 pytest warns `Unknown config option: suffix` (and aborts under `--strict-config` / `strict = true`), and scenarios are discovered with `httpchain_suffix` (default `http`) instead. Rename the key to `httpchain_suffix` in the same table, or run `pytest-httpchain-setup`.
 
 **Remediation (informational, when zero found):**
-> No `test_*.<suffix>.json` scenarios found (suffix = `<suffix>`). That's fine for a fresh setup — write one (the `pytest-httpchain` skill covers the format) or run `/pytest-httpchain:setup` to scaffold an example.
+> No `test_*.<suffix>.json` scenarios found (suffix = `<suffix>`). That's fine for a fresh setup — write one (the `pytest-httpchain` skill covers the format) or run `pytest-httpchain-setup` to scaffold an example.
 
 ## Check 4 — scenarios validate clean
 
@@ -57,4 +57,4 @@ uv run pytest-httpchain validate --format json <scenario> [<scenario> ...]
 Pass = exit 0 and every file `valid`. Parse the JSON; surface any `HTTPCHAINxxx` diagnostics (code + severity + message) per file.
 
 **Remediation (one or more invalid):**
-> `<N>` scenario(s) failed validation — see the `HTTPCHAINxxx` diagnostics above. Fix each error and re-run, or hand the scenario to the `httpchain-author` subagent to repair. Run `--deep --syspath <dir>` to additionally check that `module:func` references resolve.
+> `<N>` scenario(s) failed validation — see the `HTTPCHAINxxx` diagnostics above. Fix each error and re-run, or use the shared authoring procedure in `skills/pytest-httpchain/references/authoring.md` to repair it (inline or delegated). Run `--deep --syspath <dir>` to additionally check that `module:func` references resolve.
