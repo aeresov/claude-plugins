@@ -171,8 +171,9 @@ Response is a list of `verify` and `save` steps, executed in order (a dict of na
       "status": 200,
       "headers": { "content-type": { "contains": "application/json" } },
       "jmespath": {
-        "data.name": "Alice",
+        "data.name": "{{ user_name }}",
         "data.id": { "type": "integer" },
+        "data.total": { "gt": 0, "le": "{{ budget }}" },
         "length(data.roles)": { "ge": 1 }
       },
       "body": { "schema": "./openapi.json#/components/schemas/User" }
@@ -196,8 +197,8 @@ One verify step runs **all** its checks and reports every failure, in this order
 **Verify fields:**
 - `status` — one code (100–599), a class `"1xx"`…`"5xx"`, or a non-empty list of either, any of which passes: `["2xx", 304]`.
 - `headers` — a plain string is an **exact, full-string** match (`"application/json"` fails against `application/json; charset=utf-8`). For partial/pattern checks use a matcher object with any of `contains`, `not_contains`, `matches`, `not_matches` (regex, `re.search`); an absent header counts as `""`.
-- `jmespath` — assert on the decoded JSON body. Each key is a JMESPath expression, never rendered as a template; its value is the JSON value it must equal (`true` is not `1`, `"42"` is not `42`) or a matcher object whose every key must hold: `eq`, `ne`, `gt`, `ge`, `lt`, `le`, `contains`, `not_contains`, `matches`, `not_matches`, `type` (`string`/`number`/`integer`/`boolean`/`array`/`object`/`null`), `length`. An object here is always a matcher, so compare with an object through `eq`: `"meta": {"eq": {"page": 1}}`. A missing path gives `null`.
-- `expressions` — `{{ }}` templates that must each evaluate to a real bool. Use them for logic across values; one body value is a `jmespath` check.
+- `jmespath` — assert on the decoded JSON body. Each key is a JMESPath expression; its value is the JSON value it must equal (`true` is not `1`, `"42"` is not `42`) or a matcher object whose every key must hold: `eq`, `ne`, `gt`, `ge`, `lt`, `le`, `contains`, `not_contains`, `matches`, `not_matches`, `type` (`string`/`number`/`integer`/`boolean`/`array`/`object`/`null`), `length` (the exact count; for "at least one" check `"length(items)": {"ge": 1}`). **Values and matcher operands take templates**, so a value saved earlier is compared in place — `"id": "{{ order_id }}"`, no save-then-`expressions` detour; only the key is never rendered. An object here is always a matcher, so compare with an object through `eq`: `"meta": {"eq": {"page": 1}}`. A missing path gives `null`.
+- `expressions` — `{{ }}` templates that must each evaluate to a real bool. Use them for logic across values (two body fields against each other, a sum, a value against `response` metadata); one body value against a literal or a saved name is a `jmespath` check.
 - `user_functions` — `"module:func"` or `{"name": ..., "kwargs": {...}}`; each is called with the `httpx.Response` (plus kwargs) and returns a bool. It runs even when an earlier check of the step failed, so it must not assume a good response.
 - `body.schema` — an inline JSON Schema (standard JSON Schema, verbatim: `$include`/`$merge` are **not** resolved inside it — `HTTPCHAIN028`), or a schema **file path** relative to the scenario file, optionally ending in a JSON pointer to one schema inside the document (an OpenAPI 3.1 component: `"./openapi.json#/components/schemas/User"`). `format` is enforced, and a `$ref` resolves within the document or to a local file, never over the network.
 - `body.contains` / `not_contains` / `matches` / `not_matches` — lists of substrings or regexes checked against the body text.

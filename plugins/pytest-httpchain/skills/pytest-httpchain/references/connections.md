@@ -84,7 +84,7 @@ the response steps, close.
 
 - The first stage that names a connection opens it implicitly, taking no message; write `open: true` only to check the handshake result or to connect again.
 - After a `close: true`, a later stage must say `open: true` (`HTTPCHAIN044`); a closed connection is never reopened implicitly.
-- Connections survive a failed stage, so an `always_run` stage can send a farewell; all are closed when the scenario ends.
+- Connections survive a failed stage, so an `always_run` stage can send a farewell; all are closed when the scenario ends. After a failure, an `always_run` stage whose connection is not open is skipped — it never connects just to say goodbye.
 
 ## `expect` — waiting for a message
 
