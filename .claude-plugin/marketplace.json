@@ -29,7 +29,7 @@
       "name": "pytest-httpchain",
       "source": "./plugins/pytest-httpchain",
       "description": "Author, validate, and maintain pytest-httpchain JSON HTTP-API test scenarios, with static validation and setup and doctor workflows.",
-      "version": "0.2.1",
+      "version": "0.3.0",
       "license": "AGPL-3.0-only",
       "homepage": "https://github.com/aeresov/claude-plugins/tree/main/plugins/pytest-httpchain",
       "repository": "https://github.com/aeresov/claude-plugins"

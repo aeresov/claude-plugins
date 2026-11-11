@@ -17,7 +17,7 @@ First read the shared checklist at `<plugin-root>/setup-checklist.md` — it def
 Run check 1. If no Python project is found, print its remediation text and **stop**. Otherwise retain the detected manager and existing test interpreter's absolute path for the steps below. Do not create an environment or invoke a package-manager run command.
 
 ### 2. Is the package installed?
-Run check 2's probe with that existing interpreter. If it prints a version, say so and go to step 3. If the interpreter is missing, report the missing test environment; otherwise print check 2's package remediation for the detected manager. Tell the user to create/sync the environment or run the add command themselves, then **stop** and ask them to re-run `pytest-httpchain-setup`. Do **not** add dependencies, create a venv, or update a lockfile yourself.
+Run check 2's probe with that existing interpreter. If it prints a version, say so (with the checklist's one-line note when it is older than the release the authoring skill documents) and go to step 3. If the interpreter is missing, report the missing test environment; otherwise print check 2's package remediation for the detected manager. Tell the user to create/sync the environment or run the add command themselves, then **stop** and ask them to re-run `pytest-httpchain-setup`. Do **not** add dependencies, create a venv, or update a lockfile yourself.
 
 ### 3. Test file suffix (optional)
 Scenarios are discovered as `test_<name>.<suffix>.json`, plus `.jsonc` on pytest-httpchain ≥0.16; the `httpchain_suffix` ini option defaults to `http`. That name needs pytest-httpchain ≥0.10 — if step 2 found an older version, suggest upgrading and skip this step. Locate the pytest config table pytest actually reads and the current value exactly as check 3 does, using only its static config-reading steps; do not run doctor validation here. If that table still has a bare `suffix` key (ignored since 0.11), say so and offer to rename it to `httpchain_suffix` as part of this step. Ask the user — "Keep the default test suffix `http`, or set a custom one?":
@@ -26,7 +26,26 @@ Scenarios are discovered as `test_<name>.<suffix>.json`, plus `.jsonc` on pytest
 
 ### 4. Scaffold an example (optional)
 Ask the user — "Scaffold a minimal example scenario + conftest?":
-- **Yes** — write into `tests/` if it exists, else ask where. Create a `test_example.<suffix>.json` and, if no `conftest.py` exists there, a tiny one. Use a self-contained scenario that validates without a server:
+- **Yes** — write into `tests/` if it exists, else ask where. Create a `test_example.<suffix>.json` and, if no `conftest.py` exists there, a tiny one. Use a self-contained scenario that validates without a server. With pytest-httpchain ≥0.16:
+  ```json
+  {
+    "description": "Example pytest-httpchain scenario — replace with your API.",
+    "substitutions": [
+      { "vars": { "api_root": "{{ env('API_URL', 'https://httpbin.org') }}" } }
+    ],
+    "client": { "base_url": "{{ api_root }}" },
+    "stages": [
+      {
+        "name": "get",
+        "request": { "url": "/get", "params": { "q": "hello" } },
+        "response": [
+          { "verify": { "status": 200, "jmespath": { "args.q": "hello" } } }
+        ]
+      }
+    ]
+  }
+  ```
+  With an older package, which has neither `client` nor `verify.jmespath`, write this one instead:
   ```json
   {
     "description": "Example pytest-httpchain scenario — replace with your API.",
@@ -52,4 +71,4 @@ Ask the user — "Scaffold a minimal example scenario + conftest?":
 - **No** — change nothing.
 
 ### 5. Summary
-Print what you wrote (paths), the detected manager and existing interpreter path, and the active `httpchain_suffix` (and which config table it's in). End with: "Done. Run `pytest-httpchain-doctor` to confirm the install, discovery, and that every scenario validates. Ask me to write a scenario any time — I'll validate it and follow the shared authoring procedure for multi-stage ones."
+Print what you wrote (paths), the detected manager and existing interpreter path, the installed version, and the active `httpchain_suffix` (and which config table it's in). End with: "Done. Run `pytest-httpchain-doctor` to confirm the install, discovery, and that every scenario validates. Ask me to write a scenario any time — I'll validate it and follow the shared authoring procedure for multi-stage ones." With pytest-httpchain ≥0.16, add: "I can also turn a HAR recording or curl commands into a starter scenario."

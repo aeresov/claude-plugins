@@ -12,12 +12,49 @@ import venv
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-CHECKLIST = ROOT / "plugins/pytest-httpchain/setup-checklist.md"
+PLUGIN = ROOT / "plugins/pytest-httpchain"
+CHECKLIST = PLUGIN / "setup-checklist.md"
+SKILL = PLUGIN / "skills/pytest-httpchain"
+SETUP = PLUGIN / "skills/pytest-httpchain-setup/SKILL.md"
+VERSION_PROBE = "from importlib.metadata import version; print(version('pytest-httpchain'))"
 
 
 def recipe(containing):
     blocks = re.findall(r"```bash\n(.*?)\n\s*```", CHECKLIST.read_text(), re.S)
     return textwrap.dedent(next(block for block in blocks if containing in block))
+
+
+def installed_version(interpreter):
+    probe = subprocess.run(
+        [interpreter, "-B", "-c", VERSION_PROBE], capture_output=True, text=True, check=True,
+    )
+    parts = re.match(r"(\d+)\.(\d+)", probe.stdout.strip())
+    return tuple(map(int, parts.groups())) if parts else (0, 0)
+
+
+def documented_version():
+    """The package release the authoring skill says it documents."""
+    marker = re.search(r"documents pytest-httpchain \*\*(\d+)\.(\d+)", (SKILL / "SKILL.md").read_text())
+    return tuple(map(int, marker.groups()))
+
+
+def documented_scenarios():
+    """Each fenced JSON block that is a whole scenario, as (label, text).
+
+    A fragment (a stage, a request, a block with `{ ... }` placeholders) is no
+    scenario, and one composed from other files cannot be validated alone.
+    """
+    for path in [*sorted(SKILL.rglob("*.md")), SETUP]:
+        blocks = re.findall(r"```json\n(.*?)\n\s*```", path.read_text(), re.S)
+        for index, block in enumerate(blocks):
+            text = textwrap.dedent(block)
+            try:
+                scenario = json.loads(text)
+            except ValueError:
+                continue
+            composed = any(key in text for key in ('"$include"', '"$merge"', '"$ref"'))
+            if isinstance(scenario, dict) and scenario.get("stages") and not composed:
+                yield f"{path.parent.name}_{path.stem}_{index}".replace("-", "_").lower(), text
 
 
 class ProbeTests(unittest.TestCase):
@@ -95,13 +132,7 @@ class PackageContractTests(unittest.TestCase):
         self.project = Path(self.temp.name)
         (self.project / "pytest.ini").write_text("[pytest]\n")
         self.interpreter = os.environ["HTTPCHAIN_TEST_PYTHON"]
-        version = subprocess.run(
-            [self.interpreter, "-B", "-c",
-             "from importlib.metadata import version; print(version('pytest-httpchain'))"],
-            capture_output=True, text=True, check=True,
-        ).stdout.strip()
-        parts = re.match(r"(\d+)\.(\d+)", version)
-        if not parts or tuple(map(int, parts.groups())) < (0, 16):
+        if installed_version(self.interpreter) < (0, 16):
             self.skipTest("directory/JSONC validation requires pytest-httpchain >=0.16")
 
     def validate_directory(self):
@@ -140,6 +171,65 @@ class PackageContractTests(unittest.TestCase):
         self.assertEqual(len(payload["files"]), 1)
         diagnostics = payload["files"][0]["result"]["diagnostics"]
         self.assertEqual([entry["code"] for entry in diagnostics], ["HTTPCHAIN039"])
+
+
+@unittest.skipUnless(os.environ.get("HTTPCHAIN_TEST_PYTHON"), "optional package contract")
+class DocumentationContractTests(unittest.TestCase):
+    """The authoring reference against the package release it documents."""
+
+    def setUp(self):
+        self.interpreter = os.environ["HTTPCHAIN_TEST_PYTHON"]
+        if installed_version(self.interpreter) < documented_version():
+            self.skipTest("the authoring reference documents a newer pytest-httpchain")
+
+    def package(self, code):
+        result = subprocess.run(
+            [self.interpreter, "-B", "-c", code], capture_output=True, text=True, check=True,
+        )
+        return json.loads(result.stdout)
+
+    def test_documented_scenarios_validate_without_findings(self):
+        scenarios = dict(documented_scenarios())
+        self.assertGreaterEqual(len(scenarios), 8, "too few whole scenarios found in the reference")
+        with tempfile.TemporaryDirectory(prefix="httpchain-docs-") as temp:
+            project = Path(temp)
+            (project / "pytest.ini").write_text("[pytest]\n")
+            for label, text in scenarios.items():
+                (project / f"test_{label}.http.json").write_text(text)
+            result = subprocess.run(
+                [self.interpreter, "-B", "-m", "pytest_httpchain.cli", "validate", "--format", "json", "."],
+                cwd=project, capture_output=True, text=True,
+            )
+            payload = json.loads(result.stdout)
+        findings = {
+            Path(item["path"]).name: [
+                f"{entry['severity']} [{entry['code']}]: {entry['message']}"
+                for entry in item["result"]["diagnostics"] if entry["severity"] != "info"
+            ]
+            for item in payload["files"]
+        }
+        self.assertEqual(len(findings), len(scenarios))
+        self.assertEqual({name: found for name, found in findings.items() if found}, {})
+
+    def test_diagnostics_reference_matches_package_severities(self):
+        documented = dict(re.findall(
+            r"^\| `(HTTPCHAIN\d{3})` \| (error|warning|info) \|",
+            (SKILL / "references/diagnostics.md").read_text(), re.M,
+        ))
+        package = self.package(
+            "import json; from pytest_httpchain.validation.diagnostics import SEVERITY; "
+            "print(json.dumps({code.value: severity for code, severity in SEVERITY.items()}))"
+        )
+        self.assertEqual(documented, package)
+
+    def test_template_builtins_are_documented(self):
+        reference = (SKILL / "references/templates.md").read_text()
+        package = self.package(
+            "import json; from pytest_httpchain.templates.substitution import TEMPLATE_BUILTINS; "
+            "print(json.dumps(sorted(TEMPLATE_BUILTINS)))"
+        )
+        missing = [name for name in package if not re.search(rf"`{name}(?:`|\()", reference)]
+        self.assertEqual(missing, [])
 
 
 if __name__ == "__main__":

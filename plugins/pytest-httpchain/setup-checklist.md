@@ -28,6 +28,8 @@ test -x "<test-python>" &&
 ```
 Run it as written, changing only the interpreter path, subject to the host client's approval policy. Pass = it prints a version; retain it for the version gates below. This confirms the distribution is installed in the selected test environment; it does not run pytest or import the user's fixtures. If the interpreter is missing, report that the user must create/sync the test environment themselves before re-running.
 
+Any installed version passes. When it is older than the release `skills/pytest-httpchain/SKILL.md` says it documents, add one line to the report naming both versions: scenario features above the installed version (that skill's *Version gates*) are unavailable until the user upgrades.
+
 **Remediation (not installed), printed for the detected manager:**
 > pytest-httpchain isn't installed in this project's test environment. Add it as a dev dependency, then re-run:
 > - uv:     `uv add --group dev pytest-httpchain`
@@ -67,4 +69,4 @@ With package ≥0.11, **FAIL** if that table still has a bare `suffix` key (the 
 Pass = exit 0 and every file `valid`. Parse the JSON; surface any `HTTPCHAINxxx` diagnostics (code + severity + message) per file.
 
 **Remediation (one or more invalid):**
-> `<N>` scenario(s) failed validation — see the `HTTPCHAINxxx` diagnostics above. Fix each error and re-run, or use the shared authoring procedure in `skills/pytest-httpchain/references/authoring.md` to repair it (inline or delegated). Run `--deep --syspath <dir>` to additionally check that `module:func` references resolve.
+> `<N>` scenario(s) failed validation — see the `HTTPCHAINxxx` diagnostics above (`skills/pytest-httpchain/references/diagnostics.md` has each code's fix). Fix each error and re-run, or use the shared authoring procedure in `skills/pytest-httpchain/references/authoring.md` to repair it (inline or delegated). An `HTTPCHAIN000` naming a key as not permitted (`client`, `retry`, `connection`, …) usually means the scenario uses a feature newer than the installed pytest-httpchain: upgrade the package rather than rewrite the scenario. Run `--deep --syspath <dir>` to additionally check that `module:func` references and connection adapters resolve.
