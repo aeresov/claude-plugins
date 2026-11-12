@@ -10,7 +10,7 @@ description: Connect the project's OpenVPN tunnel (openvpn3-linux, or OpenVPN 2 
 
 This skill supports Claude Code and Codex. Resolve `../..` from this SKILL.md's directory to the absolute plugin root and substitute it for `<plugin-root>` below. Keep shell calls in the consuming project directory. Both clients intentionally share the gitignored `.claude/` settings files; no settings migration is needed.
 
-Bring the project's VPN tunnel up before a command that needs it and down at task end. The plugin's `openvpn3` MCP server provides the tools; this skill decides *when* to call them.
+Bring the project's VPN tunnel up before a command that needs it and down at task end. The plugin's `openvpn` MCP server provides the tools; this skill decides *when* to call them.
 
 Modes (exactly one in `.claude/openvpn-on-demand.local.md`):
 
@@ -112,12 +112,12 @@ Profile name `N = "ovpn-od-" + task_id`. Use the host's session/thread identifie
 After connecting (`connected` or `already_connected`), check each private host before the first command that connects to it:
 
 ```bash
-python3 "<plugin-root>/servers/openvpn3/src/openvpn3_mcp/dnscheck.py" --connected --backend <backend> '<hostname>'
+python3 "<plugin-root>/servers/openvpn/src/openvpn_mcp/dnscheck.py" --connected --backend <backend> '<hostname>'
 ```
 
 `<backend>` is the `backend` value of the connect result (`openvpn3` or `openvpn2`); it tells the check whether the tunnel's DNS is in systemd-resolved at all.
 
-- Pass the bare host. If it's in a URL with a password (`rediss://`, `mysql://`, printed by a command or in a variable), pipe the URL in, in one call: `<command that prints the URL> | python3 "<plugin-root>/servers/openvpn3/src/openvpn3_mcp/dnscheck.py" --connected --backend <backend> --url-stdin` (variable: `printf '%s' "$X_URL" | …`). The script never prints the URL. Never echo, cat or Read anything holding a secret; for a host found only in a credentials file, take it from the project's AGENTS.md / CLAUDE.md or ask the user. Skip IP-literal targets.
+- Pass the bare host. If it's in a URL with a password (`rediss://`, `mysql://`, printed by a command or in a variable), pipe the URL in, in one call: `<command that prints the URL> | python3 "<plugin-root>/servers/openvpn/src/openvpn_mcp/dnscheck.py" --connected --backend <backend> --url-stdin` (variable: `printf '%s' "$X_URL" | …`). The script never prints the URL. Never echo, cat or Read anything holding a secret; for a host found only in a credentials file, take it from the project's AGENTS.md / CLAUDE.md or ask the user. Skip IP-literal targets.
 - Check a host learned mid-task (e.g. from a step that fetches a URL) as soon as it's known, before connecting to it. A run without a hostname only reports the resolver setup — it isn't a pass for any host.
 - **Exit 0 (OK)** → proceed.
 - **Exit 3 (WARN)** → proceed and relay the WARN line. Exception: a WARN saying `/etc/hosts pins it` is a FAIL for clients that follow cluster topology (MemoryDB, ElastiCache cluster mode, `redis-cli -c`, `RedisCluster`) — they connect to node names the pin doesn't cover.

@@ -22,7 +22,7 @@ use it.
 Exit status: 0 OK, 1 FAIL, 3 WARN, 2 bad usage. Read-only: it prints fixes for a human to run and never runs them.
 
 Standard library only, Python 3.9 syntax (Amazon Linux 2023's system python3), no package-relative imports: doctor, setup
-and the vpn-on-demand skill run it by path with the system python3, outside the server's venv. (``python3 -m openvpn3_mcp.dnscheck`` would import the
+and the vpn-on-demand skill run it by path with the system python3, outside the server's venv. (``python3 -m openvpn_mcp.dnscheck`` would import the
 package ``__init__`` and with it the MCP server.)
 """
 

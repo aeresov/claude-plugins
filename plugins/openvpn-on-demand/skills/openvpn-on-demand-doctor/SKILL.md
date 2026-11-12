@@ -13,7 +13,7 @@ Optional user-supplied argument: a private hostname or IP for check 9's comparis
 
 ## Steps
 
-1. Read `<plugin-root>/setup-checklist.md` — checks 1–9 with exact commands and remediation text. Check 1 decides the backend (openvpn3 or openvpn2); checks 2, 4 and 7 have one variant each. For the openvpn2 variants run exactly `python3 "<plugin-root>/servers/openvpn3/src/openvpn3_mcp/ovpn2_helper.py" probe` once and read its JSON.
+1. Read `<plugin-root>/setup-checklist.md` — checks 1–9 with exact commands and remediation text. Check 1 decides the backend (openvpn3 or openvpn2); checks 2, 4 and 7 have one variant each. For the openvpn2 variants run exactly `python3 "<plugin-root>/servers/openvpn/src/openvpn_mcp/ovpn2_helper.py" probe` once and read its JSON.
 
 2. Run checks **1–9 in order** against the current project root:
    - 1 VPN client installed (openvpn3, else OpenVPN 2)
@@ -24,7 +24,7 @@ Optional user-supplied argument: a private hostname or IP for check 9's comparis
    - 6 settings file valid (skip if 5 failed)
    - 7 BYO profile imported (only if 6 passed and the mode is BYO)
    - 8 `.gitignore` covers the settings file
-   - 9 programs resolve private names (openvpn3: through systemd-resolved; openvpn2: through the host's own resolver) — run exactly `python3 "<plugin-root>/servers/openvpn3/src/openvpn3_mcp/dnscheck.py"`, plus the hostname single-quoted if given. The comparison only means something with a tunnel up (see the script's `link domains` line).
+   - 9 programs resolve private names (openvpn3: through systemd-resolved; openvpn2: through the host's own resolver) — run exactly `python3 "<plugin-root>/servers/openvpn/src/openvpn_mcp/dnscheck.py"`, plus the hostname single-quoted if given. The comparison only means something with a tunnel up (see the script's `link domains` line).
 
    Read the settings frontmatter for checks 6 and 7.
 

@@ -87,14 +87,14 @@ def project(request, tmp_path) -> Project:
 
 
 def test_first_launch_builds_the_venv_for_this_host_then_syncs_and_runs(project):
-    assert project.launch("--flag") == [project.venv_call, "sync --quiet", "run --quiet openvpn3-mcp --flag"]
+    assert project.launch("--flag") == [project.venv_call, "sync --quiet", "run --quiet openvpn-mcp --flag"]
     assert (project.venv / "pyvenv.cfg").is_file()
 
 
 def test_matching_venv_is_kept(project):
     project.launch()
     (project.venv / "keep-me").write_text("x")
-    assert project.launch() == ["sync --quiet", "run --quiet openvpn3-mcp"]
+    assert project.launch() == ["sync --quiet", "run --quiet openvpn-mcp"]
     assert (project.venv / "keep-me").exists()
 
 
@@ -126,7 +126,7 @@ def test_system_venv_of_an_unreleased_python_build_is_kept(tmp_path):
     assert project.launch()[0] == project.venv_call
     assert "version_info = 3.12.0\n" in (project.venv / "pyvenv.cfg").read_text()
     (project.venv / "keep-me").write_text("x")
-    assert project.launch() == ["sync --quiet", "run --quiet openvpn3-mcp"]
+    assert project.launch() == ["sync --quiet", "run --quiet openvpn-mcp"]
     assert (project.venv / "keep-me").exists()
 
 
@@ -134,7 +134,7 @@ def test_system_venv_that_records_no_version_is_left_to_uv(tmp_path):
     project = Project(tmp_path, "3.12.3")
     project.venv.mkdir()
     (project.venv / "pyvenv.cfg").write_text("home = /usr/bin\ninclude-system-site-packages = true\n")
-    assert project.launch() == ["sync --quiet", "run --quiet openvpn3-mcp"]
+    assert project.launch() == ["sync --quiet", "run --quiet openvpn-mcp"]
 
 
 @pytest.mark.parametrize("recorded", ["3.12", "3.12.16"])
@@ -142,7 +142,7 @@ def test_managed_venv_on_the_pinned_version_is_kept_in_either_spelling(tmp_path,
     project = Project(tmp_path, "3.9.25")
     project.venv.mkdir()
     (project.venv / "pyvenv.cfg").write_text(MANAGED_CFG.replace("version_info = 3.12", f"version_info = {recorded}"))
-    assert project.launch() == ["sync --quiet", "run --quiet openvpn3-mcp"]
+    assert project.launch() == ["sync --quiet", "run --quiet openvpn-mcp"]
 
 
 @pytest.mark.parametrize("recorded", ["3.15.2", "3.1", "3.120"])

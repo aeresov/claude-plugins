@@ -11,8 +11,8 @@ from pathlib import Path
 
 import pytest
 
-from openvpn3_mcp import dnscheck
-from openvpn3_mcp.dnscheck import FAIL, OK, UNKNOWN_OWNER, WARN, Lookup, ResolvConf
+from openvpn_mcp import dnscheck
+from openvpn_mcp.dnscheck import FAIL, OK, UNKNOWN_OWNER, WARN, Lookup, ResolvConf
 
 MEMORYDB = "clustercfg.example-cluster.abc123.memorydb.us-east-1.amazonaws.com"
 HOSTS_LINE = "files mdns4_minimal [NOTFOUND=return] dns"

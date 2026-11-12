@@ -9,7 +9,7 @@ All checks are read-only, need no `sudo`, and run from the project root.
 The MCP server drives **openvpn3-linux** where it is installed, and the distribution's **OpenVPN 2.6** on hosts that have no openvpn3 package (Amazon Linux 2023, RHEL-likes without the upstream repo). Check 1 finds out which this host has; checks 2, 4 and 7 then use the variant for that backend. The OpenVPN 2 variants read one command's output:
 
 ```bash
-python3 "<plugin root>/servers/openvpn3/src/openvpn3_mcp/ovpn2_helper.py" probe
+python3 "<plugin root>/servers/openvpn/src/openvpn_mcp/ovpn2_helper.py" probe
 ```
 
 It prints one JSON line, e.g. `{"status": "ok", "protocol": 1, "openvpn": "OpenVPN 2.6.12 …", "supported": true, "systemd_run": true, "sudo": true, "helper": "bundled"}` (`helper`: `bundled`, or `installed` / `stale` for a root-owned copy under `/usr/local/libexec`). It runs nothing privileged: `sudo` is only *asked* (`sudo -n -l`) whether it would run the helper.
@@ -33,7 +33,7 @@ It prints one JSON line, e.g. `{"status": "ok", "protocol": 1, "openvpn": "OpenV
   - FAIL (`"helper": "stale"`) → "The helper installed at `/usr/local/libexec/openvpn-on-demand/ovpn2-helper` is from another plugin version and won't be used to start a tunnel. Re-run the first line below."
   - FAIL → "OpenVPN 2 needs root to start a tunnel, and the plugin gets it through `sudo -n`. Either give this user passwordless sudo, or allow only the plugin's helper (it vets every profile and is the only thing that runs as root):
     ```bash
-    sudo install -D -o root -g root -m 0755 "<plugin root>/servers/openvpn3/src/openvpn3_mcp/ovpn2_helper.py" /usr/local/libexec/openvpn-on-demand/ovpn2-helper
+    sudo install -D -o root -g root -m 0755 "<plugin root>/servers/openvpn/src/openvpn_mcp/ovpn2_helper.py" /usr/local/libexec/openvpn-on-demand/ovpn2-helper
     echo "$USER ALL=(root) NOPASSWD: /usr/local/libexec/openvpn-on-demand/ovpn2-helper" | sudo tee /etc/sudoers.d/openvpn-on-demand
     sudo visudo -cf /etc/sudoers.d/openvpn-on-demand
     ```
@@ -41,7 +41,7 @@ It prints one JSON line, e.g. `{"status": "ok", "protocol": 1, "openvpn": "OpenV
 
 ### 3. `uv` installed
 - Run: `uv --version` — PASS if it prints a version.
-- FAIL → "`uv` isn't on `PATH`. It runs the MCP server (`servers/openvpn3/scripts/launch.sh`); without it no `vpn_*` tool exists. Install it (https://docs.astral.sh/uv/), then restart the client."
+- FAIL → "`uv` isn't on `PATH`. It runs the MCP server (`servers/openvpn/scripts/launch.sh`); without it no `vpn_*` tool exists. Install it (https://docs.astral.sh/uv/), then restart the client."
 
 ### 4. Host ready for tunnels (once per machine)
 - **openvpn2** — PASS if the probe says `"systemd_run": true` (tunnels run as transient systemd units). There is no DNS step: this backend leaves DNS alone, and names resolve as they do without the tunnel (check 9 looks at that).
@@ -84,7 +84,7 @@ It prints one JSON line, e.g. `{"status": "ok", "protocol": 1, "openvpn": "OpenV
 - FAIL (exit 1 although `.gitignore` has one of those lines) → "`.gitignore` lists the settings file, but git already tracks it (or a later `!` line re-includes it), so it will be committed. Stop tracking it: `git rm --cached .claude/openvpn-on-demand.local.md` (the file stays on disk), then commit."
 
 ### 9. Programs resolve private names (once per machine)
-- Run: `python3 "<plugin root>/servers/openvpn3/src/openvpn3_mcp/dnscheck.py" [<hostname>]` (`doctor` and `setup` give the full path). Pass a private hostname when one is known; with the tunnel up it adds a comparison of both lookup paths. Without one it only reads the resolver setup.
+- Run: `python3 "<plugin root>/servers/openvpn/src/openvpn_mcp/dnscheck.py" [<hostname>]` (`doctor` and `setup` give the full path). Pass a private hostname when one is known; with the tunnel up it adds a comparison of both lookup paths. Without one it only reads the resolver setup.
 - PASS on exit 0 (including its `SKIP:` on hosts without systemd-resolved), WARN on 3, FAIL on 1. Exit 2 = hostname rejected: report it, rerun without one.
 - On a host without openvpn3 the script says the VPN leaves DNS alone and judges a hostname only by what programs get for it (a private address passes). It prints no fix there; nothing about that host's resolver needs changing.
 - WARN / FAIL → print the output as-is: what owns `/etc/resolv.conf`, what programs got, and the root-only fix for the user. Check 4 gets the tunnel's DNS *into* systemd-resolved; this checks that programs *ask* it. If Tailscale, a VPN client or NetworkManager owns `/etc/resolv.conf` and nsswitch has no `resolve`, private names fail or return `0.0.0.0` (clients then hit this machine or hang) while check 4 and `resolvectl query` look fine.

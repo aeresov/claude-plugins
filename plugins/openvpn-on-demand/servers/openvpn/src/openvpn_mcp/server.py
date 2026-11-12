@@ -28,7 +28,7 @@ from pydantic import BaseModel, Field
 
 from . import ovpn2
 
-__version__ = _pkg_version("openvpn3-mcp")
+__version__ = _pkg_version("openvpn-mcp")
 
 try:
     # Both ship as system packages (python3-dbus, openvpn3-client) reached via
@@ -51,9 +51,9 @@ def _select_backend() -> str:
     have = {"openvpn3": dbus is not None, "openvpn2": ovpn2.available()}
     if wanted:
         if wanted not in have:
-            sys.exit(f"openvpn3-mcp: {BACKEND_ENV}={wanted!r} is not a backend; use 'openvpn3' or 'openvpn2'.")
+            sys.exit(f"openvpn-mcp: {BACKEND_ENV}={wanted!r} is not a backend; use 'openvpn3' or 'openvpn2'.")
         if not have[wanted]:
-            sys.exit(f"openvpn3-mcp: {BACKEND_ENV}={wanted} was asked for, but that backend isn't installed on this host.")
+            sys.exit(f"openvpn-mcp: {BACKEND_ENV}={wanted} was asked for, but that backend isn't installed on this host.")
         return wanted
     if have["openvpn3"]:
         return "openvpn3"
@@ -61,14 +61,14 @@ def _select_backend() -> str:
         # openvpn3-linux is on this host but its Python modules don't import here: a broken setup (python3-dbus missing,
         # a venv without system site-packages), not a host that should quietly be driven through OpenVPN 2 instead.
         sys.exit(
-            "openvpn3-mcp: openvpn3 is installed, but 'dbus' and/or 'openvpn3' can't be imported. Install the 'python3-dbus' and 'openvpn3-client' "
-            "system packages; the server's venv must see system site-packages (delete servers/openvpn3/.venv to have it rebuilt). "
+            "openvpn-mcp: openvpn3 is installed, but 'dbus' and/or 'openvpn3' can't be imported. Install the 'python3-dbus' and 'openvpn3-client' "
+            "system packages; the server's venv must see system site-packages (delete servers/openvpn/.venv to have it rebuilt). "
             f"To use OpenVPN 2 on this host instead, set {BACKEND_ENV}=openvpn2."
         )
     if have["openvpn2"]:
         return "openvpn2"
     print(
-        "openvpn3-mcp: no VPN backend found. Install either openvpn3-linux ('openvpn3-client' plus 'python3-dbus'; the venv must see "
+        "openvpn-mcp: no VPN backend found. Install either openvpn3-linux ('openvpn3-client' plus 'python3-dbus'; the venv must see "
         "system site-packages) or OpenVPN 2.6 (the distribution's 'openvpn' package, e.g. `sudo dnf install openvpn` on Amazon Linux 2023).",
         file=sys.stderr,
     )
@@ -77,7 +77,7 @@ def _select_backend() -> str:
 
 BACKEND = _select_backend()
 
-mcp = FastMCP("openvpn3")
+mcp = FastMCP("openvpn")
 
 # Split-DNS baseline: only the VPN's pushed domains go to its DNS servers, so inside systemd-resolved the tunnel doesn't
 # fight Tailscale / mDNS / other VPNs. Programs only benefit if they query systemd-resolved (dnscheck.py). Caller wins on collision.
@@ -632,7 +632,7 @@ def vpn_disconnect(
 
 def main() -> None:
     # AGPL-3.0 §5(d) notice; stdout is reserved for MCP stdio.
-    print(f"openvpn3-mcp {__version__} — AGPL-3.0-only — backend: {BACKEND}", file=sys.stderr)
+    print(f"openvpn-mcp {__version__} — AGPL-3.0-only — backend: {BACKEND}", file=sys.stderr)
     mcp.run()
 
 

@@ -13,8 +13,8 @@ from typing import Any
 
 import pytest
 
-from openvpn3_mcp import ovpn2
-from openvpn3_mcp import ovpn2_helper as helper
+from openvpn_mcp import ovpn2
+from openvpn_mcp import ovpn2_helper as helper
 
 NAME = "ovpn-od-task-1"
 UNIT = f"openvpn-on-demand-{NAME}.service"
@@ -144,7 +144,7 @@ sys.modules["openvpn3"] = None
 real_is_file, real_which = pathlib.Path.is_file, shutil.which
 pathlib.Path.is_file = lambda self: str(self) == "/usr/sbin/openvpn" or real_is_file(self)
 shutil.which = lambda name, *a, **kw: {"systemctl": "/usr/bin/systemctl", "openvpn3": None}.get(name, real_which(name, *a, **kw))
-from openvpn3_mcp import ovpn2, server
+from openvpn_mcp import ovpn2, server
 assert server.BACKEND == "openvpn2" and server.dbus is None, (server.BACKEND, server.dbus)
 ovpn2.sessions = lambda: []
 print(server.vpn_status().model_dump_json())

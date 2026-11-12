@@ -14,9 +14,9 @@ First read `<plugin-root>/setup-checklist.md` (checks 1–9 and their remediatio
 ## Flow
 
 ### 1. Host prerequisites
-Run checks 1–4. Check 1 decides the backend (openvpn3, else OpenVPN 2); for the openvpn2 variants of checks 2 and 4 run exactly `python3 "<plugin-root>/servers/openvpn3/src/openvpn3_mcp/ovpn2_helper.py" probe` once and read its JSON. If any fails, print its remediation and **stop**; tell the user to re-run `openvpn-on-demand-setup` after fixing. Remediations are instruct-only: show the `sudo` lines, don't run them.
+Run checks 1–4. Check 1 decides the backend (openvpn3, else OpenVPN 2); for the openvpn2 variants of checks 2 and 4 run exactly `python3 "<plugin-root>/servers/openvpn/src/openvpn_mcp/ovpn2_helper.py" probe` once and read its JSON. If any fails, print its remediation and **stop**; tell the user to re-run `openvpn-on-demand-setup` after fixing. Remediations are instruct-only: show the `sudo` lines, don't run them.
 
-Then run check 9 without a hostname — exactly `python3 "<plugin-root>/servers/openvpn3/src/openvpn3_mcp/dnscheck.py"`. On WARN or FAIL print its output but **don't stop**; its root-only fix goes in the summary.
+Then run check 9 without a hostname — exactly `python3 "<plugin-root>/servers/openvpn/src/openvpn_mcp/dnscheck.py"`. On WARN or FAIL print its output but **don't stop**; its root-only fix goes in the summary.
 
 ### 2. Existing settings file?
 Run check 5. If the file exists, Read it, show its frontmatter, and ask the user: *Keep as-is* / *Reconfigure (overwrite)* / *Abort*. Stop on Keep or Abort.

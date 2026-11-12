@@ -98,12 +98,12 @@ Used on hosts that have no openvpn3 at all and where `/usr/sbin/openvpn` exists.
 
 **How a tunnel runs.** Each tunnel is one transient systemd unit, `openvpn-on-demand-<profile>.service`, running `/usr/sbin/openvpn` with only the capabilities the distribution's own client unit has. Once the tunnel is set up OpenVPN drops to the `openvpn` user where that account exists (the Fedora/RHEL/Amazon Linux package creates it). Debian's and Ubuntu's package creates none: there it keeps running as root and the connect result's `notes` says so; `sudo adduser --system --group openvpn` gives it an account to drop to. `systemctl status 'openvpn-on-demand-*'` and `journalctl -u openvpn-on-demand-<profile>` show it.
 
-**Root.** OpenVPN 2 has no unprivileged service to ask for a tunnel, so starting and stopping one goes through `sudo -n` to one file, `servers/openvpn3/src/openvpn3_mcp/ovpn2_helper.py`. Reading state needs no privileges. Two ways to allow it:
+**Root.** OpenVPN 2 has no unprivileged service to ask for a tunnel, so starting and stopping one goes through `sudo -n` to one file, `servers/openvpn/src/openvpn_mcp/ovpn2_helper.py`. Reading state needs no privileges. Two ways to allow it:
 
 - The user has passwordless sudo (the default for `ec2-user` on Amazon Linux): nothing to set up.
 - Otherwise install the helper root-owned and allow only that:
   ```bash
-  sudo install -D -o root -g root -m 0755 <plugin root>/servers/openvpn3/src/openvpn3_mcp/ovpn2_helper.py /usr/local/libexec/openvpn-on-demand/ovpn2-helper
+  sudo install -D -o root -g root -m 0755 <plugin root>/servers/openvpn/src/openvpn_mcp/ovpn2_helper.py /usr/local/libexec/openvpn-on-demand/ovpn2-helper
   echo "$USER ALL=(root) NOPASSWD: /usr/local/libexec/openvpn-on-demand/ovpn2-helper" | sudo tee /etc/sudoers.d/openvpn-on-demand
   sudo visudo -cf /etc/sudoers.d/openvpn-on-demand
   ```
@@ -139,7 +139,7 @@ Used on hosts that have no openvpn3 at all and where `/usr/sbin/openvpn` exists.
 - **`openvpn3 is installed, but 'dbus' and/or 'openvpn3' can't be imported`** — an openvpn3 host whose Python modules don't load: install `python3-dbus` (`openvpn3-client` doesn't pull it in) and restart the client. Installing `openvpn` doesn't help there: on a host with openvpn3 the server only uses OpenVPN 2 when `OPENVPN_OD_BACKEND=openvpn2` is set.
 - **`vpn_connect` says the config is unknown** — BYO: `openvpn3 config-import --name <profile_name> --persistent --config /path/to/file.ovpn` (openvpn2: `sudo install -m 600 -o root -g root /path/to/file.ovpn /etc/openvpn/client/<profile_name>.conf`).
 - **`OpenVPN 2 backend: … sudo -n … refused`** — allow the helper: [OpenVPN 2 backend](#openvpn-2-backend).
-- **The server won't start after a system Python upgrade or downgrade** — the launcher rebuilds `servers/openvpn3/.venv` when it no longer fits the host; if that fails, delete the directory.
+- **The server won't start after a system Python upgrade or downgrade** — the launcher rebuilds `servers/openvpn/.venv` when it no longer fits the host; if that fails, delete the directory.
 - **Tunnel up, but private names fail, resolve to `0.0.0.0`, or connections hang** — [below](#tunnel-up-but-private-names-dont-resolve).
 
 Settings-file edits apply immediately, except a key removed from `config_overrides` in BYO mode (see [Modes](#modes)). Refresh/reinstall the plugin after package changes; restart the client if its MCP configuration or skills are stale.
@@ -176,7 +176,7 @@ Check with the tunnel up: `/openvpn-on-demand:doctor <private-hostname>`, or com
 
 Up to 0.12.0 this plugin was called `openvpn3-on-demand`. Nothing under the old name is read any more, so an existing setup needs these steps once:
 
-- **Plugin** — uninstall `openvpn3-on-demand`, then install `openvpn-on-demand` ([Quick start](#quick-start), [Codex](#codex)). Settings that name the old plugin need the new name too: enabled-plugin lists, and permission rules for its commands or MCP tools (`mcp__plugin_openvpn3-on-demand_openvpn3__*` is now `mcp__plugin_openvpn-on-demand_openvpn3__*`).
+- **Plugin** — uninstall `openvpn3-on-demand`, then install `openvpn-on-demand` ([Quick start](#quick-start), [Codex](#codex)). Settings that name the old plugin need the new name too: enabled-plugin lists, and permission rules for its commands or MCP tools (`mcp__plugin_openvpn3-on-demand_openvpn3__*` is now `mcp__plugin_openvpn-on-demand_openvpn__*`).
 - **Each project** — rename the settings file; until then the skill finds none and leaves the VPN alone:
   ```bash
   mv .claude/openvpn3-on-demand.local.md .claude/openvpn-on-demand.local.md

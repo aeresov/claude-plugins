@@ -335,7 +335,7 @@ wheels = [
 ]
 
 [[package]]
-name = "openvpn3-mcp"
+name = "openvpn-mcp"
 version = "0.13.0"
 source = { editable = "." }
 dependencies = [

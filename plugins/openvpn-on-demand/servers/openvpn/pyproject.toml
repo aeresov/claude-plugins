@@ -1,5 +1,5 @@
 [project]
-name = "openvpn3-mcp"
+name = "openvpn-mcp"
 version = "0.13.0"
 description = "MCP server that brings a VPN tunnel up and down: openvpn3-linux over D-Bus via the openvpn3 Python module, or the distribution's OpenVPN 2.6 where openvpn3 is not packaged. Ships as part of the openvpn-on-demand Claude Code and Codex plugin."
 readme = "README.md"
@@ -20,7 +20,7 @@ dev = [
 ]
 
 [project.scripts]
-openvpn3-mcp = "openvpn3_mcp:main"
+openvpn-mcp = "openvpn_mcp:main"
 
 [build-system]
 requires = ["uv_build>=0.11.7,<0.12"]
@@ -47,7 +47,7 @@ select = [
 ignore = []
 
 [tool.ruff.lint.isort]
-known-first-party = ["openvpn3_mcp", "_fakes"]
+known-first-party = ["openvpn_mcp", "_fakes"]
 
 [tool.ty.environment]
 python-version = "3.10"

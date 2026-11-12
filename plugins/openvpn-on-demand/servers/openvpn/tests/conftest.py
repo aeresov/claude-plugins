@@ -3,7 +3,7 @@
 
 CI runs on stock ubuntu-latest without `python3-dbus` or `openvpn3-client`, so the real
 modules aren't importable. Tests get a stub surface big enough that
-`from openvpn3_mcp import server` succeeds; per-test fakes are wired in via fixtures."""
+`from openvpn_mcp import server` succeeds; per-test fakes are wired in via fixtures."""
 
 from __future__ import annotations
 
@@ -17,7 +17,7 @@ from _fakes import FakeConfigManager, FakeDBusException, FakeSessionManager, Wra
 
 
 def _install_stubs() -> None:
-    if "openvpn3_mcp.server" in sys.modules:
+    if "openvpn_mcp.server" in sys.modules:
         return
 
     # `Any` so attribute assignment on a fresh ModuleType type-checks.
@@ -41,7 +41,7 @@ def _install_stubs() -> None:
 _install_stubs()
 
 
-from openvpn3_mcp import server as _server  # noqa: E402
+from openvpn_mcp import server as _server  # noqa: E402
 
 
 @pytest.fixture

@@ -47,4 +47,4 @@ if ! venv_fits; then
 fi
 uv sync --quiet
 
-exec uv run --quiet openvpn3-mcp "$@"
+exec uv run --quiet openvpn-mcp "$@"

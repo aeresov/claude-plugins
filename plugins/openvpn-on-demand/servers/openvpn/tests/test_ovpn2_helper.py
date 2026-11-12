@@ -17,8 +17,8 @@ from typing import Any
 
 import pytest
 
-from openvpn3_mcp import ovpn2_helper as helper
-from openvpn3_mcp.ovpn2_helper import Refused, sanitize_profile
+from openvpn_mcp import ovpn2_helper as helper
+from openvpn_mcp.ovpn2_helper import Refused, sanitize_profile
 
 PEM = "-----BEGIN CERTIFICATE-----\nMIIBszCCAVmgAwIBAgIUexample\n-----END CERTIFICATE-----"
 

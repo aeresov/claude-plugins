@@ -1,9 +1,9 @@
 {
   "mcpServers": {
-    "openvpn3": {
+    "openvpn": {
       "command": "bash",
       "args": [
-        "${CLAUDE_PLUGIN_ROOT}/servers/openvpn3/scripts/launch.sh"
+        "${CLAUDE_PLUGIN_ROOT}/servers/openvpn/scripts/launch.sh"
       ]
     }
   }
