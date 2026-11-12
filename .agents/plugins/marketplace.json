@@ -5,13 +5,13 @@
   },
   "plugins": [
     {
-      "name": "openvpn3-on-demand",
+      "name": "openvpn-on-demand",
       "source": {
         "source": "local",
-        "path": "./plugins/openvpn3-on-demand"
+        "path": "./plugins/openvpn-on-demand"
       },
-      "description": "Bring up an OpenVPN3 tunnel on demand before commands against private network resources, and tear it down at task end.",
-      "version": "0.12.0",
+      "description": "Bring up an OpenVPN tunnel on demand before commands against private network resources, and tear it down at task end.",
+      "version": "0.13.0",
       "license": "AGPL-3.0-only",
       "policy": {
         "installation": "AVAILABLE",

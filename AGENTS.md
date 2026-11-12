@@ -7,7 +7,7 @@ Shared repository guidance for Claude Code and Codex. Read a plugin's `CLAUDE.md
 A personal repository with Claude Code and Codex plugin **marketplaces**. The repo root holds `.claude-plugin/marketplace.json` for Claude and `.agents/plugins/marketplace.json` for Codex. Every plugin is self-contained under `plugins/<name>/`. Maintained plugins have a Claude `.claude-plugin/plugin.json` and a portable root `plugin.json` for Codex, sharing `skills/`, references, helpers and servers. GitLab is deprecated and remains Claude-only. **Read `plugins/<name>/CLAUDE.md` before working inside that plugin.**
 
 Plugins:
-- [`openvpn3-on-demand`](plugins/openvpn3-on-demand/CLAUDE.md) — Provides MCP tools to bring an OpenVPN tunnel up/down on demand (openvpn3-linux, or OpenVPN 2 on hosts without it).
+- [`openvpn-on-demand`](plugins/openvpn-on-demand/CLAUDE.md) — Provides MCP tools to bring an OpenVPN tunnel up/down on demand (openvpn3-linux, or OpenVPN 2 on hosts without it).
 - [`mysql-client`](plugins/mysql-client/CLAUDE.md) — Read-only-first use of the `mysql` CLI for MySQL/MariaDB investigation, plus a `mysql-investigator` subagent.
 - [`pytest-httpchain`](plugins/pytest-httpchain/CLAUDE.md) — Author and validate pytest-httpchain JSON HTTP-API test scenarios; ships the authoring skill, an `httpchain-author` subagent, and `/setup` + `/doctor`.
 - [`gitlab-client`](plugins/gitlab-client/CLAUDE.md) — **Deprecated; don't work on it.** Drive an on-prem GitLab 15.x (repos, merge requests, CI/CD) through a bundled REST client; allow-listed writes, a `pipeline-debugger` subagent, `/setup` + `/doctor`.
@@ -45,4 +45,4 @@ CI discovers those projects automatically, runs `uv sync --locked --group dev` a
 
 ## Repo-wide conventions
 
-**License: AGPL-3.0-only** for the whole repo — forced by `openvpn3-on-demand` linking the AGPL `openvpn3` Python module (see its `CLAUDE.md` for the details). New Python/shell source files start with `# SPDX-License-Identifier: AGPL-3.0-only` after any shebang; `LICENSE` (repo root) must travel with redistributions.
+**License: AGPL-3.0-only** for the whole repo — forced by `openvpn-on-demand` linking the AGPL `openvpn3` Python module (see its `CLAUDE.md` for the details). New Python/shell source files start with `# SPDX-License-Identifier: AGPL-3.0-only` after any shebang; `LICENSE` (repo root) must travel with redistributions.

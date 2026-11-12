@@ -42,7 +42,7 @@ class CatalogTests(unittest.TestCase):
     def test_shared_packages_are_valid_and_deprecated_plugin_is_excluded(self):
         CHECKER.check(self.root)
         names = {p["name"] for p in json.loads(self.catalog().read_text())["plugins"]}
-        self.assertEqual(names, {"mysql-client", "pytest-httpchain", "openvpn3-on-demand"})
+        self.assertEqual(names, {"mysql-client", "pytest-httpchain", "openvpn-on-demand"})
 
     def test_metadata_drift_is_rejected(self):
         self.change_catalog(lambda data: data["plugins"][0].update(version="99.0.0"))
@@ -65,12 +65,12 @@ class CatalogTests(unittest.TestCase):
             CHECKER.check(self.root)
 
     def test_missing_portable_mcp_manifest_is_rejected(self):
-        (self.root / "plugins/openvpn3-on-demand/mcp.json").unlink()
+        (self.root / "plugins/openvpn-on-demand/mcp.json").unlink()
         with self.assertRaisesRegex(ValueError, "MCP manifests must be present for both clients"):
             CHECKER.check(self.root)
 
     def test_missing_claude_mcp_manifest_is_rejected(self):
-        (self.root / "plugins/openvpn3-on-demand/.mcp.json").unlink()
+        (self.root / "plugins/openvpn-on-demand/.mcp.json").unlink()
         with self.assertRaisesRegex(ValueError, "MCP manifests must be present for both clients"):
             CHECKER.check(self.root)
 
@@ -116,7 +116,7 @@ class RecipeTests(unittest.TestCase):
         self.assertEqual(list((self.directory / "mysql-client").iterdir()), [])
 
     def test_vpn_fallback_identifiers_are_unique_and_private(self):
-        recipe = self.recipe("openvpn3-on-demand", "vpn-on-demand", "<provision-cmd>", "printf '%s' 'test-vpn-config'")
+        recipe = self.recipe("openvpn-on-demand", "vpn-on-demand", "<provision-cmd>", "printf '%s' 'test-vpn-config'")
         identifiers = []
         for _ in range(2):
             result = self.run_recipe(recipe)
@@ -128,10 +128,10 @@ class RecipeTests(unittest.TestCase):
         self.assertNotEqual(*identifiers)
 
     def test_vpn_failed_provisioning_leaves_no_profile_text_and_needs_no_approval(self):
-        recipe = self.recipe("openvpn3-on-demand", "vpn-on-demand", "<provision-cmd>", "printf '%s' 'partial-secret'; false")
+        recipe = self.recipe("openvpn-on-demand", "vpn-on-demand", "<provision-cmd>", "printf '%s' 'partial-secret'; false")
         result = self.run_recipe(recipe)
         self.assertNotEqual(result.returncode, 0)
-        files = list((self.directory / "openvpn3-on-demand").iterdir())
+        files = list((self.directory / "openvpn-on-demand").iterdir())
         self.assertEqual([path.stat().st_size for path in files], [0])
         self.assertNotIn("partial-secret", result.stdout + result.stderr)
         self.assertIn(f"ovpn={files[0]}", result.stderr)
@@ -140,7 +140,7 @@ class RecipeTests(unittest.TestCase):
         self.assertNotRegex(recipe, r"\brm\b[^\n]*\$")
 
     def test_vpn_preserves_either_client_identity(self):
-        recipe = self.recipe("openvpn3-on-demand", "vpn-on-demand", "<provision-cmd>", "printf '%s' 'test-vpn-config'")
+        recipe = self.recipe("openvpn-on-demand", "vpn-on-demand", "<provision-cmd>", "printf '%s' 'test-vpn-config'")
         for key in ("CLAUDE_CODE_SESSION_ID", "CODEX_THREAD_ID"):
             with self.subTest(client=key):
                 self.env[key] = "test-thread-123"

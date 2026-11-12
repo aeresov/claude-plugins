@@ -15,7 +15,7 @@ Personal plugin marketplaces for Claude Code and Codex. The maintained plugins s
 Then install individual plugins:
 
 ```bash
-/plugin install openvpn3-on-demand@aeresov-claude-plugins
+/plugin install openvpn-on-demand@aeresov-claude-plugins
 ```
 
 ## Codex
@@ -27,12 +27,12 @@ codex plugin marketplace add /absolute/path/to/claude-plugins
 codex plugin list --available --marketplace aeresov-codex-plugins
 codex plugin add pytest-httpchain@aeresov-codex-plugins
 codex plugin add mysql-client@aeresov-codex-plugins
-codex plugin add openvpn3-on-demand@aeresov-codex-plugins
+codex plugin add openvpn-on-demand@aeresov-codex-plugins
 ```
 
 Or register the GitHub source with `codex plugin marketplace add aeresov/claude-plugins`. Codex uses `.agents/plugins/marketplace.json`; Claude uses `.claude-plugin/marketplace.json`. The Codex catalog includes only the three maintained plugins. GitLab remains available only in the existing Claude catalog.
 
-After installation, start a new chat or restart the client if the skills have not appeared. Invoke the skills with `$pytest-httpchain:pytest-httpchain`, `$mysql-client:mysql-client`, or `$openvpn3-on-demand:vpn-on-demand`, or describe a matching task. Setup and health checks are `$<plugin-name>:<plugin-name>-setup` and `$<plugin-name>:<plugin-name>-doctor`, for example `$mysql-client:mysql-client-setup`. These are skill mentions, not shell commands. The existing Claude `/plugin-name:setup` and `/plugin-name:doctor` commands wrap those same workflows.
+After installation, start a new chat or restart the client if the skills have not appeared. Invoke the skills with `$pytest-httpchain:pytest-httpchain`, `$mysql-client:mysql-client`, or `$openvpn-on-demand:vpn-on-demand`, or describe a matching task. Setup and health checks are `$<plugin-name>:<plugin-name>-setup` and `$<plugin-name>:<plugin-name>-doctor`, for example `$mysql-client:mysql-client-setup`. These are skill mentions, not shell commands. The existing Claude `/plugin-name:setup` and `/plugin-name:doctor` commands wrap those same workflows.
 
 Both clients intentionally read the same gitignored `.claude/*.local.md` project settings. Plugin helpers are resolved relative to the installed skill instead of relying on Claude shell variables. MySQL credentials use unique temporary files; ephemeral VPN profiles use a client task identifier or a generated UUID. Normal completion cleans up the exact files/profile owned by the workflow; interruption can leave files or a tunnel for manual cleanup.
 
@@ -42,7 +42,7 @@ These plugins need local execution. MySQL needs the `mysql` client; pytest-httpc
 
 | Plugin | Description |
 |--------|-------------|
-| [`openvpn3-on-demand`](plugins/openvpn3-on-demand/) | Provides MCP tools to bring an OpenVPN tunnel up/down on demand (openvpn3-linux, or OpenVPN 2 on hosts without it). |
+| [`openvpn-on-demand`](plugins/openvpn-on-demand/) | Provides MCP tools to bring an OpenVPN tunnel up/down on demand (openvpn3-linux, or OpenVPN 2 on hosts without it). |
 | [`mysql-client`](plugins/mysql-client/) | Read-only-first use of the `mysql` CLI for MySQL/MariaDB investigation, plus a `mysql-investigator` subagent. |
 | [`pytest-httpchain`](plugins/pytest-httpchain/) | Author and validate pytest-httpchain JSON HTTP-API test scenarios; ships the authoring skill, an `httpchain-author` subagent, and `/setup` + `/doctor`. |
 | [`gitlab-client`](plugins/gitlab-client/) | **Deprecated, no longer maintained.** Drive an on-prem GitLab 15.x (repos, merge requests, CI/CD) through a bundled REST client; allow-listed writes, a `pipeline-debugger` subagent, `/setup` + `/doctor`. |
@@ -67,4 +67,4 @@ Keep `name`, `description` and `version` synchronized in both catalogs and both 
 
 ## License
 
-AGPL-3.0-only for the whole repo — forced by `openvpn3-on-demand` linking the AGPL `openvpn3` Python module. See [LICENSE](LICENSE).
+AGPL-3.0-only for the whole repo — forced by `openvpn-on-demand` linking the AGPL `openvpn3` Python module. See [LICENSE](LICENSE).

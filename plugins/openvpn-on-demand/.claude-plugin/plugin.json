@@ -1,0 +1,18 @@
+{
+  "name": "openvpn-on-demand",
+  "version": "0.13.0",
+  "description": "Bring up an OpenVPN tunnel on demand before commands against private network resources, and tear it down at task end.",
+  "author": {
+    "name": "aeresov"
+  },
+  "homepage": "https://github.com/aeresov/claude-plugins/tree/main/plugins/openvpn-on-demand",
+  "repository": "https://github.com/aeresov/claude-plugins",
+  "keywords": [
+    "vpn",
+    "openvpn",
+    "openvpn3",
+    "networking",
+    "security",
+    "on-demand"
+  ]
+}
