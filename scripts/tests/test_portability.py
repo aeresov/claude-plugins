@@ -127,6 +127,18 @@ class RecipeTests(unittest.TestCase):
             self.assertEqual(stat.S_IMODE(Path(fields["ovpn"]).stat().st_mode), 0o600)
         self.assertNotEqual(*identifiers)
 
+    def test_vpn_failed_provisioning_leaves_no_profile_text_and_needs_no_approval(self):
+        recipe = self.recipe("openvpn3-on-demand", "vpn-on-demand", "<provision-cmd>", "printf '%s' 'partial-secret'; false")
+        result = self.run_recipe(recipe)
+        self.assertNotEqual(result.returncode, 0)
+        files = list((self.directory / "openvpn3-on-demand").iterdir())
+        self.assertEqual([path.stat().st_size for path in files], [0])
+        self.assertNotIn("partial-secret", result.stdout + result.stderr)
+        self.assertIn(f"ovpn={files[0]}", result.stderr)
+        # Claude Code's built-in check refuses `rm` on a path built from shell variables unless a person approves it;
+        # in an unattended session nobody can, and the whole provisioning call is denied. The recipe must not need one.
+        self.assertNotRegex(recipe, r"\brm\b[^\n]*\$")
+
     def test_vpn_preserves_either_client_identity(self):
         recipe = self.recipe("openvpn3-on-demand", "vpn-on-demand", "<provision-cmd>", "printf '%s' 'test-vpn-config'")
         for key in ("CLAUDE_CODE_SESSION_ID", "CODEX_THREAD_ID"):

@@ -25,11 +25,14 @@ Which account this profile is for, how to rotate its credentials, who to ping wh
 Import the profile once:
 
 ```bash
+# openvpn3 backend
 openvpn3 config-import --config /path/to/my-prod-vpn.ovpn \
                        --name my-prod-vpn --persistent
+# openvpn2 backend (hosts without openvpn3, e.g. Amazon Linux 2023)
+sudo install -m 600 -o root -g root /path/to/my-prod-vpn.ovpn /etc/openvpn/client/my-prod-vpn.conf
 ```
 
-The plugin never creates or removes a BYO config, but writes the `dns-scope=tunnel` baseline and any `config_overrides` into it.
+The plugin never creates or removes a BYO config. On openvpn3 it writes the `dns-scope=tunnel` baseline and any `config_overrides` into it; on openvpn2 it changes nothing in the file, and `config_overrides` and the `sudo resolvectl flush-caches` hook above don't apply (that backend leaves DNS alone).
 
 ## Ephemeral mode
 
@@ -67,11 +70,11 @@ and the assistant runs `AWS_PROFILE=<…> make infra-vpn-config OUTPUT=/dev/stdo
 
 | Field | Mode | Required | Purpose |
 |---|---|---|---|
-| `profile_name` | BYO | one-of | Name of an openvpn3 config the user imported (`openvpn3 config-import --persistent`). |
+| `profile_name` | BYO | one-of | Name of an openvpn3 config the user imported (`openvpn3 config-import --persistent`); on the openvpn2 backend, of `/etc/openvpn/client/<name>.conf`. |
 | `ovpn_provision_cmd` | ephemeral | one-of | Shell command whose stdout is the `.ovpn` body. Re-run every VPN-gated turn. |
 | `post_connect_cmd` | both | no | Run after a fresh `vpn_connect` (not on `already_connected`). Non-fatal. The skill's DNS check runs anyway; for a probe here use `getent` (resolves like programs do), not `dig` (asks `/etc/resolv.conf`'s server directly). |
 | `post_disconnect_cmd` | both | no | Run after a fresh `vpn_disconnect` (not on `not_connected`). Non-fatal. |
-| `config_overrides` | both | no | `{name: value}` openvpn3 `config-manage` overrides set before each tunnel start; values keep their YAML type. The server applies a `dns-scope=tunnel` (split-DNS) baseline; `dns-scope: global` overrides it, other entries like `log-level: 4` add to it. In BYO mode the baseline and these entries persist in the profile (also for a manual `openvpn3 session-start`); removing a key doesn't unset it — run `openvpn3 config-manage --config <profile_name> --unset-override <key>`. |
+| `config_overrides` | both | no | openvpn3 backend only; not applied on openvpn2. `{name: value}` openvpn3 `config-manage` overrides set before each tunnel start; values keep their YAML type. The server applies a `dns-scope=tunnel` (split-DNS) baseline; `dns-scope: global` overrides it, other entries like `log-level: 4` add to it. In BYO mode the baseline and these entries persist in the profile (also for a manual `openvpn3 session-start`); removing a key doesn't unset it — run `openvpn3 config-manage --config <profile_name> --unset-override <key>`. |
 
 ## Gitignore
 

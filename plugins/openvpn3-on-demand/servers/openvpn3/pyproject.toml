@@ -1,7 +1,7 @@
 [project]
 name = "openvpn3-mcp"
-version = "0.11.1"
-description = "MCP server for openvpn3-linux. Talks to the openvpn3 D-Bus services via the openvpn3 Python module. Ships as part of the openvpn3-on-demand Claude Code and Codex plugin."
+version = "0.12.0"
+description = "MCP server that brings a VPN tunnel up and down: openvpn3-linux over D-Bus via the openvpn3 Python module, or the distribution's OpenVPN 2.6 where openvpn3 is not packaged. Ships as part of the openvpn3-on-demand Claude Code and Codex plugin."
 readme = "README.md"
 requires-python = ">=3.10"
 license = "AGPL-3.0-only"

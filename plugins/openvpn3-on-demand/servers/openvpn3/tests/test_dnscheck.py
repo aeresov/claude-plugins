@@ -420,8 +420,13 @@ def fake_host(tmp_path, monkeypatch):
     for name, path in files.items():
         monkeypatch.setattr(dnscheck, name, path)
     (tmp_path / "run-resolve").mkdir()
+    (tmp_path / "run-resolve" / "stub-resolv.conf").write_text(STUB_RESOLV)
+    monkeypatch.setattr(dnscheck, "_stub_answers", lambda: True)
+    monkeypatch.setattr(dnscheck, "_stub_listener_setting", lambda: "yes")  # what systemd-resolved says about its stub listener
     monkeypatch.setattr(dnscheck, "RESOLVED_RUN_DIR", tmp_path / "run-resolve")
+    monkeypatch.setattr(dnscheck, "SYS_CLASS_NET", tmp_path / "sys-class-net")  # empty: every link counts as a possible tunnel
     monkeypatch.setattr(dnscheck, "nss_resolve_installed", lambda: False)
+    monkeypatch.setattr(dnscheck, "openvpn3_present", lambda: True)
 
     calls: list[list[str]] = []
     answers: dict[str, object] = {
@@ -624,3 +629,373 @@ def test_runs_by_path_in_isolated_mode():
     proc = subprocess.run([sys.executable, "-I", dnscheck.__file__, "--help"], capture_output=True, text=True, check=False)
     assert proc.returncode == 0, proc.stderr
     assert "Exit status: 0 OK, 1 FAIL, 3 WARN, 2 bad usage" in proc.stdout
+
+
+# --- hosts without openvpn3 (the OpenVPN 2 backend) and without the stub listener: Amazon Linux 2023 ----------------
+
+AL2023_UPLINK = ResolvConf(owner="systemd-resolved uplink file (lists upstream servers, skips per-link routing)", nameservers=["10.0.0.2"], symlink=True)
+AL2023_HOSTS_LINE = "files dns myhostname"
+
+
+def _decide_al2023(**overrides) -> dnscheck.Report:
+    """An EC2 Amazon Linux 2023 host: resolv.conf is resolved's uplink file, the stub listener is off, libnss_resolve is
+    installed but not on the hosts: line, and openvpn3 doesn't exist — the VPN is OpenVPN 2, which leaves DNS alone."""
+    kwargs: dict = {"resolv": AL2023_UPLINK, "hosts_line": AL2023_HOSTS_LINE, "nss_resolve": True, "links": {}, "tunnel_dns": False, "stub": False}
+    return dnscheck.decide(**{**kwargs, **overrides})
+
+
+def test_without_tunnel_dns_the_resolver_setup_is_fine_as_it_is():
+    report = _decide_al2023()
+    assert report.verdict == OK
+    assert "leaves DNS alone" in report.reason
+    # Nothing is wrong with this host's resolver, and "fixing" it is how a machine reached only over the network is lost.
+    assert report.fix == []
+    assert ("vpn dns", "left alone: no openvpn3 on this host, and the OpenVPN 2 backend doesn't touch DNS") in report.facts
+    assert not any(label == "netcfg" for label, _ in report.facts)
+
+
+@pytest.mark.parametrize(
+    ("nss", "pins", "verdict", "phrase"),
+    [
+        (Lookup(["10.0.90.233"]), [], OK, "a private address"),
+        (Lookup(["10.0.54.66", "10.0.68.74", "10.0.94.49"]), [], OK, "Programs get 10.0.54.66"),
+        (Lookup(["fd00::12"]), [], OK, "a private address"),
+        (Lookup(["198.51.100.7"]), [], WARN, "not a private address"),
+        (Lookup(["10.0.12.34", "198.51.100.7"]), [], WARN, "Programs get 198.51.100.7"),
+        (Lookup(["127.0.0.1"]), [], FAIL, "connect to this machine"),  # loopback is this machine, not the private network
+        (Lookup(["0.0.0.0"]), [], FAIL, "filtered the private answer"),
+        (Lookup(["0.0.0.0"]), ["0.0.0.0"], FAIL, "/etc/hosts pins it there"),
+        (Lookup(error="no answer (not found, or the resolver in /etc/resolv.conf didn't respond)"), [], FAIL, "Programs can't resolve"),
+        (Lookup(["10.0.12.34"]), ["10.0.12.34"], WARN, "because /etc/hosts pins it"),
+    ],
+)
+def test_without_tunnel_dns_a_host_is_judged_by_what_programs_get(nss, pins, verdict, phrase):
+    for connected in (False, True):  # DNS doesn't depend on the tunnel on such a host, so neither does the verdict
+        report = _decide_al2023(host=MEMORYDB, nss=nss, pins=pins, connected=connected)
+        assert report.verdict == verdict
+        assert phrase in report.reason
+        assert report.fix == []
+        assert "push a DNS domain" not in report.reason
+
+
+def test_without_tunnel_dns_an_ip_literal_needs_no_lookup():
+    report = _decide_al2023(host="10.0.90.233")
+    assert report.verdict == OK and "IP address" in report.reason
+
+
+def test_no_stub_listener_never_gets_the_stub_symlink_fix():
+    # openvpn3 on a host whose systemd-resolved has DNSStubListener=no: the usual first fix would kill DNS there.
+    report = _decide(resolv=AL2023_UPLINK, hosts_line=AL2023_HOSTS_LINE, nss_resolve=True)
+    assert "stub-resolv.conf" in _fix_text(report)  # the default (stub available) still offers it
+    report = dnscheck.decide(resolv=AL2023_UPLINK, hosts_line=AL2023_HOSTS_LINE, nss_resolve=True, links=TUN_LINKS, stub=False)
+    assert report.verdict == WARN
+    fix = _fix_text(report)
+    assert "sudo ln -sfn" not in fix and "do NOT point /etc/resolv.conf at stub-resolv.conf" in fix
+    assert 'add "resolve [!UNAVAIL=return]" before "dns" on the hosts: line of /etc/nsswitch.conf' in fix
+    assert "apt install" not in fix  # the library is there; only the nsswitch entry is missing
+
+
+def test_nss_resolve_advice_depends_on_whether_the_library_is_installed():
+    missing = _fix_text(_decide(nss_resolve=False))
+    assert "sudo apt install libnss-resolve" in missing and "Fedora, RHEL and Amazon Linux ship the library with systemd" in missing
+    present = _fix_text(_decide(nss_resolve=True))
+    assert "apt install" not in present and "libnss_resolve is already installed" in present
+
+
+def test_resolv_conf_naming_a_stub_that_does_not_listen_does_not_count():
+    report = dnscheck.decide(resolv=STUB, hosts_line=HOSTS_LINE, nss_resolve=False, links=TUN_LINKS, stub=False)
+    assert report.verdict == WARN
+    assert any("stub listener is off" in value for _, value in report.facts)
+
+
+def test_stub_listener_detection(tmp_path, monkeypatch):
+    monkeypatch.setattr(dnscheck, "RESOLVED_RUN_DIR", tmp_path)
+    probes: list[bool] = []
+    asked: list[bool] = []
+    state: dict = {"setting": None, "answers": True}
+
+    def probe() -> bool:
+        probes.append(True)
+        return state["answers"]
+
+    def setting():
+        asked.append(True)
+        return state["setting"]
+
+    monkeypatch.setattr(dnscheck, "_stub_answers", probe)
+    monkeypatch.setattr(dnscheck, "_stub_listener_setting", setting)
+    assert dnscheck.stub_listener_available() is False and not probes and not asked  # no systemd-resolved runtime dir: nothing to ask
+    (tmp_path / "stub-resolv.conf").write_text(STUB_RESOLV)
+    # A systemd that can't say (too old for the property, no bus): only a DNS question to the stub tells.
+    assert dnscheck.stub_listener_available() is True and probes
+    state["answers"] = False
+    assert dnscheck.stub_listener_available() is False
+    # systemd-resolved's own word beats the probe both ways: an unanswered probe also happens to a check run in a network
+    # sandbox, or while the daemon restarts, on a host whose stub is fine - and must not be reported as DNSStubListener=no.
+    probes.clear()
+    for word, expected in (("yes", True), ("udp", True), ("tcp", False), ("no", False)):
+        state["setting"] = word
+        assert dnscheck.stub_listener_available() is expected, word
+    assert not probes
+    asked.clear()
+    # DNSStubListener=no on a recent systemd: stub-resolv.conf is a pointer to the uplink file, and that settles it.
+    (tmp_path / "stub-resolv.conf").write_text("# managed by man:systemd-resolved(8)\nnameserver 10.0.0.2\nsearch ap-southeast-2.compute.internal\n")
+    assert dnscheck.stub_listener_available() is False and not probes and not asked
+
+
+@pytest.mark.parametrize(
+    ("answer", "setting"),
+    [
+        ((0, 's "yes"\n', ""), "yes"),
+        ((0, 's "no"\n', ""), "no"),
+        ((0, 's "udp"\n', ""), "udp"),
+        ((0, 's "maybe"\n', ""), None),
+        ((0, "b true\n", ""), None),
+        ((1, "", "Failed to get property DNSStubListener on interface org.freedesktop.resolve1.Manager: Unknown interface or property.\n"), None),
+        (FileNotFoundError(2, "No such file or directory: 'busctl'"), None),
+        (subprocess.TimeoutExpired(["busctl"], 5), None),
+    ],
+)
+def test_the_stub_listener_setting_is_read_from_systemd_resolved(monkeypatch, answer, setting):
+    seen: list[list[str]] = []
+
+    def run(argv):
+        seen.append(argv)
+        if isinstance(answer, BaseException):
+            raise answer
+        return subprocess.CompletedProcess(argv, *answer)
+
+    monkeypatch.setattr(dnscheck, "_run", run)
+    assert dnscheck._stub_listener_setting() == setting
+    assert seen == [["busctl", "get-property", "org.freedesktop.resolve1", "/org/freedesktop/resolve1", "org.freedesktop.resolve1.Manager", "DNSStubListener"]]
+
+
+def test_an_unanswered_probe_on_a_host_whose_stub_is_on_changes_nothing(fake_host, monkeypatch):
+    # The openvpn3 workstation case: resolv.conf is the stub, resolved says its listener is on, and the check happens to
+    # run where 127.0.0.53 does not answer it. The verdict is what it was before the probe existed.
+    files, _, _ = fake_host
+    files["RESOLV_CONF"].write_text(STUB_RESOLV)
+    monkeypatch.setattr(dnscheck, "_stub_answers", lambda: False)
+    report = dnscheck.check(None)
+    assert report.verdict == OK and "stub listener is off" not in dnscheck.render(report)
+
+
+def test_stub_probe_treats_no_listener_as_no_answer(monkeypatch):
+    class Refusing:
+        def __init__(self, *a):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def settimeout(self, t):
+            pass
+
+        def sendto(self, data, addr):
+            assert addr == ("127.0.0.53", 53) and data[12:22] == b"\x09localhost"
+
+        def recv(self, n):
+            raise ConnectionRefusedError(111, "Connection refused")
+
+    monkeypatch.setattr(dnscheck.socket, "socket", Refusing)
+    assert dnscheck._stub_answers() is False
+
+
+def test_stub_probe_needs_a_dns_sized_reply(monkeypatch):
+    class Answering:
+        reply = b""
+
+        def __init__(self, *a):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def settimeout(self, t):
+            pass
+
+        def sendto(self, data, addr):
+            pass
+
+        def recv(self, n):
+            return self.reply
+
+    monkeypatch.setattr(dnscheck.socket, "socket", Answering)
+    Answering.reply = bytes(12)
+    assert dnscheck._stub_answers() is True
+    Answering.reply = b"x"
+    assert dnscheck._stub_answers() is False
+
+
+@pytest.mark.parametrize(
+    "stub_file, setting, answers",
+    [("nameserver 10.0.0.2\n", "yes", True), (STUB_RESOLV, "no", True), (STUB_RESOLV, None, False)],
+)
+def test_check_never_prints_the_stub_fix_on_an_openvpn3_host_without_the_listener(fake_host, tmp_path, monkeypatch, stub_file, setting, answers):
+    # openvpn3 on a host whose systemd-resolved has DNSStubListener=no (built from source on Amazon Linux): the stub
+    # file points at the uplink server; or it still names 127.0.0.53 and resolved says the listener is off; or resolved
+    # is too old to say and nothing answers there.
+    (tmp_path / "run-resolve" / "stub-resolv.conf").write_text(stub_file)
+    monkeypatch.setattr(dnscheck, "_stub_listener_setting", lambda: setting)
+    monkeypatch.setattr(dnscheck, "_stub_answers", lambda: answers)
+    rendered = dnscheck.render(dnscheck.check(None))
+    assert "ln -sfn" not in rendered and "do NOT point /etc/resolv.conf at stub-resolv.conf" in rendered
+    assert "resolve [!UNAVAIL=return]" in rendered
+
+
+def test_openvpn3_presence(tmp_path, monkeypatch):
+    monkeypatch.setattr(dnscheck, "NETCFG_JSON", tmp_path / "openvpn3" / "netcfg.json")
+    monkeypatch.setattr(dnscheck.shutil, "which", lambda name: None)
+    assert dnscheck.openvpn3_present() is False
+    (tmp_path / "openvpn3").mkdir()
+    assert dnscheck.openvpn3_present() is True  # installed but netcfg not initialised yet: still the openvpn3 path
+    monkeypatch.setattr(dnscheck, "NETCFG_JSON", tmp_path / "missing" / "netcfg.json")
+    monkeypatch.setattr(dnscheck.shutil, "which", lambda name: "/usr/bin/openvpn3")
+    assert dnscheck.openvpn3_present() is True
+
+
+@pytest.fixture
+def al2023_host(fake_host, tmp_path, monkeypatch):
+    files, calls, answers = fake_host
+    files["RESOLV_CONF"].write_text("# managed by man:systemd-resolved(8)\nnameserver 10.0.0.2\nsearch ap-southeast-2.compute.internal\n")
+    files["NSSWITCH_CONF"].write_text(f"hosts:      {AL2023_HOSTS_LINE}\n")
+    (tmp_path / "run-resolve" / "stub-resolv.conf").write_text("nameserver 10.0.0.2\n")
+    monkeypatch.setattr(dnscheck, "nss_resolve_installed", lambda: True)
+    monkeypatch.setattr(dnscheck, "openvpn3_present", lambda: False)
+    answers["resolvectl domain"] = (0, "Global:\nLink 2 (ens5): ap-southeast-2.compute.internal\nLink 3 (docker0):\n", "")
+    answers["getent ahosts"] = (0, f"10.0.90.233 STREAM {MEMORYDB}\n10.0.90.233 DGRAM\n", "")
+    answers["ip -j"] = (0, '[{"dst":"10.0.90.233","dev":"ovod9164172ef5","prefsrc":"10.1.0.3","flags":[],"uid":1000,"cache":[]}]', "")
+    return files, calls, answers
+
+
+def test_check_on_a_host_without_openvpn3_asks_only_what_programs_get(al2023_host):
+    _, calls, _ = al2023_host
+    for connected in (False, True):
+        calls.clear()
+        report = dnscheck.check(MEMORYDB, connected=connected)
+        assert report.verdict == OK and "10.0.90.233" in report.reason and report.fix == []
+        # No resolvectl query: systemd-resolved holds nothing about this tunnel to compare with.
+        assert ["getent", "ahosts", MEMORYDB] in calls and not any(call[:2] == ["resolvectl", "query"] for call in calls)
+
+
+def test_private_answer_inside_the_hosts_own_network_fails_once_connected(al2023_host, tmp_path):
+    # The VPN routes 10.0.0.0/16 and the host itself sits in 10.0.0.0/24: an endpoint at 10.0.0.77 resolves fine, is
+    # private, and is still not behind the tunnel — the host's own subnet stays local.
+    _, calls, answers = al2023_host
+    (tmp_path / "sys-class-net" / "ens5" / "device").mkdir(parents=True)
+    answers["getent ahosts"] = (0, f"10.0.0.77 STREAM {MEMORYDB}\n", "")
+    answers["ip -j"] = (0, '[{"dst":"10.0.0.77","dev":"ens5","prefsrc":"10.0.0.66"}]', "")
+    report = dnscheck.check(MEMORYDB, connected=True)
+    assert report.verdict == FAIL and "directly on ens5" in report.reason and report.fix == []
+    assert ("  route", "10.0.0.77 -> ens5 (not a tunnel)") in report.facts
+    # Without a tunnel known to be up there is nothing to conclude from the route, and none is looked up.
+    calls.clear()
+    assert dnscheck.check(MEMORYDB).verdict == OK and not any(call[0] == "ip" for call in calls)
+
+
+@pytest.mark.parametrize("answer", [(2, "", "RTNETLINK answers: Network is unreachable"), (0, "not json", ""), (0, "[]", ""), FileNotFoundError(2, "No such file")])
+def test_route_lookup_that_cannot_be_read_does_not_change_the_verdict(al2023_host, answer):
+    _, _, answers = al2023_host
+    answers["ip -j"] = answer
+    assert dnscheck.check(MEMORYDB, connected=True).verdict == OK
+
+
+def test_check_on_a_host_without_openvpn3_and_without_a_hostname_is_ok_and_fixless(al2023_host):
+    _, calls, _ = al2023_host
+    report = dnscheck.check(None)
+    assert report.verdict == OK and report.fix == []
+    assert not any(call[0] == "getent" for call in calls)
+    rendered = dnscheck.render(report)
+    assert "sudo" not in rendered and "stub-resolv.conf" not in rendered
+
+
+def test_check_without_openvpn3_works_where_systemd_resolved_is_absent(al2023_host):
+    _, _, answers = al2023_host
+    answers["resolvectl domain"] = FileNotFoundError(2, "No such file or directory")
+    assert dnscheck.check(MEMORYDB).verdict == OK
+
+
+def test_backend_named_by_the_caller_beats_what_is_installed(al2023_host, monkeypatch):
+    # A host with both clients whose tunnel runs on OpenVPN 2 (OPENVPN3_OD_BACKEND=openvpn2): openvpn3 on disk must not
+    # send the check down the systemd-resolved path, with its "the VPN has to push a DNS domain" and resolv.conf fix.
+    monkeypatch.setattr(dnscheck, "openvpn3_present", lambda: True)
+    report = dnscheck.check(MEMORYDB, connected=True, backend="openvpn2")
+    assert report.verdict == OK and "a private address" in report.reason and report.fix == []
+    # ... and the other way round: told openvpn3, a host without it installed is still judged the openvpn3 way.
+    monkeypatch.setattr(dnscheck, "openvpn3_present", lambda: False)
+    assert any(label == "netcfg" for label, _ in dnscheck.check(None, backend="openvpn3").facts)
+
+
+def test_main_passes_the_backend_on_only_when_given(monkeypatch):
+    seen: list[dict] = []
+
+    def fake_check(host, connected=False, **kwargs):
+        seen.append({"host": host, "connected": connected, **kwargs})
+        return dnscheck.Report([("k", "v")], OK, "fine")
+
+    monkeypatch.setattr(dnscheck, "check", fake_check)
+    assert dnscheck.main(["--connected", "--backend", "openvpn2", MEMORYDB]) == 0
+    assert dnscheck.main([MEMORYDB]) == 0
+    assert seen == [{"host": MEMORYDB, "connected": True, "backend": "openvpn2"}, {"host": MEMORYDB, "connected": False}]
+
+
+def test_main_rejects_an_unknown_backend_without_echoing_it(capsys):
+    with pytest.raises(SystemExit) as excinfo:
+        dnscheck.main(["--backend", "wireguard-secret-thing", MEMORYDB])
+    assert excinfo.value.code == 2 and "wireguard-secret-thing" not in capsys.readouterr().err
+
+
+def test_a_name_under_a_network_cards_own_dns_domain_is_checked_as_before(fake_host, tmp_path):
+    # openvpn3 hosts keep the check they had: a link's DNS domain covers the name, so both lookups run and are compared,
+    # whatever kind of link it is. (Filtering hardware links out turned an OK into a WARN there.)
+    _, calls, answers = fake_host
+    (tmp_path / "sys-class-net" / "wlp2s0" / "device").mkdir(parents=True)
+    answers["resolvectl domain"] = (0, "Global:\nLink 2 (wlp2s0): lan corp.example\nLink 7 (tun0): amazonaws.com\n", "")
+    answers["resolvectl query"] = (0, "db.corp.example: 10.20.0.5 -- link: wlp2s0\n", "")
+    answers["getent ahosts"] = (0, "10.20.0.5 STREAM db.corp.example\n10.20.0.5 DGRAM\n", "")
+    report = dnscheck.check("db.corp.example")
+    rendered = dnscheck.render(report)
+    assert "wlp2s0: lan corp.example" in rendered
+    assert [call[0] for call in calls if call[0] in ("resolvectl", "getent")] == ["resolvectl", "resolvectl", "getent"]
+    assert "systemd-resolved agree on db.corp.example (10.20.0.5)" in rendered
+
+
+def test_python_3_9_syntax():
+    # The skills run this file with the system python3, which is 3.9 on Amazon Linux 2023.
+    ast.parse(Path(dnscheck.__file__).read_text(), feature_version=(3, 9))
+
+
+def test_runs_under_a_real_python_3_9():
+    # A syntax check doesn't notice a 3.10-only call; where a 3.9 interpreter exists, run the file with it.
+    import shutil
+
+    python = next(
+        (
+            c
+            for c in ("/usr/bin/python3", shutil.which("python3.9") or "")
+            if c and Path(c).exists() and subprocess.run([c, "-c", "import sys; sys.exit(sys.version_info[:2] != (3, 9))"], check=False).returncode == 0
+        ),
+        None,
+    )
+    if python is None:
+        pytest.skip("no Python 3.9 on this machine")
+    script = (
+        "import importlib.util, sys\n"
+        "spec = importlib.util.spec_from_file_location('d', sys.argv[1]); d = importlib.util.module_from_spec(spec); sys.modules['d'] = d; spec.loader.exec_module(d)\n"
+        "base = dict(resolv=d.ResolvConf(owner='tailscale', nameservers=['100.100.100.100'], symlink=False), hosts_line='files dns', nss_resolve=False,"
+        " links={'tun0': ['amazonaws.com']})\n"
+        "private = dict(tunnel_dns=False, host='db.example', nss=d.Lookup(['10.0.0.9']))\n"
+        "for extra in ({}, dict(stub=False, nss_resolve=True), dict(tunnel_dns=False), dict(private, direct=[('10.0.0.9', 'ens5')])):\n"
+        "    report = d.decide(**dict(base, **extra))\n"
+        "    print(report.verdict, len(d.render(report)))\n"
+    )
+    proc = subprocess.run([python, "-I", "-c", script, dnscheck.__file__], capture_output=True, text=True, check=False)
+    assert proc.returncode == 0, proc.stderr
+    assert [line.split()[0] for line in proc.stdout.splitlines()] == ["WARN", "WARN", "OK", "FAIL"]
+    assert subprocess.run([python, "-I", dnscheck.__file__, "--help"], capture_output=True, check=False).returncode == 0

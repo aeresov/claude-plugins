@@ -36,13 +36,13 @@ After installation, start a new chat or restart the client if the skills have no
 
 Both clients intentionally read the same gitignored `.claude/*.local.md` project settings. Plugin helpers are resolved relative to the installed skill instead of relying on Claude shell variables. MySQL credentials use unique temporary files; ephemeral VPN profiles use a client task identifier or a generated UUID. Normal completion cleans up the exact files/profile owned by the workflow; interruption can leave files or a tunnel for manual cleanup.
 
-These plugins need local execution. MySQL needs the `mysql` client; pytest-httpchain needs the package in the consuming project's test environment; OpenVPN additionally needs Linux, OpenVPN3 and D-Bus on the execution host. Installation does not supply host packages or a cloud network route to your VPN. See each plugin's README for prerequisites and boundaries.
+These plugins need local execution. MySQL needs the `mysql` client; pytest-httpchain needs the package in the consuming project's test environment; OpenVPN additionally needs Linux and a VPN client on the execution host: openvpn3-linux with D-Bus, or the distribution's OpenVPN 2.6 where openvpn3 isn't packaged (Amazon Linux 2023). Installation does not supply host packages or a cloud network route to your VPN. See each plugin's README for prerequisites and boundaries.
 
 ## Plugins
 
 | Plugin | Description |
 |--------|-------------|
-| [`openvpn3-on-demand`](plugins/openvpn3-on-demand/) | Provides MCP tools to bring an OpenVPN3 tunnel up/down on demand. |
+| [`openvpn3-on-demand`](plugins/openvpn3-on-demand/) | Provides MCP tools to bring an OpenVPN tunnel up/down on demand (openvpn3-linux, or OpenVPN 2 on hosts without it). |
 | [`mysql-client`](plugins/mysql-client/) | Read-only-first use of the `mysql` CLI for MySQL/MariaDB investigation, plus a `mysql-investigator` subagent. |
 | [`pytest-httpchain`](plugins/pytest-httpchain/) | Author and validate pytest-httpchain JSON HTTP-API test scenarios; ships the authoring skill, an `httpchain-author` subagent, and `/setup` + `/doctor`. |
 | [`gitlab-client`](plugins/gitlab-client/) | **Deprecated, no longer maintained.** Drive an on-prem GitLab 15.x (repos, merge requests, CI/CD) through a bundled REST client; allow-listed writes, a `pipeline-debugger` subagent, `/setup` + `/doctor`. |
@@ -61,7 +61,7 @@ plugins/<name>/
   scripts/ or servers/            Shared implementation, where needed
 ```
 
-OpenVPN ships `.mcp.json` for Claude and portable `mcp.json` for Codex; both launch the same server. Its launcher retains the system Python / D-Bus bootstrap. Claude registers named agents; Codex can delegate the shared procedures through its available subagents, or follow them inline.
+OpenVPN ships `.mcp.json` for Claude and portable `mcp.json` for Codex; both launch the same server. Its launcher retains the system Python / D-Bus bootstrap, and falls back to a uv-managed Python where the system one is too old. Claude registers named agents; Codex can delegate the shared procedures through its available subagents, or follow them inline.
 
 Keep `name`, `description` and `version` synchronized in both catalogs and both manifests for each maintained plugin. `scripts/check-version-sync.sh` checks those fields, Python project versions, onboarding skills, reference paths and MCP launch parity. CI also runs the checker regression tests and each Python project's `make check`.
 

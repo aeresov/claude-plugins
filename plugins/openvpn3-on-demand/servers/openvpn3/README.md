@@ -1,6 +1,6 @@
 # openvpn3-mcp
 
-MCP server for `openvpn3-linux`. Talks to its D-Bus services (`net.openvpn.v3.configuration`, `net.openvpn.v3.sessions`) via the `openvpn3` Python module — no CLI shell-out. Ships as part of the `openvpn3-on-demand` Claude Code and Codex plugin; not published to PyPI.
+MCP server that brings a VPN tunnel up and down. On hosts with `openvpn3-linux` it talks to its D-Bus services (`net.openvpn.v3.configuration`, `net.openvpn.v3.sessions`) via the `openvpn3` Python module — no CLI shell-out. On hosts without it (Amazon Linux 2023) it runs the distribution's OpenVPN 2.6 in a transient systemd unit, through the root-side helper `src/openvpn3_mcp/ovpn2_helper.py`. Ships as part of the `openvpn3-on-demand` Claude Code and Codex plugin; not published to PyPI.
 
 Launched by Claude's `.mcp.json` or Codex's portable `mcp.json` via the same `scripts/launch.sh`. The Claude wiring is:
 
@@ -15,7 +15,7 @@ Launched by Claude's `.mcp.json` or Codex's portable `mcp.json` via the same `sc
 }
 ```
 
-Codex uses `${PLUGIN_ROOT}` in its portable configuration instead of `${CLAUDE_PLUGIN_ROOT}`. The launcher is identical and keeps its system-Python/D-Bus bootstrap.
+Codex uses `${PLUGIN_ROOT}` in its portable configuration instead of `${CLAUDE_PLUGIN_ROOT}`. The launcher is identical: it builds the venv on the system Python (for D-Bus and the `openvpn3` module), or on a uv-managed Python where the system one is older than 3.10.
 
 Tools: `vpn_status`, `vpn_connect` (BYO), `vpn_connect_ephemeral` (provision-and-connect), `vpn_disconnect`. See the plugin's top-level README for semantics.
 
@@ -29,6 +29,8 @@ uv venv --python /usr/bin/python3 --system-site-packages
 uv sync
 uv run openvpn3-mcp            # stdio server, expects an MCP client
 ```
+
+Where `/usr/bin/python3` is older than 3.10 use `uv venv --python 3.12` instead; that venv serves the OpenVPN 2 backend only. `scripts/launch.sh` makes this choice by itself.
 
 ## License
 

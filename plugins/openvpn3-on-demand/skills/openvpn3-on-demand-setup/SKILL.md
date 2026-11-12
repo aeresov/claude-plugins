@@ -14,7 +14,7 @@ First read `<plugin-root>/setup-checklist.md` (checks 1–9 and their remediatio
 ## Flow
 
 ### 1. Host prerequisites
-Run checks 1–4. If any fails, print its remediation and **stop**; tell the user to re-run `openvpn3-on-demand-setup` after fixing. Check 4 (netcfg) is instruct-only: show the `sudo` lines, don't run them.
+Run checks 1–4. Check 1 decides the backend (openvpn3, else OpenVPN 2); for the openvpn2 variants of checks 2 and 4 run exactly `python3 "<plugin-root>/servers/openvpn3/src/openvpn3_mcp/ovpn2_helper.py" probe` once and read its JSON. If any fails, print its remediation and **stop**; tell the user to re-run `openvpn3-on-demand-setup` after fixing. Remediations are instruct-only: show the `sudo` lines, don't run them.
 
 Then run check 9 without a hostname — exactly `python3 "<plugin-root>/servers/openvpn3/src/openvpn3_mcp/dnscheck.py"`. On WARN or FAIL print its output but **don't stop**; its root-only fix goes in the summary.
 
@@ -23,12 +23,12 @@ Run check 5. If the file exists, Read it, show its frontmatter, and ask the user
 
 ### 3. Pick the mode
 Ask the user — "Which mode should this project use?":
-- **BYO** — "You import and maintain an openvpn3 config; the plugin starts/stops its sessions and writes its connect overrides (`dns-scope=tunnel` plus any `config_overrides`) into it, where they persist."
+- **BYO** — openvpn3: "You import and maintain an openvpn3 config; the plugin starts/stops its sessions and writes its connect overrides (`dns-scope=tunnel` plus any `config_overrides`) into it, where they persist." openvpn2: "You keep the profile at `/etc/openvpn/client/<name>.conf` (root-owned); the plugin starts/stops a tunnel from it and changes nothing in it."
 - **Ephemeral** — "A command prints the `.ovpn` body on stdout; the plugin makes a fresh single-use config from it each VPN-gated turn. Nothing to import."
 
 ### 4. Mode-specific question
 
-**BYO** → Ask for `profile_name` (the `--name` for `openvpn3 config-import`). Run check 7; if the name isn't listed, print check 7's remediation verbatim, noting it applies *after* this command writes the settings file. Don't import it yourself.
+**BYO** → Ask for `profile_name` (openvpn3: the `--name` for `openvpn3 config-import`; openvpn2: the file name under `/etc/openvpn/client/`, without `.conf`). Run check 7; if the name isn't listed (openvpn2: always, it can't be checked without root), print check 7's remediation verbatim, noting it applies *after* this command writes the settings file. Don't import it yourself.
 
 **Ephemeral** → Ask for `ovpn_provision_cmd`, showing these shapes:
 
@@ -45,7 +45,7 @@ Ask which optional fields to configure (default none):
 
 - `post_connect_cmd` — shell command run after a fresh `vpn_connect`. Non-fatal.
 - `post_disconnect_cmd` — shell command run after a fresh `vpn_disconnect` (not on `not_connected`). Non-fatal.
-- `config_overrides` — openvpn3 `config-manage` overrides set before each tunnel start (hyphenated: `dns-scope`, `persist-tun`, `log-level`, …) on top of the `dns-scope=tunnel` baseline; override only for fully tunnel-routed DNS or other tweaks. In BYO mode, tell the user the baseline and these values persist in their profile (also for their own `openvpn3 session-start`) and that removing a key needs `openvpn3 config-manage --config <profile_name> --unset-override <key>`. If chosen, ask for the map.
+- `config_overrides` — **openvpn3 only** (on the openvpn2 backend they are not applied; say so and don't offer it). openvpn3 `config-manage` overrides set before each tunnel start (hyphenated: `dns-scope`, `persist-tun`, `log-level`, …) on top of the `dns-scope=tunnel` baseline; override only for fully tunnel-routed DNS or other tweaks. In BYO mode, tell the user the baseline and these values persist in their profile (also for their own `openvpn3 session-start`) and that removing a key needs `openvpn3 config-manage --config <profile_name> --unset-override <key>`. If chosen, ask for the map.
 
 ### 6. Write `.claude/openvpn3-on-demand.local.md`
 Create the directory if needed. Use this template: the chosen mode's field uncommented, the other's commented out, each chosen optional uncommented with its value:
@@ -71,12 +71,12 @@ Which account this profile is for, how to rotate its credentials, who to ping wh
 ```
 
 ### 7. `.gitignore`
-Run check 8. If not covered, append `.claude/*.local.md` (create `.gitignore` if absent); if covered, say so and change nothing.
+Run check 8. If not covered and `.gitignore` has no such line, append `.claude/*.local.md` (create `.gitignore` if absent). If the line is already there, the file is tracked: print check 8's second FAIL text and change nothing. If covered, say so and change nothing.
 
 ### 8. Summary
 Print the path written, the mode, and what the user still owes:
-- BYO + profile not imported → the `config-import` line again.
-- Check 4 borderline / skipped → the netcfg note again.
+- BYO → openvpn3: the `config-import` line again if the profile isn't imported. openvpn2: the `sudo install … /etc/openvpn/client/<profile_name>.conf` line from check 7 (it could not be checked).
+- openvpn3 only: check 4 borderline / skipped → the netcfg note again.
 - Check 9 WARN / FAIL → its fix lines again, and say that until they're applied programs may not resolve private names even with the tunnel up.
 
 End with: "Done. No restart needed — the skill re-reads this file every turn. Run `openvpn3-on-demand-doctor` any time to re-check." Add that asking the assistant for something VPN-gated triggers the skill, that the assistant decides per operation, and that a line in the project's `AGENTS.md` / `CLAUDE.md` marking resources VPN-only covers what it can't recognise from the command (a host in a config file, another plugin's calls).
