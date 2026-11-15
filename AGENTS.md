@@ -4,17 +4,17 @@ Shared repository guidance for Claude Code and Codex. Read a plugin's `CLAUDE.md
 
 ## What this repo is
 
-A personal repository with Claude Code and Codex plugin **marketplaces**. The repo root holds `.claude-plugin/marketplace.json` for Claude and `.agents/plugins/marketplace.json` for Codex. Every plugin is self-contained under `plugins/<name>/`. Maintained plugins have a Claude `.claude-plugin/plugin.json` and a portable root `plugin.json` for Codex, sharing `skills/`, references, helpers and servers. GitLab is deprecated and remains Claude-only. **Read `plugins/<name>/CLAUDE.md` before working inside that plugin.**
+A personal repository with Claude Code and Codex plugin **marketplaces**. The repo root holds `.claude-plugin/marketplace.json` for Claude and `.agents/plugins/marketplace.json` for Codex. Every plugin is self-contained under `plugins/<name>/`. Every plugin has a Claude `.claude-plugin/plugin.json` and a portable root `plugin.json` for Codex, sharing `skills/`, references, helpers and servers. **Read `plugins/<name>/CLAUDE.md` before working inside that plugin.**
 
 Plugins:
 - [`openvpn-on-demand`](plugins/openvpn-on-demand/CLAUDE.md) — Provides MCP tools to bring an OpenVPN tunnel up/down on demand (openvpn3-linux, or OpenVPN 2 on hosts without it).
 - [`mysql-client`](plugins/mysql-client/CLAUDE.md) — Read-only-first use of the `mysql` CLI for MySQL/MariaDB investigation, plus a `mysql-investigator` subagent.
 - [`pytest-httpchain`](plugins/pytest-httpchain/CLAUDE.md) — Author and validate pytest-httpchain JSON HTTP-API test scenarios; ships the authoring skill, an `httpchain-author` subagent, and `/setup` + `/doctor`.
-- [`gitlab-client`](plugins/gitlab-client/CLAUDE.md) — **Deprecated; don't work on it.** Drive an on-prem GitLab 15.x (repos, merge requests, CI/CD) through a bundled REST client; allow-listed writes, a `pipeline-debugger` subagent, `/setup` + `/doctor`.
+- [`gitlab-client`](plugins/gitlab-client/CLAUDE.md) — Drive an on-prem GitLab 15.x (repos, merge requests, CI/CD) through a bundled REST client; allow-listed writes, a `pipeline-debugger` subagent, `/setup` + `/doctor`.
 
 ## Adding / changing a plugin
 
-For maintained plugins, update both manifests and both catalogs together. `name`, `description` and `version` must agree; the portable manifest also carries the license. Python project versions track their plugin, with lockfiles refreshed after a bump. `scripts/check-version-sync.sh` enforces those identities, onboarding/reference paths and the parity of MCP launch files.
+For every plugin, update both manifests and both catalogs together. `name`, `description` and `version` must agree; the portable manifest also carries the license. Python project versions track their plugin, with lockfiles refreshed after a bump. `scripts/check-version-sync.sh` enforces those identities, onboarding/reference paths and the parity of MCP launch files.
 
 Shared setup/doctor instructions live in `skills/<plugin-name>-setup/SKILL.md` and `skills/<plugin-name>-doctor/SKILL.md`. Claude's `commands/*.md` are thin wrappers retaining Claude-specific permissions. Shared multi-step procedures live beside the main skill in `references/`; Claude's `agents/*.md` wrap them, and Codex delegates them when available or runs them inline. Keep host-specific model/tool names out of shared procedures.
 

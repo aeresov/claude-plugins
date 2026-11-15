@@ -1,6 +1,6 @@
 # aeresov/claude-plugins
 
-Personal plugin marketplaces for Claude Code and Codex. The maintained plugins share their skills, references and implementation across both clients.
+Personal plugin marketplaces for Claude Code and Codex. The plugins share their skills, references and implementation across both clients.
 
 ## Claude Code
 
@@ -28,15 +28,16 @@ codex plugin list --available --marketplace aeresov-codex-plugins
 codex plugin add pytest-httpchain@aeresov-codex-plugins
 codex plugin add mysql-client@aeresov-codex-plugins
 codex plugin add openvpn-on-demand@aeresov-codex-plugins
+codex plugin add gitlab-client@aeresov-codex-plugins
 ```
 
-Or register the GitHub source with `codex plugin marketplace add aeresov/claude-plugins`. Codex uses `.agents/plugins/marketplace.json`; Claude uses `.claude-plugin/marketplace.json`. The Codex catalog includes only the three maintained plugins. GitLab remains available only in the existing Claude catalog.
+Or register the GitHub source with `codex plugin marketplace add aeresov/claude-plugins`. Codex uses `.agents/plugins/marketplace.json`; Claude uses `.claude-plugin/marketplace.json`. Both catalogs list the same four plugins.
 
-After installation, start a new chat or restart the client if the skills have not appeared. Invoke the skills with `$pytest-httpchain:pytest-httpchain`, `$mysql-client:mysql-client`, or `$openvpn-on-demand:vpn-on-demand`, or describe a matching task. Setup and health checks are `$<plugin-name>:<plugin-name>-setup` and `$<plugin-name>:<plugin-name>-doctor`, for example `$mysql-client:mysql-client-setup`. These are skill mentions, not shell commands. The existing Claude `/plugin-name:setup` and `/plugin-name:doctor` commands wrap those same workflows.
+After installation, start a new chat or restart the client if the skills have not appeared. Invoke the skills with `$pytest-httpchain:pytest-httpchain`, `$mysql-client:mysql-client`, `$openvpn-on-demand:vpn-on-demand`, or `$gitlab-client:gitlab-client`, or describe a matching task. Setup and health checks are `$<plugin-name>:<plugin-name>-setup` and `$<plugin-name>:<plugin-name>-doctor`, for example `$mysql-client:mysql-client-setup`. These are skill mentions, not shell commands. The existing Claude `/plugin-name:setup` and `/plugin-name:doctor` commands wrap those same workflows.
 
 Both clients intentionally read the same gitignored `.claude/*.local.md` project settings. Plugin helpers are resolved relative to the installed skill instead of relying on Claude shell variables. MySQL credentials use unique temporary files; ephemeral VPN profiles use a client task identifier or a generated UUID. Normal completion cleans up the exact files/profile owned by the workflow; interruption can leave files or a tunnel for manual cleanup.
 
-These plugins need local execution. MySQL needs the `mysql` client; pytest-httpchain needs the package in the consuming project's test environment; OpenVPN additionally needs Linux and a VPN client on the execution host: openvpn3-linux with D-Bus, or the distribution's OpenVPN 2.6 where openvpn3 isn't packaged (Amazon Linux 2023). Installation does not supply host packages or a cloud network route to your VPN. See each plugin's README for prerequisites and boundaries.
+These plugins need local execution. MySQL needs the `mysql` client; pytest-httpchain needs the package in the consuming project's test environment; OpenVPN additionally needs Linux and a VPN client on the execution host: openvpn3-linux with D-Bus, or the distribution's OpenVPN 2.6 where openvpn3 isn't packaged (Amazon Linux 2023). GitLab needs `python3` ≥ 3.9 (Amazon Linux 2023's default) and network access to the instance; git is optional. Installation does not supply host packages or a cloud network route to your VPN. See each plugin's README for prerequisites and boundaries.
 
 ## Plugins
 
@@ -45,13 +46,13 @@ These plugins need local execution. MySQL needs the `mysql` client; pytest-httpc
 | [`openvpn-on-demand`](plugins/openvpn-on-demand/) | Provides MCP tools to bring an OpenVPN tunnel up/down on demand (openvpn3-linux, or OpenVPN 2 on hosts without it). |
 | [`mysql-client`](plugins/mysql-client/) | Read-only-first use of the `mysql` CLI for MySQL/MariaDB investigation, plus a `mysql-investigator` subagent. |
 | [`pytest-httpchain`](plugins/pytest-httpchain/) | Author and validate pytest-httpchain JSON HTTP-API test scenarios; ships the authoring skill, an `httpchain-author` subagent, and `/setup` + `/doctor`. |
-| [`gitlab-client`](plugins/gitlab-client/) | **Deprecated, no longer maintained.** Drive an on-prem GitLab 15.x (repos, merge requests, CI/CD) through a bundled REST client; allow-listed writes, a `pipeline-debugger` subagent, `/setup` + `/doctor`. |
+| [`gitlab-client`](plugins/gitlab-client/) | Drive an on-prem GitLab 15.x (repos, merge requests, CI/CD) through a bundled REST client; allow-listed writes, a `pipeline-debugger` subagent, `/setup` + `/doctor`. |
 
 ## Repo layout
 
 ```text
-.claude-plugin/marketplace.json    Claude catalog (includes deprecated GitLab)
-.agents/plugins/marketplace.json   Codex catalog (maintained plugins only)
+.claude-plugin/marketplace.json    Claude catalog
+.agents/plugins/marketplace.json   Codex catalog
 plugins/<name>/
   .claude-plugin/plugin.json      Claude manifest
   plugin.json                     Portable manifest for Codex
@@ -63,7 +64,7 @@ plugins/<name>/
 
 OpenVPN ships `.mcp.json` for Claude and portable `mcp.json` for Codex; both launch the same server. Its launcher retains the system Python / D-Bus bootstrap, and falls back to a uv-managed Python where the system one is too old. Claude registers named agents; Codex can delegate the shared procedures through its available subagents, or follow them inline.
 
-Keep `name`, `description` and `version` synchronized in both catalogs and both manifests for each maintained plugin. `scripts/check-version-sync.sh` checks those fields, Python project versions, onboarding skills, reference paths and MCP launch parity. CI also runs the checker regression tests and each Python project's `make check`.
+Keep `name`, `description` and `version` synchronized in both catalogs and both manifests for each plugin. `scripts/check-version-sync.sh` checks those fields, Python project versions, onboarding skills, reference paths and MCP launch parity. CI also runs the checker regression tests and each Python project's `make check`.
 
 ## License
 

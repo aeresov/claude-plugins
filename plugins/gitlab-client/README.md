@@ -1,8 +1,6 @@
 # gitlab-client
 
-> **Deprecated.** This plugin is no longer maintained: no fixes or new features are planned. It still installs and works as of 0.1.2, but known issues stay open.
-
-A Claude Code plugin that makes Claude an effective, safe user of a self-managed GitLab 15.x — repositories, merge requests, and CI — through `gl`, a small bundled REST v4 client. Reads are free; a short allow-list of writes (MRs, comments, retry/cancel/play/trigger) is permitted with guardrails; merging, approving, deleting, and settings changes are refused outright, by code, not by convention.
+A Claude Code and Codex plugin that makes the assistant an effective, safe user of a self-managed GitLab 15.x — repositories, merge requests, and CI — through `gl`, a small bundled REST v4 client. Reads are free; a short allow-list of writes (MRs, comments, retry/cancel/play/trigger) is permitted with guardrails; merging, approving, deleting, and settings changes are refused outright, by code, not by convention.
 
 ## Quick start
 
@@ -15,15 +13,29 @@ A Claude Code plugin that makes Claude an effective, safe user of a self-managed
 
 Then ask Claude about an MR, a pipeline, or a file in a GitLab project — "what's failing on my branch", "show me the diff for MR 142", "reply to that review thread".
 
+## Codex
+
+Register this repository and install `gitlab-client`:
+
+```bash
+codex plugin marketplace add aeresov/claude-plugins
+codex plugin add gitlab-client@aeresov-codex-plugins
+```
+
+Use `$gitlab-client:gitlab-client-setup` and `$gitlab-client:gitlab-client-doctor` in a Codex prompt. The main skill is `$gitlab-client:gitlab-client`. Both clients use the same skills, the same `gl`, and the same settings files (`~/.claude/gitlab-client.local.md` and the project's `.claude/gitlab-client.local.md`). These workflows need local execution with the prerequisites below, and `gl` needs network access to your instance: in a sandboxed session, approve it.
+
+Claude registers the `pipeline-debugger` subagent described below. Codex reads the same procedure, delegates through its available subagents when possible, and otherwise follows it inline.
+
 ## Prerequisites
 
-- `python3` ≥ 3.10 on `PATH`. `gl` is pure stdlib — no venv, no pip installs.
+- `python3` ≥ 3.9 on `PATH` — Amazon Linux 2023's `/usr/bin/python3` works. `gl` is pure stdlib — no venv, no pip installs, no uv.
 - A GitLab personal access token: `read_api` covers every read (including job logs and artifacts); `api` is required for writes. `read_repository` alone is **not** enough — it covers git-over-HTTP, not the REST API.
+- git is optional. With it, `gl` derives the project from the `origin` remote; without it (bare Amazon Linux 2023), pass `--project` or pin `project:` in the project file, and run from the project root.
 - Nothing else.
 
 ## Settings
 
-Two Markdown-with-frontmatter files, three keys total. Never shown to Claude — `gl` reads them itself so the token never enters the transcript.
+Two Markdown-with-frontmatter files, three keys total. Never shown to the assistant — `gl` reads them itself so the token never enters the transcript.
 
 | Key | Where | Meaning |
 |---|---|---|
@@ -31,7 +43,7 @@ Two Markdown-with-frontmatter files, three keys total. Never shown to Claude —
 | `token_cmd` | user file only | Shell command whose stdout is the PAT — recorded verbatim |
 | `project` | project file only | `group/subgroup/name` — pins the project when the git remote doesn't map |
 
-- **User:** `~/.claude/gitlab-client.local.md` — written by `/gitlab-client:setup`; required.
+- **User:** `~/.claude/gitlab-client.local.md` — written by `gitlab-client-setup` (`/gitlab-client:setup` in Claude Code); required.
 - **Project:** `<repo>/.claude/gitlab-client.local.md` — optional. Must be gitignored; `setup` adds `.claude/*.local.md` to `.gitignore` when it writes one.
 
 Minimum user file:
@@ -49,20 +61,20 @@ Precedence, highest first: CLI flags (`--url`, `--project`) → environment (`GI
 
 A project file can only pin `project`. `gl` ignores `url` and `token_cmd` there, with a warning: a checkout must not decide where your token is sent or what command fetches it. For a repo on a second instance, export `GITLAB_CLIENT_URL` and `GITLAB_CLIENT_TOKEN` for that repo instead.
 
-## What Claude will and won't do
+## What the assistant will and won't do
 
 `gl` enforces a POST/PUT allow-list in code (`DELETE` isn't even parsed); anything off-list exits 3 before touching the network. On top of that, the skill splits the allowed writes by blast radius:
 
 | Class | Operations | Behaviour |
 |---|---|---|
-| **Refused** | merge, approve/unapprove, rebase, delete anything, erase job logs, repository writes (branches/tags/files — git does those locally), project/group/member/variable/hook/protected-branch settings, users, tokens, `sudo` | Claude names the operation and hands it back to you — no curl workarounds. |
-| **Confirmed first** | create MR, update MR (title/description/labels/reviewers/close/reopen), post a note, start a discussion, reply to a thread, resolve a thread | Claude shows the target, the exact text, and the command; sends only after an explicit yes. |
+| **Refused** | merge, approve/unapprove, rebase, delete anything, erase job logs, repository writes (branches/tags/files — git does those locally), project/group/member/variable/hook/protected-branch settings, users, tokens, `sudo` | The assistant names the operation and hands it back to you — no curl workarounds. |
+| **Confirmed first** | create MR, update MR (title/description/labels/reviewers/close/reopen), post a note, start a discussion, reply to a thread, resolve a thread | The assistant shows the target, the exact text, and the command; sends only after an explicit yes. |
 | **Go and report** | retry/cancel a job or pipeline, play a manual job, trigger a pipeline, keep artifacts | Runs it, then reports the new id, status, and `web_url`. |
 
 ## The `gl` CLI
 
-Lives at `scripts/gl` inside the installed plugin directory; Claude resolves it via `${CLAUDE_PLUGIN_ROOT}` and drives it
-via Bash. It's a perfectly usable CLI on its own too — for the snippets below, `alias gl='<plugin root>/scripts/gl'`:
+Lives at `scripts/gl` inside the installed plugin directory; the skill resolves it from its own directory and drives it
+through the shell. It's a perfectly usable CLI on its own too — for the snippets below, `alias gl='<plugin root>/scripts/gl'`:
 
 ```bash
 gl api GET|POST|PUT PATH [k=v | k:=json | k[]=v ...] [--all] [--max N] [--fields a,b.c] [--out FILE] [--json BODY]
@@ -80,7 +92,7 @@ Every subcommand takes `--url`, `--project`, `--remote`, `-q/--quiet`. Exit code
 
 ## Pipeline triage
 
-"Why is CI red?" dispatches the bundled [`pipeline-debugger`](agents/pipeline-debugger.md) subagent: a read-only investigator (`Bash`, `Read`, `Grep`, `Glob` — no write tools at the harness level) that walks the failed pipeline including child pipelines, reads the failing jobs' logs section by section, correlates with the MR diff when there is one, and returns a compact report — the decisive log excerpt, the probable cause, a suggested next step — instead of pages of logs.
+"Why is CI red?" runs the shared [pipeline-debugging procedure](skills/gitlab-client/references/pipeline-debugging.md) — in Claude Code as the bundled [`pipeline-debugger`](agents/pipeline-debugger.md) subagent (`Bash`, `Read`, `Grep`, `Glob` — no write tools at the harness level), in Codex delegated or inline: a read-only investigator that walks the failed pipeline including child pipelines, reads the failing jobs' logs section by section, correlates with the MR diff when there is one, and returns a compact report — the decisive log excerpt, the probable cause, a suggested next step — instead of pages of logs.
 
 ## Troubleshooting
 

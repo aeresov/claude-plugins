@@ -1,23 +1,25 @@
 # CLAUDE.md
 
-> **Deprecated — don't work on this plugin.** It is no longer maintained (last release 0.1.2). Don't fix issues, add features or apply review findings here unless the owner explicitly asks. It stays in the marketplace and CI still runs its `make check`, so a change elsewhere that breaks that gate is the only reason to touch it.
-
 Developer notes for working inside `gitlab-client`. User-facing docs: [`README.md`](README.md). Marketplace-wide conventions: repo-root `CLAUDE.md`.
+
+## Shared client support
+
+This plugin supports Claude Code and Codex. `plugin.json` is the portable Codex manifest; `.claude-plugin/plugin.json` is the Claude manifest. Both catalogs and both manifests must agree on name, description and version. Setup/doctor procedures live in the named skills; `commands/` contains Claude wrappers. Keep changes to the shared procedures in `skills/`, not in those wrappers.
 
 ## What this plugin is
 
-A bundle that makes Claude an effective, *safe* user of a self-managed GitLab 15.x — repos, merge requests, CI — through `gl`, a small bundled REST v4 client (pure stdlib, `python3` ≥ 3.10, no venv at runtime). Reads are free; POST/PUT is restricted to an allow-list (create/update MRs, comments, retry/cancel/play/trigger); merge, approve, delete, and settings changes are refused at the code level (exit 3). The plugin contributes the skill plus six references, a `pipeline-debugger` subagent, the `/gitlab-client:setup` and `/gitlab-client:doctor` commands, and the `scripts/gitlab-client/` uv project that implements `gl`.
+A bundle that makes the assistant an effective, *safe* user of a self-managed GitLab 15.x — repos, merge requests, CI — through `gl`, a small bundled REST v4 client (pure stdlib, `python3` ≥ 3.9 — bare Amazon Linux 2023's default — no venv at runtime). Reads are free; POST/PUT is restricted to an allow-list (create/update MRs, comments, retry/cancel/play/trigger); merge, approve, delete, and settings changes are refused at the code level (exit 3). The plugin contributes the skill plus seven references (one is the shared triage procedure), the `gitlab-client-setup` and `gitlab-client-doctor` skills (wrapped by the Claude commands `/gitlab-client:setup` and `/gitlab-client:doctor`), a `pipeline-debugger` subagent wrapper, and the `scripts/gitlab-client/` uv project that implements `gl`.
 
 ## Layout
 
-- `.claude-plugin/plugin.json` — manifest (name/description/version mirror the repo-root `marketplace.json` entry; `license` lives only there).
-- `CLAUDE.md` · `README.md` · `setup-checklist.md` — this file; user docs; the shared checklist (8 checks + remediation text) read by both commands so they can't drift. It lives at the plugin root so it isn't itself a slash command.
-- `commands/setup.md` · `commands/doctor.md` — `/gitlab-client:setup` (interactive configurator; runs the static checks it owns: 1, 2, 3, 8) and `/gitlab-client:doctor` (health check; reports all 8).
-- `agents/pipeline-debugger.md` — context-isolated failed-pipeline triage subagent; read-only, returns a short report.
+- `.claude-plugin/plugin.json` · `plugin.json` — Claude and portable (Codex) manifests. Name/description/version mirror both repo-root catalog entries; the portable one also carries the license and `onboardingSkill` (`gitlab-client-setup`).
+- `CLAUDE.md` · `README.md` · `setup-checklist.md` — this file; user docs; the shared checklist (8 checks + remediation text) read by both setup/doctor skills so they can't drift. It lives at the plugin root so it isn't itself a slash command.
+- `skills/gitlab-client-setup/SKILL.md` · `skills/gitlab-client-doctor/SKILL.md` — the shared setup (interactive configurator; runs the static checks it owns: 1, 2, 3, 8) and doctor (health check; reports all 8) procedures. `commands/setup.md` · `commands/doctor.md` are their Claude wrappers (`/gitlab-client:setup`, `/gitlab-client:doctor`) and keep the `allowed-tools`.
+- `agents/pipeline-debugger.md` — Claude wrapper around `skills/gitlab-client/references/pipeline-debugging.md` (failed-pipeline triage; read-only, returns a short report). Codex delegates that procedure through its available subagents or runs it inline.
 - `skills/gitlab-client/SKILL.md` — entry point. Owns the write-policy classes (refused / confirm / go-and-report), discovery (`gl version` once per turn), project resolution, context economy, and the inline-vs-dispatch rule.
-- `skills/gitlab-client/references/{local-settings,repo-browsing,merge-requests,pipelines,safety-perimeter,v15-compat}.md` — reference-style docs (purpose → command → gotcha), loaded on demand, each self-sufficient.
+- `skills/gitlab-client/references/{local-settings,repo-browsing,merge-requests,pipelines,safety-perimeter,v15-compat}.md` — reference-style docs (purpose → command → gotcha), loaded on demand, each self-sufficient; `pipeline-debugging.md` — the shared triage procedure.
 - `scripts/gl` — bash launcher; runs the package from source with `python3`, works from any cwd. Deliberately not `python3 -m`: it replaces `sys.path[0]` (which `-m` would set to the *current directory*) with the plugin's `src/`, so a checkout containing a decoy `gitlab_client/` can't hijack the CLI (`tests/test_launcher.py`).
-- `scripts/gitlab-client/pyproject.toml` · `uv.lock` · `Makefile` — uv project for `gl` (dev deps `pytest`, `ruff`, `ty`; zero runtime deps). The `Makefile` is identical across all three in-tree projects.
+- `scripts/gitlab-client/pyproject.toml` · `uv.lock` · `.python-version` · `Makefile` — uv project for `gl` (dev deps `pytest`, `ruff`, `ty`; zero runtime deps; the dev venv is pinned to 3.9). The `Makefile` is identical across all three in-tree projects.
 - `scripts/gitlab-client/src/gitlab_client/`:
   - `__init__.py` — `__version__`
   - `__main__.py` — `sys.exit(main())`
@@ -51,9 +53,10 @@ CI runs the validations and then this project's own `make check` (ruff, format, 
 - **`/repository/tree` is keyset-only** since 15.0 — `Client.paginate` switches automatically on that path; don't add `page=` there.
 - **Redirects and Link URLs never carry the token off-origin.** `AuthStrippingRedirectHandler` drops auth unless the target has the API's scheme *and* host (object-storage 302s, and an https→http downgrade behind a misconfigured proxy); `Client.same_origin` re-anchors every `Link: rel="next"` URL on our scheme + host before `paginate` follows it. Keep `stream_to` downloads going through `Client.request`.
 - **References target the 15.x series, verified on 15.2.5 CE.** The spec was researched against the archived 15.11 docs; `v15-compat.md` carries both the post-15.11 things not to add and the intra-15.x minimums (`/diffs` 15.7, `detailed_merge_status` 15.6, `/personal_access_tokens/self` 15.5 …). `diff.mr_diffs` falls back to `/changes` on a 404. When the instance is upgraded, re-verify Appendix A of the spec before editing the references.
-- **Subagent rules are duplicated, not linked.** `agents/pipeline-debugger.md` repeats the perimeter because subagents don't inherit skill context.
+- **Shared triage procedure.** Put changes in `skills/gitlab-client/references/pipeline-debugging.md`; the Claude wrapper and any Codex delegate must read it in their own context, because subagents don't inherit skill context.
+- **The Python 3.9 floor is load-bearing.** Bare Amazon Linux 2023's `python3` is 3.9 and `gl` runs on it without a venv. `.python-version` pins the dev venv (and CI's `uv sync`) to 3.9 so `make check` tests the floor; don't raise it, and don't use 3.10+ syntax or stdlib. pytest stays on 8.x until the floor moves (the lock forks: 8.4 on 3.9, 9.x above), and ty misreads pytest 8's decorated `skip()`/`fail()`, so such a call carries a targeted `# ty: ignore[...]`. Without git, `gl` can't find the repo root and reads the project file from the current directory; `resolve_project` says when git is missing.
 - **A project-level `.claude/gitlab-client.local.md` may only set `project`.** `settings.load_settings` drops `url` and `token_cmd` from it with a warning (`PROJECT_FILE_IGNORED`). A project `url` alone would send the user-level token to that host, and a project `token_cmd` would run inside `gl`, where Claude Code's per-command permission prompt can't see it. A repo on a second instance uses `GITLAB_CLIENT_URL` + `GITLAB_CLIENT_TOKEN` instead (`tests/test_settings.py::test_project_file_cannot_set_url_or_token_cmd`).
-- **Version bumps touch four files:** `.claude-plugin/plugin.json`, the repo-root `marketplace.json` entry, `scripts/gitlab-client/pyproject.toml`, `uv.lock` — plus `src/gitlab_client/__init__.py::__version__` (pinned to pyproject by `tests/test_version.py`).
+- **Version bumps:** both manifests (`.claude-plugin/plugin.json`, `plugin.json`), both catalog entries (`.claude-plugin/marketplace.json`, `.agents/plugins/marketplace.json`), `scripts/gitlab-client/pyproject.toml`, `uv.lock` — plus `src/gitlab_client/__init__.py::__version__` (pinned to pyproject by `tests/test_version.py`). `scripts/check-version-sync.sh` checks the metadata; `uv sync --locked` checks the lock.
 
 ## Verified against a live instance (2026-08-27, GitLab 15.2.5 CE)
 
