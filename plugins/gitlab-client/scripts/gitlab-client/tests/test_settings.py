@@ -82,7 +82,7 @@ def test_env_token_bypasses_token_cmd(tmp_path):
 
 
 def test_missing_url_and_token_cmd(tmp_path):
-    with pytest.raises(ConfigError, match="no GitLab URL configured.*gitlab-client:setup"):
+    with pytest.raises(ConfigError, match="no GitLab URL configured.*gitlab-client-setup"):
         load_settings(cwd=tmp_path, home=tmp_path, env={})
     with pytest.raises(ConfigError, match="no token_cmd configured"):
         load_settings(cwd=tmp_path, home=tmp_path, env={ENV_URL: "https://x"})

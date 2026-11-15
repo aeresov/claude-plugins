@@ -149,6 +149,17 @@ def test_project_command(run_gl, opener):
     assert json.loads(out) == {"id": 42, "path_with_namespace": "group/proj", "default_branch": "main", "web_url": "https://gitlab.example.com/group/proj", "resolved_from": "flag"}
 
 
+def test_project_file_is_read_from_cwd_without_git(run_gl, opener, tmp_path, monkeypatch):
+    # No git on the host (bare Amazon Linux 2023): there is no repo root to find, so the project file is read from cwd.
+    monkeypatch.setattr("gitlab_client.cli.git_toplevel", lambda cwd, *a, **k: None)
+    (tmp_path / ".claude").mkdir()
+    (tmp_path / ".claude" / "gitlab-client.local.md").write_text("---\nproject: group/proj\n---\n")
+    opener.add(200, PROJECT_JSON)
+    code, out, _ = run_gl("project", cwd=tmp_path)
+    assert code == 0
+    assert json.loads(out)["resolved_from"] == "settings" and json.loads(out)["path_with_namespace"] == "group/proj"
+
+
 def test_version_warns_on_non_15(run_gl, opener):
     opener.add(200, {"version": "15.11.13-ee", "revision": "abc", "enterprise": True})
     code, out, err = run_gl("version")

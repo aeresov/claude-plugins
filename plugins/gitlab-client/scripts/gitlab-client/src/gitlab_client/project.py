@@ -8,6 +8,7 @@ GET /projects/:path confirmation call is the check that the guess was right.
 from __future__ import annotations
 
 import re
+import shutil
 import subprocess
 import urllib.parse
 from collections.abc import Callable
@@ -90,12 +91,16 @@ class Project:
     resolved_from: str
 
 
-def resolve_project(client: Client, settings: Settings, *, remote: str, cwd: Path, run: Runner = subprocess.run) -> Project:
+def resolve_project(client: Client, settings: Settings, *, remote: str, cwd: Path, run: Runner = subprocess.run, which: Callable[[str], str | None] = shutil.which) -> Project:
     if settings.project:
         source = "flag" if settings.sources.get("project") == "flag" else "settings"
         path = parse_project_ref(settings.project, settings.url)  # a URL works in the settings file too
     else:
         remote_url = git_remote_url(cwd, remote, run)
+        if not remote_url and which("git") is None:  # bare hosts (Amazon Linux 2023) ship without git
+            raise ConfigError(
+                f"cannot resolve project: git isn't installed, so the {remote} remote can't be read — pass --project, or set project: in .claude/gitlab-client.local.md"
+            )
         if not remote_url:
             raise ConfigError(f"cannot resolve project: no --project, no project: in settings, and `git remote get-url {remote}` gave nothing")
         prefix = urllib.parse.urlsplit(settings.url).path

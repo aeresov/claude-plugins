@@ -114,7 +114,7 @@ def test_resolve_from_settings_file(client, opener, tmp_path):
 def test_resolve_errors(client, opener, tmp_path):
     s = base_settings()
     with pytest.raises(ConfigError, match="git remote get-url origin"):
-        resolve_project(client, s, remote="origin", cwd=tmp_path, run=git_run(""))
+        resolve_project(client, s, remote="origin", cwd=tmp_path, run=git_run(""), which=lambda name: "/usr/bin/git")
     with pytest.raises(ConfigError, match="doesn't look like a GitLab project path"):
         resolve_project(client, s, remote="origin", cwd=tmp_path, run=git_run("/srv/git/repo.git"))
     opener.add(404, {"message": "404 Project Not Found"})
@@ -123,3 +123,17 @@ def test_resolve_errors(client, opener, tmp_path):
     opener.add(500, b"boom")
     with pytest.raises(HttpError):
         resolve_project(client, s, remote="origin", cwd=tmp_path, run=git_run("git@h:group/proj.git"))
+
+
+def no_git(cmd, **kwargs):
+    raise FileNotFoundError("git")
+
+
+def test_resolve_project_says_when_git_is_missing(client, tmp_path):
+    with pytest.raises(ConfigError, match=r"git isn't installed, so the origin remote can't be read — pass --project"):
+        resolve_project(client, base_settings(), remote="origin", cwd=tmp_path, run=no_git, which=lambda name: None)
+
+
+def test_resolve_project_with_git_but_no_remote_keeps_its_message(client, tmp_path):
+    with pytest.raises(ConfigError, match="gave nothing"):
+        resolve_project(client, base_settings(), remote="origin", cwd=tmp_path, run=git_run(""), which=lambda name: "/usr/bin/git")

@@ -295,7 +295,7 @@ def build_parser() -> argparse.ArgumentParser:
     common.add_argument("--remote", default="origin", help="git remote to derive the project from (default: origin)")
     common.add_argument("-q", "--quiet", action="store_true", help="suppress warnings on stderr (errors still print)")
 
-    p = argparse.ArgumentParser(prog="gl", description="GitLab REST v4 client for the gitlab-client Claude Code plugin.")
+    p = argparse.ArgumentParser(prog="gl", description="GitLab REST v4 client for the gitlab-client plugin.")
     p.add_argument("--version", action="version", version=f"gl {__version__}")
     sub = p.add_subparsers(dest="command", metavar="{api,project,log,diff,artifacts,version}")
 

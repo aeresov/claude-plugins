@@ -118,14 +118,14 @@ def load_settings(
 
     url = merged.get("url")
     if not url:
-        raise ConfigError(f"no GitLab URL configured — run /gitlab-client:setup to create {user_path} (or set {ENV_URL})")
+        raise ConfigError(f"no GitLab URL configured — run gitlab-client-setup to create {user_path} (or set {ENV_URL})")
     if not url.startswith(("http://", "https://")):
         raise ConfigError(f"url must start with http:// or https:// (got {url!r}, from {sources['url']})")
 
     token = env.get(ENV_TOKEN) or None
     token_cmd = None if token else merged.get("token_cmd")
     if not token and not token_cmd:
-        raise ConfigError(f"no token_cmd configured in {user_path} — run /gitlab-client:setup (or set {ENV_TOKEN})")
+        raise ConfigError(f"no token_cmd configured in {user_path} — run gitlab-client-setup (or set {ENV_TOKEN})")
     return Settings(
         url=url.rstrip("/"),
         token_cmd=token_cmd,

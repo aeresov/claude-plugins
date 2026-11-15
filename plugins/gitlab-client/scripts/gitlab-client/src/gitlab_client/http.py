@@ -31,7 +31,7 @@ KEYSET_PATHS = re.compile(r"/repository/tree/?$")
 
 # Hints appended to error messages by status code (spec §8).
 _HINTS = {
-    401: " — token rejected; check token_cmd output and the token's expiry (/gitlab-client:doctor)",
+    401: " — token rejected; check token_cmd output and the token's expiry (gitlab-client-doctor)",
     403: (
         " — forbidden: if GitLab's message doesn't already say why, the usual causes are a role below Developer"
         " (retry/cancel/play/trigger; Reporter for logs), a protected branch, or a missing token scope"
