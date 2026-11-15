@@ -61,15 +61,16 @@ def git_run(remote_url, toplevel="/repo"):
     return run
 
 
+def no_git(cmd, **kwargs):
+    raise FileNotFoundError("git")
+
+
 def test_git_helpers(tmp_path):
     assert git_remote_url(tmp_path, "origin", run=git_run("git@h:g/p.git")) == "git@h:g/p.git"
     assert git_remote_url(tmp_path, "origin", run=git_run("")) is None
     assert str(git_toplevel(tmp_path, run=git_run("x", "/work/repo"))) == "/work/repo"
 
-    def broken(cmd, **kwargs):
-        raise FileNotFoundError("git")
-
-    assert git_remote_url(tmp_path, run=broken) is None and git_toplevel(tmp_path, run=broken) is None
+    assert git_remote_url(tmp_path, run=no_git) is None and git_toplevel(tmp_path, run=no_git) is None
 
 
 PROJECT_JSON = {"id": 42, "path_with_namespace": "group/proj", "default_branch": "main", "web_url": "https://gitlab.example.com/group/proj"}
@@ -123,10 +124,6 @@ def test_resolve_errors(client, opener, tmp_path):
     opener.add(500, b"boom")
     with pytest.raises(HttpError):
         resolve_project(client, s, remote="origin", cwd=tmp_path, run=git_run("git@h:group/proj.git"))
-
-
-def no_git(cmd, **kwargs):
-    raise FileNotFoundError("git")
 
 
 def test_resolve_project_says_when_git_is_missing(client, tmp_path):

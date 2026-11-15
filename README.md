@@ -24,7 +24,7 @@ From a local clone:
 
 ```bash
 codex plugin marketplace add /absolute/path/to/claude-plugins
-codex plugin list --available --marketplace aeresov-codex-plugins
+codex plugin list --json --available --marketplace aeresov-codex-plugins
 codex plugin add pytest-httpchain@aeresov-codex-plugins
 codex plugin add mysql-client@aeresov-codex-plugins
 codex plugin add openvpn-on-demand@aeresov-codex-plugins
@@ -46,7 +46,7 @@ These plugins need local execution. MySQL needs the `mysql` client; pytest-httpc
 | [`openvpn-on-demand`](plugins/openvpn-on-demand/) | Provides MCP tools to bring an OpenVPN tunnel up/down on demand (openvpn3-linux, or OpenVPN 2 on hosts without it). |
 | [`mysql-client`](plugins/mysql-client/) | Read-only-first use of the `mysql` CLI for MySQL/MariaDB investigation, plus a `mysql-investigator` subagent. |
 | [`pytest-httpchain`](plugins/pytest-httpchain/) | Author and validate pytest-httpchain JSON HTTP-API test scenarios; ships the authoring skill, an `httpchain-author` subagent, and `/setup` + `/doctor`. |
-| [`gitlab-client`](plugins/gitlab-client/) | Drive an on-prem GitLab 15.x (repos, merge requests, CI/CD) through a bundled REST client; allow-listed writes, a `pipeline-debugger` subagent, `/setup` + `/doctor`. |
+| [`gitlab-client`](plugins/gitlab-client/) | Drive a self-managed GitLab 15.x (repos, merge requests, CI/CD) through a bundled REST client; allow-listed writes, a `pipeline-debugger` subagent, `/setup` + `/doctor`. |
 
 ## Repo layout
 

@@ -5,7 +5,7 @@ description: Work with a self-managed GitLab (15.x) through the bundled `gl` CLI
 
 # gitlab-client
 
-Make the assistant an effective, safe user of an on-prem GitLab through `gl`, a small bundled REST v4 client. The skill owns *which* calls to make and *when to stop and ask*; `gl` owns auth, encoding, pagination, and the write allow-list. The reference docs cover the **GitLab 15.x** series (verified live on 15.2.5 CE; anything that arrived later in 15.x carries its minimum version) — `gl version` warns when the instance is outside 15.x and notes when it predates 15.11.
+Make the assistant an effective, safe user of a self-managed GitLab through `gl`, a small bundled REST v4 client. The skill owns *which* calls to make and *when to stop and ask*; `gl` owns auth, encoding, pagination, and the write allow-list. The reference docs cover the **GitLab 15.x** series (verified live on 15.2.5 CE; anything that arrived later in 15.x carries its minimum version) — `gl version` warns when the instance is outside 15.x and notes when it predates 15.11.
 
 ## Client compatibility
 
