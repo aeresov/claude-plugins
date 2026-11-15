@@ -78,7 +78,7 @@ def test_precedence_flag_env_project_user(tmp_path, capsys):
 def test_env_token_bypasses_token_cmd(tmp_path):
     s = load_settings(cwd=tmp_path, home=tmp_path, env={ENV_URL: "https://x", ENV_TOKEN: "sekrit"})
     assert s.token == "sekrit" and s.token_cmd is None
-    assert resolve_token(s, run=lambda *a, **k: pytest.fail("token_cmd must not run")) == "sekrit"
+    assert resolve_token(s, run=lambda *a, **k: pytest.fail("token_cmd must not run")) == "sekrit"  # ty: ignore[invalid-argument-type]  -- ty misreads pytest 8.x's decorated fail()
 
 
 def test_missing_url_and_token_cmd(tmp_path):

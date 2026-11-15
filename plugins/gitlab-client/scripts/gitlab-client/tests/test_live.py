@@ -14,7 +14,7 @@ pytestmark = pytest.mark.skipif(os.environ.get("GITLAB_CLIENT_LIVE") != "1", rea
 def live():
     url, token = os.environ.get("GITLAB_CLIENT_URL"), os.environ.get("GITLAB_CLIENT_TOKEN")
     if not url or not token:
-        pytest.skip("GITLAB_CLIENT_URL and GITLAB_CLIENT_TOKEN are required")
+        pytest.skip("GITLAB_CLIENT_URL and GITLAB_CLIENT_TOKEN are required")  # ty: ignore[too-many-positional-arguments]  -- ty misreads pytest 8.x's decorated skip()
     return Client(url, token)
 
 
