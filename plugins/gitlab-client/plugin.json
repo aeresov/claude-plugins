@@ -1,0 +1,32 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "gitlab-client",
+  "version": "0.2.0",
+  "description": "Drive a self-managed GitLab 15.x — browse repos, read and open merge requests, debug CI pipelines and job logs — through a bundled REST client with an allow-listed write policy.",
+  "author": {
+    "name": "aeresov"
+  },
+  "homepage": "https://github.com/aeresov/claude-plugins/tree/main/plugins/gitlab-client",
+  "repository": "https://github.com/aeresov/claude-plugins",
+  "keywords": [
+    "gitlab",
+    "merge-request",
+    "ci",
+    "pipeline",
+    "self-managed",
+    "rest-api"
+  ],
+  "license": "AGPL-3.0-only",
+  "extensions": {
+    "com.openai": {
+      "requires_local_executor": true,
+      "onboardingSkill": "./skills/gitlab-client-setup/SKILL.md",
+      "interface": {
+        "displayName": "GitLab Client",
+        "shortDescription": "Work with self-managed GitLab 15.x from the CLI",
+        "developerName": "aeresov",
+        "category": "Developer tools"
+      }
+    }
+  }
+}

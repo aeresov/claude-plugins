@@ -39,10 +39,10 @@ class CatalogTests(unittest.TestCase):
         edit(data)
         path.write_text(json.dumps(data))
 
-    def test_shared_packages_are_valid_and_deprecated_plugin_is_excluded(self):
+    def test_shared_packages_are_valid_and_every_plugin_is_listed(self):
         CHECKER.check(self.root)
         names = {p["name"] for p in json.loads(self.catalog().read_text())["plugins"]}
-        self.assertEqual(names, {"mysql-client", "pytest-httpchain", "openvpn-on-demand"})
+        self.assertEqual(names, {"mysql-client", "pytest-httpchain", "openvpn-on-demand", "gitlab-client"})
 
     def test_metadata_drift_is_rejected(self):
         self.change_catalog(lambda data: data["plugins"][0].update(version="99.0.0"))
