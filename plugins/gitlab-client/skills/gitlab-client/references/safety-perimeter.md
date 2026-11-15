@@ -1,6 +1,6 @@
 # Safety perimeter
 
-What `gl` will and won't send, the confirmation Claude shows first, and how to read the errors. Exit codes: 0 ok · 1 HTTP/network · 2 config/usage · 3 refused by the write policy.
+What `gl` will and won't send, the confirmation the assistant shows first, and how to read the errors. Exit codes: 0 ok · 1 HTTP/network · 2 config/usage · 3 refused by the write policy.
 
 ## The allow-list
 
@@ -57,12 +57,12 @@ Send it?
 | **404** | Ambiguous by design: the resource is missing **or** exists but the token can't see it. Also check: wrong path (typo, a route your 15.x minor doesn't have — see v15-compat), or a reverse proxy that decoded the `%2F` in an encoded file/project path. `gl` annotates this. |
 | **403** `insufficient_scope` | The token lacks a scope — `gl` names it (writes need `api`; `read_api` is read-only). Fix the token, not the call. |
 | **403** other | The *user's* role or a rule: below Developer for retry/cancel/play, or a protected branch/environment. |
-| **401** | Token rejected — revoked, expired, or `token_cmd` emitted the wrong thing. Run `/gitlab-client:doctor`. |
+| **401** | Token rejected — revoked, expired, or `token_cmd` emitted the wrong thing. Run `gitlab-client-doctor`. |
 | **409** | Duplicate — typically "an MR for this source branch already exists"; find it instead of retrying. |
 | **429** | Rate limit. `gl` already honoured `Retry-After` (≤ 30 s) and retried once before failing; the body may be **plain text**, not JSON — `gl` handles either. Don't loop. |
 
 ## What never enters the transcript
 
 - **The token.** `gl` runs `token_cmd` internally; its stdout is never printed, even in errors (stderr is). Never run `token_cmd` yourself.
-- **The settings files.** Never `cat`/`Read` `~/.claude/gitlab-client.local.md` or `.claude/gitlab-client.local.md` — `gl` reads them.
+- **The settings files.** Never `cat` or read `~/.claude/gitlab-client.local.md` or `.claude/gitlab-client.local.md` — `gl` reads them.
 - **Unbounded job logs.** Always a bounded view (`--sections`, `--section`, `--tail`, `--head`, `--grep`); `--tail 0` warns with the byte count first.

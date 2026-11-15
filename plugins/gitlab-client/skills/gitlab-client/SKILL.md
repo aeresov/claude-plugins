@@ -5,9 +5,15 @@ description: Work with a self-managed GitLab (15.x) through the bundled `gl` CLI
 
 # gitlab-client
 
-Make Claude an effective, safe user of an on-prem GitLab through `gl`, a small bundled REST v4 client. The skill owns *which* calls to make and *when to stop and ask*; `gl` owns auth, encoding, pagination, and the write allow-list. The reference docs cover the **GitLab 15.x** series (verified live on 15.2.5 CE; anything that arrived later in 15.x carries its minimum version) — `gl version` warns when the instance is outside 15.x and notes when it predates 15.11.
+Make the assistant an effective, safe user of an on-prem GitLab through `gl`, a small bundled REST v4 client. The skill owns *which* calls to make and *when to stop and ask*; `gl` owns auth, encoding, pagination, and the write allow-list. The reference docs cover the **GitLab 15.x** series (verified live on 15.2.5 CE; anything that arrived later in 15.x carries its minimum version) — `gl version` warns when the instance is outside 15.x and notes when it predates 15.11.
 
-`gl` lives at `../../scripts/gl` relative to this skill's directory (`${CLAUDE_PLUGIN_ROOT}/scripts/gl`). Resolve it to an absolute path once per turn and use that. It needs only `python3` ≥ 3.10.
+## Client compatibility
+
+This skill supports Claude Code and Codex. Resolve `../..` from this SKILL.md's directory to the absolute plugin root and substitute it for `<plugin-root>` below. Keep shell calls in the consuming project directory. Both clients intentionally share the settings files — the user-level `~/.claude/gitlab-client.local.md` and the gitignored project `.claude/gitlab-client.local.md` — so no settings migration is needed. Setup and the health check are the `gitlab-client-setup` and `gitlab-client-doctor` skills (in Claude Code also `/gitlab-client:setup` and `/gitlab-client:doctor`).
+
+In a sandboxed client, `gl` needs network access to the GitLab instance, and `token_cmd` may need the user's keychain or home directory. If a `gl` call fails with a connection error, request that access under the client's approval policy before reporting GitLab as unreachable.
+
+`gl` is `<plugin-root>/scripts/gl`. Resolve it to an absolute path once per turn and use that. It needs only `python3` ≥ 3.9 — Amazon Linux 2023's default works.
 
 ## Discovery (once per turn, before anything else)
 
@@ -16,9 +22,9 @@ gl version
 ```
 
 - **Exit 0** → JSON with `version`, `enterprise`, `url`. Proceed. A stderr warning about the version means the references may be slightly off — say so if something 404s.
-- **Exit 2, "no GitLab URL configured" / "no token_cmd configured"** → the user hasn't run `/gitlab-client:setup`. Say so and stop; don't ask for a token in chat.
+- **Exit 2, "no GitLab URL configured" / "no token_cmd configured"** → the user hasn't run `gitlab-client-setup`. Say so and stop; don't ask for a token in chat.
 - **Exit 2, "token_cmd exited N"** → their secret-store command failed; show the stderr `gl` printed (it never contains the token) and stop.
-- **Exit 1** → network/HTTP problem; the message names the host and the status. Suggest `/gitlab-client:doctor`.
+- **Exit 1** → network/HTTP problem; the message names the host and the status. Suggest `gitlab-client-doctor`.
 
 Never read `~/.claude/gitlab-client.local.md` or `.claude/gitlab-client.local.md` yourself and never run `token_cmd` — `gl` does both internally so the token never enters the transcript.
 
@@ -62,12 +68,12 @@ Why the split: the confirm class is visible to colleagues and hard to unsay; the
 - Lists: always `--fields`; a bare MR or pipeline object is ~2 KB. `--all` only with a filter (`state=opened`, `ref=`, `updated_after=`, `source_branch=`).
 - Job logs: never `gl log … --tail 0` for a log you haven't sized; start with `--sections`, then `--section step_script --tail 80` or `--grep 'error|failed' -C 3`.
 - Diffs: `gl diff N --files` first; then `--file PATH` for the files that matter.
-- Raw files: unknown size → `gl api GET /projects/:project/repository/files/<path%2Fencoded> ref=<ref> --fields size,encoding` first; large → `…/raw ref=<ref> --out /tmp/x` and read it with `Read` (see repo-browsing).
+- Raw files: unknown size → `gl api GET /projects/:project/repository/files/<path%2Fencoded> ref=<ref> --fields size,encoding` first; large → `…/raw ref=<ref> --out /tmp/x` and read it (see repo-browsing).
 
 ## Inline or dispatch?
 
 - One lookup, one write, one file → inline with `gl`.
-- "Why is CI red", failed-pipeline triage, anything that reads logs from more than one job or needs 5+ calls → dispatch [`pipeline-debugger`](../../agents/pipeline-debugger.md). Give it the absolute `gl` path, the project path, the identifiers you have (pipeline id / job id / branch / MR iid), and the question. It returns a short report and never writes.
+- "Why is CI red", failed-pipeline triage, anything that reads logs from more than one job or needs 5+ calls → dispatch the shared [`pipeline-debugging`](references/pipeline-debugging.md) procedure. In Claude Code it is the `pipeline-debugger` subagent; elsewhere, delegate it to an available subagent with the procedure's absolute path and the same inputs, or follow it inline. Give it the absolute `gl` path, the project path, the identifiers you have (pipeline id / job id / branch / MR iid), and the question. It returns a short report and never writes.
 
 ## References — load the one for the current step
 
@@ -76,6 +82,7 @@ Why the split: the confirm class is visible to colleagues and hard to unsay; the
 - [`references/merge-requests.md`](references/merge-requests.md) — list/read, diffs, discussions vs notes, create (`Draft:` prefix), update (`add_labels`, `reviewer_ids`), "the MR for my branch".
 - [`references/pipelines.md`](references/pipelines.md) — pipelines/jobs/bridges, logs, retry/cancel/play, trigger, test reports, artifacts.
 - [`references/safety-perimeter.md`](references/safety-perimeter.md) — allow-list, confirmation format, error semantics.
+- [`references/pipeline-debugging.md`](references/pipeline-debugging.md) — the read-only failed-pipeline triage procedure and its report format (delegated or inline).
 - [`references/v15-compat.md`](references/v15-compat.md) — params/routes that don't exist on 15.x (or only from a later 15.x minor) and the deprecated-but-present fields to prefer.
 
 ## When to step out
