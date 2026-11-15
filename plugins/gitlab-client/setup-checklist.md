@@ -34,13 +34,13 @@ Checks 1–3 and 8 are static and read-only. Checks 4–7 are **live**: they run
 - Run: `"<plugin-root>/scripts/gl" version; echo "exit=$?"`
 - PASS if the exit code is **not 2** (an exit of 0 or 1 means the token was obtained — 1 is a network/HTTP problem for check 5). Keep the stdout/stderr for check 5.
 - **Never print the token.** `gl` never prints it either; its error text shows only `token_cmd`'s stderr and exit code.
-- FAIL (exit 2) → show `gl`'s stderr line, then: "`token_cmd` did not produce a token. Common causes: the secret-store CLI isn't logged in, the secret path is wrong, or the command prints more than one line. Fix `token_cmd` in `~/.claude/gitlab-client.local.md` or re-run `gitlab-client-setup`."
+- FAIL (exit 2) → show `gl`'s stderr line, then: "`token_cmd` did not produce a token. Common causes: the secret-store CLI isn't logged in, the secret path is wrong, the command prints more than one line, or (in a sandboxed client) the sandbox blocks the keychain or home directory it needs — rerun the check with that access allowed. Fix `token_cmd` in `~/.claude/gitlab-client.local.md` or re-run `gitlab-client-setup`."
 
 ### 5. Instance reachable, version (live; only if 4 passed)
 
 - Uses the same `gl version` run. PASS if exit 0; note `version` and edition for the summary (`enterprise: true` → EE; `false`/`null` → CE — the field only exists from 15.6, and a version string without `-ee` is CE).
 - WARN (still PASS for the summary count) if `gl` printed `references are written for GitLab 15.x; this instance is …` → repeat that line. A `gl: note: … predates some 15.x endpoints` line is informational — repeat it, no WARN.
-- FAIL (exit 1) → show `gl`'s stderr, then: "Could not reach `<url>` as an authenticated user. 401 means the token was rejected (expired, revoked, or the wrong secret); a connection error means the host isn't reachable from here (VPN? DNS? proxy?); 404 on `/api/v4/metadata` usually means `url` points at the wrong place (relative-URL installs need the `/gitlab` prefix)."
+- FAIL (exit 1) → show `gl`'s stderr, then: "Could not reach `<url>` as an authenticated user. 401 means the token was rejected (expired, revoked, or the wrong secret); a connection error means the host isn't reachable from here (VPN? DNS? proxy? — in a sandboxed client, also the sandbox blocking network access: rerun the check with network access allowed before concluding); 404 on `/api/v4/metadata` usually means `url` points at the wrong place (relative-URL installs need the `/gitlab` prefix)."
 
 ### 6. Token scopes and expiry (live; only if 5 passed)
 

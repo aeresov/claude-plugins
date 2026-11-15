@@ -11,7 +11,7 @@ Make the assistant an effective, safe user of an on-prem GitLab through `gl`, a 
 
 This skill supports Claude Code and Codex. Resolve `../..` from this SKILL.md's directory to the absolute plugin root and substitute it for `<plugin-root>` below. Keep shell calls in the consuming project directory. Both clients intentionally share the settings files — the user-level `~/.claude/gitlab-client.local.md` and the gitignored project `.claude/gitlab-client.local.md` — so no settings migration is needed. Setup and the health check are the `gitlab-client-setup` and `gitlab-client-doctor` skills (in Claude Code also `/gitlab-client:setup` and `/gitlab-client:doctor`).
 
-In a sandboxed client, `gl` needs network access to the GitLab instance, and `token_cmd` may need the user's keychain or home directory. If a `gl` call fails with a connection error, request that access under the client's approval policy before reporting GitLab as unreachable.
+In a sandboxed client, `gl` needs network access to the GitLab instance and write access to its cache (`$XDG_CACHE_HOME/gitlab-client`, default `~/.cache/gitlab-client` — `gl log` and `gl artifacts` store there), and `token_cmd` may need the user's keychain or home directory. If a `gl` call fails with a connection error, a cache-directory error, or `token_cmd exited N`, request that access under the client's approval policy (or point `XDG_CACHE_HOME` at a writable directory) before reporting GitLab as unreachable or the secret store as broken.
 
 `gl` is `<plugin-root>/scripts/gl`. Resolve it to an absolute path once per turn and use that. It needs only `python3` ≥ 3.9 — Amazon Linux 2023's default works.
 
@@ -23,14 +23,14 @@ gl version
 
 - **Exit 0** → JSON with `version`, `enterprise`, `url`. Proceed. A stderr warning about the version means the references may be slightly off — say so if something 404s.
 - **Exit 2, "no GitLab URL configured" / "no token_cmd configured"** → the user hasn't run `gitlab-client-setup`. Say so and stop; don't ask for a token in chat.
-- **Exit 2, "token_cmd exited N"** → their secret-store command failed; show the stderr `gl` printed (it never contains the token) and stop.
+- **Exit 2, "token_cmd exited N"** → their secret-store command failed; show the stderr `gl` printed (it never contains the token) and stop. In a sandboxed client, first retry once with the access described under Client compatibility.
 - **Exit 1** → network/HTTP problem; the message names the host and the status. Suggest `gitlab-client-doctor`.
 
 Never read `~/.claude/gitlab-client.local.md` or `.claude/gitlab-client.local.md` yourself and never run `token_cmd` — `gl` does both internally so the token never enters the transcript.
 
 ## Which project?
 
-`gl` resolves the project in this order: `--project group/name` (or a pasted GitLab URL) → `project:` in `.claude/gitlab-client.local.md` → the `origin` remote of the current repo (`--remote NAME` for another remote). `gl project` shows the result. In `gl api` paths write `:project` and it expands to the URL-encoded path:
+`gl` resolves the project in this order: `--project group/name` (or a pasted GitLab URL) → `project:` in `.claude/gitlab-client.local.md` → the `origin` remote of the current repo (`--remote NAME` for another remote). `gl project` shows the result. Without git (bare Amazon Linux 2023) the remote can't be read and there is no repo root to find: `gl` reads `.claude/gitlab-client.local.md` from the current directory, so run it from the project root or pass `--project`. In `gl api` paths write `:project` and it expands to the URL-encoded path:
 
 ```bash
 gl api GET /projects/:project/merge_requests state=opened --fields iid,title,author.username,web_url

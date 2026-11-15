@@ -73,9 +73,12 @@ class Context:
         return urllib.parse.urlsplit(self.settings.url).netloc
 
     @property
+    def cache_root(self) -> Path:
+        return Path(self.env.get("XDG_CACHE_HOME") or (self.home / ".cache")) / "gitlab-client"
+
+    @property
     def cache_dir(self) -> Path:
-        base = Path(self.env.get("XDG_CACHE_HOME") or (self.home / ".cache"))
-        return base / "gitlab-client" / self.host
+        return self.cache_root / self.host
 
     def warn(self, message: str) -> None:
         if not getattr(self.args, "quiet", False):
@@ -378,3 +381,15 @@ def main(
     except GlError as e:
         print(f"gl: {e}", file=stderr)
         return e.exit_code
+    except OSError as e:  # local files only: network errors arrive as GlError (http.Client.request)
+        print(f"gl: {local_file_error(e, ctx.cache_root)}", file=stderr)
+        return ConfigError.exit_code
+
+
+def local_file_error(e: OSError, cache_root: Path) -> str:
+    """An unwritable cache (often a sandbox that allows the network but not ~/.cache), --out or --extract target."""
+    where = f"{e.filename}: " if e.filename else ""
+    message = f"{where}{e.strerror or e}"
+    if e.filename and Path(str(e.filename)).is_relative_to(cache_root):
+        message += f" — gl caches job logs and artifacts under {cache_root}; set XDG_CACHE_HOME to a writable directory, or allow writes there"
+    return message

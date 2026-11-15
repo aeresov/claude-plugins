@@ -100,6 +100,16 @@ def test_fetch_trace_caches_terminal_jobs(client, opener, tmp_path):
     assert fetch_trace(client, 42, 5, cache)[2] == 8
 
 
+def test_unwritable_cache_dir_is_a_clean_error(run_gl, opener, tmp_path):
+    # A sandboxed client may allow the network but not ~/.cache: say where and what to do, no traceback.
+    blocker = tmp_path / "not-a-dir"
+    blocker.write_text("")
+    opener.add(200, PROJECT_JSON).add(200, JOB)
+    code, _, err = run_gl("log", "5", "--project", "group/proj", env={"XDG_CACHE_HOME": str(blocker)})
+    assert code == 2
+    assert str(blocker / "gitlab-client") in err and "XDG_CACHE_HOME" in err
+
+
 def test_header_line():
     assert header_line(JOB, 12) == "job 5 test · stage test · failed · 31s · 12 bytes · https://g/j/5"
     assert header_line({"id": 5, "name": "t", "stage": "s", "status": "running", "duration": None, "web_url": "u"}, 0) == "job 5 t · stage s · running · - · 0 bytes · u"

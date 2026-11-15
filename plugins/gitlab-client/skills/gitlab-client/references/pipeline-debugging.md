@@ -55,4 +55,4 @@ Next step: <one concrete action — e.g. "fix X then push", or "flaky: gl api PO
 Confidence: high | medium | low — <why>
 ```
 
-Keep the whole report under ~60 lines. If you could not resolve a pipeline or a log 404s, say exactly which call failed and with what message.
+Keep the whole report under ~60 lines. If you could not resolve a pipeline or a log 404s, say exactly which call failed and with what message. In a sandboxed client a connection error, or a cache-directory error from `gl log` / `gl artifacts` (they write under `$XDG_CACHE_HOME/gitlab-client`, default `~/.cache/gitlab-client`), is a sandbox limit: report it as such so the caller can grant access, not as a GitLab failure.

@@ -100,6 +100,7 @@ def resolve_project(client: Client, settings: Settings, *, remote: str, cwd: Pat
         if not remote_url and which("git") is None:  # bare hosts (Amazon Linux 2023) ship without git
             raise ConfigError(
                 f"cannot resolve project: git isn't installed, so the {remote} remote can't be read — pass --project, or set project: in .claude/gitlab-client.local.md"
+                " (without git, gl reads it from the current directory: run from the project root)"
             )
         if not remote_url:
             raise ConfigError(f"cannot resolve project: no --project, no project: in settings, and `git remote get-url {remote}` gave nothing")

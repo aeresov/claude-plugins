@@ -101,7 +101,8 @@ Every subcommand takes `--url`, `--project`, `--remote`, `-q/--quiet`. Exit code
 - **Huge job logs.** Never dump a log you haven't sized: `gl log JOB_ID --sections` first, then `--section NAME`, `--grep`, or `--tail`.
 - **Artifact and trace downloads 302** to pre-signed object-storage URLs; `gl` strips the token before following the redirect. Replicating the download with plain curl would re-send the token to the storage host — don't.
 - **"references are written for GitLab 15.x" warning** from `gl version`: the plugin still works, but the reference docs may be slightly off — expect the occasional 404 on routes that moved. The quieter **"predates some 15.x endpoints" note** means you're on an early 15.x (e.g. 15.2): `gl diff` uses `/changes` instead of `/diffs`, `/personal_access_tokens/self` (15.5) isn't there, and `detailed_merge_status` (15.6) is `null` — read `merge_status`.
-- **Cache.** Logs and artifact archives land in `~/.cache/gitlab-client/<host>/` (respects `XDG_CACHE_HOME`). Safe to delete at any time; `gl` re-downloads on demand.
+- **Cache.** Logs and artifact archives land in `~/.cache/gitlab-client/<host>/` (respects `XDG_CACHE_HOME`). Safe to delete at any time; `gl` re-downloads on demand. If `gl` says it can't write there (a sandboxed session often allows the network but not `~/.cache`), allow writes to it or set `XDG_CACHE_HOME` to a writable directory.
+- **Without git** (bare Amazon Linux 2023), `gl` can't read the `origin` remote or find the repo root: it reads `.claude/gitlab-client.local.md` from the current directory. Pin `project:` there and run from the project root, pass `--project`, or `sudo dnf install git`.
 
 ## License
 

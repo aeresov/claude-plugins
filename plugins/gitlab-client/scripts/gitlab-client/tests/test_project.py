@@ -130,7 +130,7 @@ def no_git(cmd, **kwargs):
 
 
 def test_resolve_project_says_when_git_is_missing(client, tmp_path):
-    with pytest.raises(ConfigError, match=r"git isn't installed, so the origin remote can't be read — pass --project"):
+    with pytest.raises(ConfigError, match=r"git isn't installed, so the origin remote can't be read — pass --project.*run from the project root"):
         resolve_project(client, base_settings(), remote="origin", cwd=tmp_path, run=no_git, which=lambda name: None)
 
 
