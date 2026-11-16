@@ -4,16 +4,24 @@
 Precedence, highest first: CLI flags → environment → project file → user file. The project
 file may only set `project`; `url` and `token_cmd` come from the user file or the environment.
 The token is resolved by running `token_cmd` (a user-authored shell command line —
-`shell=True` is deliberate) and lives only in this process's memory.
+`shell=True` is deliberate) and lives only in this process's memory. `run_token_cmd` starts it
+the way a secret-store CLI can be trusted to behave: from `/`, stdin `/dev/null`, a session of
+its own, its whole process group killed on timeout; `resolve_token` lets one run at a time.
 """
 
 from __future__ import annotations
 
+import fcntl
+import os
+import signal
 import subprocess
 import sys
-from collections.abc import Callable, Mapping
+import time
+from collections.abc import Callable, Iterator, Mapping
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Optional
 
 from .errors import ConfigError
 
@@ -27,6 +35,9 @@ PROJECT_FILE_IGNORED = ("url", "token_cmd")
 ENV_URL = "GITLAB_CLIENT_URL"
 ENV_TOKEN = "GITLAB_CLIENT_TOKEN"
 TOKEN_CMD_TIMEOUT = 60
+# Every holder is itself bounded by TOKEN_CMD_TIMEOUT, so a waiter normally gets the lock in time.
+TOKEN_LOCK_WAIT = 60
+_LOCK_POLL = 0.1
 
 
 def parse_frontmatter(text: str) -> dict[str, str]:
@@ -135,18 +146,107 @@ def load_settings(
     )
 
 
-Runner = Callable[..., subprocess.CompletedProcess]
+Runner = Callable[[str, float], Optional[subprocess.CompletedProcess]]
 
 
-def resolve_token(settings: Settings, run: Runner = subprocess.run) -> str:
+def run_token_cmd(cmd: str, timeout: float) -> subprocess.CompletedProcess | None:
+    """Run `cmd` through the shell; None if it didn't finish within `timeout` seconds.
+
+    From `/`: gl runs inside a checkout, and some secret-store CLIs read their current directory
+    first (Keeper Commander runs a file named like its command as a command script, and takes a
+    `config.json` as its config). stdin `/dev/null` and a session of its own: nobody can answer a
+    prompt inside gl, and without a controlling terminal a prompt that opens /dev/tty (getpass)
+    fails at once. On a timeout or anything else that stops us waiting (Ctrl-C), the whole process
+    group is killed, so nothing it started outlives gl.
+    """
+    proc = subprocess.Popen(
+        cmd,
+        shell=True,
+        cwd="/",
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        start_new_session=True,
+    )
+    timed_out = False
+    try:
+        stdout, stderr = proc.communicate(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        timed_out = True  # its .output may hold the token: let it go here, unreferenced
+    finally:
+        if proc.returncode is None:
+            _kill_group(proc)
+    if timed_out:
+        return None
+    return subprocess.CompletedProcess(cmd, proc.returncode, stdout, stderr)
+
+
+def _kill_group(proc: subprocess.Popen) -> None:
+    # Only while the leader is unreaped does its pid still name the group start_new_session made.
+    try:
+        os.killpg(proc.pid, signal.SIGKILL)
+    except (ProcessLookupError, PermissionError):
+        pass
+    proc.wait()
+    for pipe in (proc.stdout, proc.stderr):
+        if pipe is not None:
+            pipe.close()
+
+
+@contextmanager
+def _token_lock(path: Path | None) -> Iterator[None]:
+    """Hold an exclusive lock on `path` while token_cmd runs, waiting up to TOKEN_LOCK_WAIT.
+
+    Each Keeper Commander sign-in rotates its saved session, so two at once can cost one of them
+    that session. A lock that can't be opened (no path, a sandbox that blocks the cache directory)
+    or a file system without flock leaves the run unlocked rather than failing it.
+    """
+    fd = _open_lock(path)
+    if fd is None:
+        yield
+        return
+    try:
+        deadline = time.monotonic() + TOKEN_LOCK_WAIT
+        while True:
+            try:
+                fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                break
+            except BlockingIOError:
+                if time.monotonic() >= deadline:
+                    raise ConfigError(f"another gl call has been running token_cmd for {TOKEN_LOCK_WAIT}s; gave up waiting for it") from None
+                time.sleep(_LOCK_POLL)
+            except OSError:
+                break
+        yield
+    finally:
+        os.close(fd)
+
+
+def _open_lock(path: Path | None) -> int | None:
+    if path is None:
+        return None
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        # Never passed to token_cmd (non-inheritable, and Popen closes other fds): one that outlived gl
+        # must not keep holding the lock.
+        return os.open(path, os.O_RDWR | os.O_CREAT | getattr(os, "O_NOFOLLOW", 0), 0o600)
+    except OSError:
+        return None
+
+
+def resolve_token(settings: Settings, *, lock_path: Path | None = None, run: Runner = run_token_cmd) -> str:
     """Run token_cmd and return the single line it prints. Never includes stdout in errors."""
     if settings.token:
         return settings.token
     assert settings.token_cmd, "load_settings guarantees token or token_cmd"
-    try:
-        proc = run(settings.token_cmd, shell=True, capture_output=True, text=True, timeout=TOKEN_CMD_TIMEOUT)
-    except subprocess.TimeoutExpired:
-        raise ConfigError(f"token_cmd timed out after {TOKEN_CMD_TIMEOUT}s") from None
+    with _token_lock(lock_path):
+        try:
+            proc = run(settings.token_cmd, TOKEN_CMD_TIMEOUT)
+        except OSError as e:
+            raise ConfigError(f"could not start token_cmd: {e.strerror or e}") from None
+    if proc is None:
+        raise ConfigError(f"token_cmd timed out after {TOKEN_CMD_TIMEOUT}s")
     stderr = (proc.stderr or "").strip()
     suffix = f"; stderr: {stderr}" if stderr else ""
     if proc.returncode != 0:

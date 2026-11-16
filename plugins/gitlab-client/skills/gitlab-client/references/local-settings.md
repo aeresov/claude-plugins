@@ -31,7 +31,7 @@ token_cmd: pass show work/gitlab-pat
 
 The command line is recorded verbatim and run through the shell — pipes, env vars, `$(…)` all work. One line each:
 
-- Keeper Commander: `cd / && flock -w 50 -E 75 ~/.claude/gitlab-client.keeper.lock setsid -w keeper --batch-mode --fail-on-throttle get --format password -- <record-uid> </dev/null` — see [below](#keeper-commander)
+- Keeper Commander: `keeper get --format password -- <record-uid>` — see [below](#keeper-commander)
 - pass: `pass show work/gitlab-pat`
 - 1Password: `op read "op://Work/GitLab PAT/credential"`
 - env var: `printf '%s' "$GITLAB_TOKEN"`
@@ -42,15 +42,22 @@ Rules: the command must exit 0 and print exactly one non-empty stdout line. On f
 
 **Never put a literal token in the file** (`token_cmd: echo glpat-…`): `gitlab-client-setup` and `gitlab-client-doctor` may display the `token_cmd` line, and a literal token would land in the transcript. Export it and use the `printf '%s' "$GITLAB_TOKEN"` form instead.
 
+How `gl` runs it, whatever the command:
+
+- **From `/`**, not from the project you are in — a secret-store CLI may read its current directory first (Keeper Commander runs a file there named like its command, and takes a `config.json` there as its config). A relative path in `token_cmd` is therefore relative to `/`.
+- **stdin `/dev/null`, no terminal** (a session of its own): nobody can answer a prompt inside `gl`, so one fails at once instead of waiting — including a prompt that reads the terminal directly.
+- **One at a time** across `gl` processes, through a lock file in `gl`'s cache directory (`$XDG_CACHE_HOME/gitlab-client/token.lock`, default `~/.cache/gitlab-client/`). A call waits up to 60 s for another call's `token_cmd`, then fails with `another gl call has been running token_cmd for 60s`. Where the lock file can't be written (a sandbox blocking the cache directory), the command runs unlocked.
+- **60 s limit**, after which the command and everything it started are killed (`token_cmd timed out after 60s`); Ctrl-C does the same.
+
 ### Keeper Commander
 
-Keep the PAT as the password of a record (a Login record will do) and use the record's UID — `keeper search gitlab` prints it. This needs Linux: `flock` and `setsid` come from util-linux, which macOS doesn't ship. Checked against Commander 18.1.10; the no-terminal behaviour described below is there from 18.0.8 on.
+Keep the PAT as the password of a record (a Login record will do), and give `gl` the record's UID — `keeper search gitlab` prints it:
 
 ```
-token_cmd: cd / && flock -w 50 -E 75 ~/.claude/gitlab-client.keeper.lock setsid -w keeper --batch-mode --fail-on-throttle get --format password -- <record-uid> </dev/null
+token_cmd: keeper get --format password -- <record-uid>
 ```
 
-#### Before the first call
+Use the UID, never the title: when its argument isn't a UID, `get` falls back to a title search and prints whichever record matches, so a title or a mistyped UID could hand another record's password to `gl`, which would send it to GitLab. The `--` keeps a UID that starts with `-` from being read as an option.
 
 Commander has to resume its session without asking. Sign it in once in a terminal, as the user `gl` runs as, and make the session outlast the gaps between `gl` uses:
 
@@ -62,18 +69,16 @@ keeper this-device timeout 30d
 
 The timeout is not optional: by default Commander logs the session out after an hour without use, and every `gl` call after that fails until you sign in again. `keeper this-device` shows the current settings; a Keeper enterprise policy may cap the timeout.
 
-Every sign-in saves a rotated session back to Commander's data directory (`~/.keeper` if it exists, else `~/.local/share/.keeper`) or the OS keychain. In a sandboxed client, give `gl` write access there **before** the first call: when only that write is blocked, Commander logs the failure to stderr, still prints the password and exits 0, so the call works — and the *next* sign-in fails with `Persistent login is not working …` until you sign in again.
+Every sign-in saves a rotated session back to Commander's data directory (`~/.keeper` if it exists, else `~/.local/share/.keeper`) or the OS keychain — which is also why `gl` runs one `token_cmd` at a time. In a sandboxed client, give `gl` write access there **before** the first call: when only that write is blocked, Commander logs the failure to stderr, still prints the password and exits 0, so the call works — and the *next* sign-in fails with `Persistent login is not working …` until you sign in again.
 
-Each `gl` call costs one Commander sign-in, a few seconds. Keeper Secrets Manager (`ksm`) is not needed and not used.
+Each `gl` call costs one Commander sign-in, a few seconds. Keeper Secrets Manager (`ksm`) is not needed and not used. Checked against Commander 18.1.10.
 
-#### Why each part is there
+What a failure looks like:
 
-- `cd /`: `gl` runs `token_cmd` from the project you are in, and Commander reads that directory first. A regular file there named `get` is run as a list of Commander commands *instead of* this one, in your signed-in session, and a single line it prints becomes the token. A `config.json` there is taken as Commander's config, and its mode is changed to 600. `/` has neither.
-- `--format password` prints the record's password. Commander's sign-in messages and logs go to stderr, with one exception: when the saved device has been removed or reset, Commander prints `Registering new device...` on stdout and, unable to approve the new device without you, exits 0 — so `gl` sends that line to GitLab and gets a 401. A 401 right after a Keeper device change means signing Commander in again, not a bad PAT. A record with no password prints nothing, which `gl` reports as `got 0` lines.
-- `-- <record-uid>`: the UID, never the title. When its argument isn't a UID, `get` falls back to a title search and prints the record that matches, so a title or a mistyped UID could hand another record's password to `gl`, which would send it to GitLab. The `--` keeps a UID that starts with `-` from being read as an option.
-- `</dev/null`, `setsid -w` and `--batch-mode`: nobody can answer a prompt from inside `gl`. With stdin not a terminal and no controlling terminal, a sign-in Commander can't complete by itself fails at once instead of waiting out `gl`'s 60 s limit — `token_cmd exited 1; stderr: Data center: …` when no account is signed in (the `Email:` prompt goes to stdout, which `gl` never shows), or `got 0` lines with `Persistent login is not working …` when the saved session needs a password, 2FA or a device approval. `setsid` is there because some prompts (an expired master password, account recovery) read the terminal directly, past stdin; `-w` passes Commander's exit code through.
-- `--fail-on-throttle`: when Keeper throttles, Commander otherwise sleeps — at least 30 s, usually 60 s or as long as the server asks, up to 5 min — and retries up to three times, far past `gl`'s 60 s limit. Keep both global flags before `get`; some Commander releases drop the word after a boolean flag placed later.
-- `flock -w 50 -E 75`: every `gl` call is a Commander sign-in, and each sign-in rotates the persistent-login session and saves it. Two at once — parallel `gl` calls — can cost one of them the session or leave a stale one saved, so `flock` makes them take turns. `-w 50` gives up waiting before `gl`'s own 60 s limit, as exit 75: `token_cmd exited 75` means another call's sign-in held the lock for 50 s, so retry. Without it, a call that timed out in the queue would still sign in later, in the background. A Commander run that `gl` gave up on keeps going, and keeps the lock, until it finishes by itself.
+- `token_cmd exited 1; stderr: Data center: …` — no account is signed in on this host (Commander's `Email:` prompt goes to stdout, which `gl` never shows).
+- `got 0` lines with `Persistent login is not working …` — the saved session needs a password, 2FA or a device approval: sign in again in a terminal. Also `got 0` with no such line: the record has no password.
+- A 401 from GitLab right after a Keeper device change — when the saved device was removed or reset, Commander prints `Registering new device...` on stdout and exits 0, and `gl` sends that line as the token. Sign Commander in again; the PAT is fine.
+- `token_cmd timed out after 60s` — often Keeper throttling: Commander waits at least 30 s between retries. Add `--fail-on-throttle` before `get` (`keeper --fail-on-throttle get …`) to have it fail at once with Keeper's own message instead.
 
 ## Project file
 

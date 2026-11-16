@@ -56,7 +56,7 @@
         "path": "./plugins/gitlab-client"
       },
       "description": "Drive a self-managed GitLab 15.x — browse repos, read and open merge requests, debug CI pipelines and job logs — through a bundled REST client with an allow-listed write policy.",
-      "version": "0.2.1",
+      "version": "0.3.0",
       "license": "AGPL-3.0-only",
       "policy": {
         "installation": "AVAILABLE",

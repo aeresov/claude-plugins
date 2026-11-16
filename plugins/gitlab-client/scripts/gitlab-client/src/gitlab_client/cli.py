@@ -59,7 +59,7 @@ class Context:
     @property
     def client(self) -> Client:
         if self._client is None:
-            self._client = self._client_factory(self.settings.url, resolve_token(self.settings))
+            self._client = self._client_factory(self.settings.url, resolve_token(self.settings, lock_path=self.cache_root / "token.lock"))
         return self._client
 
     @property

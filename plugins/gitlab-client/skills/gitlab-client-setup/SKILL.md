@@ -25,7 +25,7 @@ Ask for the instance URL (e.g. `https://gitlab.example.com`; relative-URL instal
 ### 4. Where does the token come from?
 Ask the user — "Where does your GitLab personal access token come from?":
 
-- **Keeper Commander (`keeper`)** — "The PAT is the password of a record in your vault: `cd / && flock -w 50 -E 75 ~/.claude/gitlab-client.keeper.lock setsid -w keeper --batch-mode --fail-on-throttle get --format password -- <record-uid> </dev/null`"
+- **Keeper Commander (`keeper`)** — "The PAT is the password of a record in your vault: `keeper get --format password -- <record-uid>`"
 - **pass / 1Password / other CLI** — "`pass show <path>`, `op read \"op://<vault>/<item>/credential\"`, or any command whose stdout is the token."
 - **Environment variable** — "The token is already exported, e.g. `$GITLAB_TOKEN` → `printf '%s' \"$GITLAB_TOKEN\"`."
 
@@ -35,7 +35,7 @@ If the user offers to paste the token itself, decline: the file would then *be* 
 
 Open `<plugin-root>/skills/gitlab-client/references/local-settings.md` and show the matching example. Ask for the specifics and assemble the final `token_cmd`. Restate it and confirm before writing.
 
-For Keeper Commander, the only specific is the record's **UID**, never its title (`keeper search <words>` in the user's own terminal prints it); keep the rest of the line exactly as the reference gives it — each part is explained there. The line needs Linux (`flock` and `setsid` are util-linux); on macOS, recommend another token source. Then tell the user what Commander needs before the first `gl` call — setup checks and runs none of it:
+For Keeper Commander, the only specific is the record's **UID**, never its title (`keeper search <words>` in the user's own terminal prints it): `get` falls back to a title search and could print another record's password. Then tell the user what Commander needs before the first `gl` call — setup checks and runs none of it:
 
 - Signed in on this host, in their own terminal, as the user `gl` runs as, with persistent login on and a logout timeout longer than the gaps between `gl` uses: `keeper login`, `keeper this-device persistent-login on`, `keeper this-device timeout 30d`. The timeout is required — Commander's default logs the session out after an idle hour, and `gitlab-client-doctor` run straight after setup would not notice. `keeper this-device` shows the current settings.
 - In a sandboxed client, `gl` must be allowed to write Commander's data directory (`~/.keeper`, else `~/.local/share/.keeper`) or the keychain it uses, granted before the first call: a blocked write lets that call succeed and breaks the next sign-in.
