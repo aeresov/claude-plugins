@@ -2,6 +2,7 @@
 import fcntl
 import os
 import shlex
+import signal
 import stat
 import subprocess
 import sys
@@ -107,7 +108,9 @@ def fake_run(stdout="", stderr="", returncode=0, timed_out=False):
         calls.append((cmd, timeout))
         if timed_out:
             return None
-        return subprocess.CompletedProcess(cmd, returncode, stdout, stderr)
+        out = stdout if isinstance(stdout, bytes) else stdout.encode()
+        err = stderr if isinstance(stderr, bytes) else stderr.encode()
+        return subprocess.CompletedProcess(cmd, returncode, out, err)
 
     return run, calls
 
@@ -136,6 +139,15 @@ def test_resolve_token_failures_never_show_stdout():
     assert e.value.__context__ is None and e.value.__cause__ is None
 
 
+def test_resolve_token_refuses_output_that_is_not_utf8():
+    # A UnicodeDecodeError would end gl in a traceback, with the token's bytes in its .object.
+    with pytest.raises(ConfigError, match="not UTF-8") as e:
+        resolve_token(settings(), run=fake_run(stdout=b"glpat-\xff\xfeleak\n")[0])
+    assert "leak" not in str(e.value) and e.value.__context__ is None and e.value.__cause__ is None
+    with pytest.raises(ConfigError, match="exited 3; stderr: bad \ufffd byte"):
+        resolve_token(settings(), run=fake_run(stderr=b"bad \xff byte", returncode=3)[0])
+
+
 def test_resolve_token_reports_a_shell_that_cannot_start():
     def run(cmd, timeout):
         raise FileNotFoundError(2, "No such file or directory", "/bin/sh")
@@ -159,7 +171,7 @@ def test_token_cmd_runs_from_the_filesystem_root(tmp_path, monkeypatch):
     # like its command, and takes a config.json there as its config) — gl runs from inside a checkout.
     monkeypatch.chdir(tmp_path)
     proc = run_token_cmd(py("import os; print(os.getcwd())"), 10)
-    assert proc is not None and proc.returncode == 0 and proc.stdout.strip() == "/"
+    assert proc is not None and proc.returncode == 0 and proc.stdout.strip() == b"/"
 
 
 def test_token_cmd_gets_dev_null_on_stdin():
@@ -173,7 +185,7 @@ def test_token_cmd_gets_dev_null_on_stdin():
         os.dup2(saved, 0)
         for fd in (r, w, saved):
             os.close(fd)
-    assert proc is not None and proc.stdout.strip() == "True"
+    assert proc is not None and proc.stdout.strip() == b"True"
 
 
 def test_token_cmd_runs_in_a_session_of_its_own():
@@ -245,7 +257,7 @@ def test_token_cmd_waits_for_the_lock_and_gives_up_without_running(tmp_path, mon
     fd = hold(lock)
     try:
         run, calls = fake_run(stdout="tok\n")
-        with pytest.raises(ConfigError, match="another gl call has been running token_cmd for"):
+        with pytest.raises(ConfigError, match="waited 0.3s for other gl calls' token_cmd to finish; gave up"):
             resolve_token(settings(), lock_path=lock, run=run)
         assert calls == []
     finally:
@@ -265,7 +277,7 @@ def test_token_cmd_runs_once_the_lock_is_free_and_releases_it(tmp_path):
         finally:
             os.close(probe)
         seen.append(cmd)
-        return subprocess.CompletedProcess(cmd, 0, "tok\n", "")
+        return subprocess.CompletedProcess(cmd, 0, b"tok\n", b"")
 
     assert resolve_token(settings(), lock_path=lock, run=run) == "tok"
     os.close(hold(lock))  # released afterwards
@@ -288,3 +300,64 @@ def test_token_cmd_does_not_inherit_the_lock(tmp_path):
     code = "import os; print(sorted(os.readlink(f'/proc/self/fd/{n}') for n in os.listdir('/proc/self/fd') if os.path.exists(f'/proc/self/fd/{n}')))"
     out = resolve_token(settings(py(code)), lock_path=lock)
     assert str(lock) not in out
+
+
+def test_token_cmd_lock_owned_by_someone_else_is_not_used(tmp_path, monkeypatch):
+    # Anyone who can open a lock file in a shared cache directory could hold it and stall every gl call.
+    lock = tmp_path / "token.lock"
+    fd = hold(lock)
+    try:
+        real_uid = os.getuid()
+        monkeypatch.setattr(settings_module.os, "getuid", lambda: real_uid + 1)
+        run, calls = fake_run(stdout="tok\n")
+        assert resolve_token(settings(), lock_path=lock, run=run) == "tok"
+        assert len(calls) == 1
+    finally:
+        os.close(fd)
+
+
+def test_token_cmd_lock_that_is_a_fifo_is_not_used(tmp_path, monkeypatch):
+    monkeypatch.setattr(settings_module, "TOKEN_LOCK_WAIT", 0.3)
+    lock = tmp_path / "token.lock"
+    os.mkfifo(lock)
+    fd = os.open(lock, os.O_RDWR | os.O_NONBLOCK)
+    fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)  # held, as by someone who planted it
+    try:
+        run, calls = fake_run(stdout="tok\n")
+        assert resolve_token(settings(), lock_path=lock, run=run) == "tok"
+        assert len(calls) == 1
+    finally:
+        os.close(fd)
+
+
+GL_LIKE = """
+import sys
+from gitlab_client.settings import run_token_cmd
+run_token_cmd(sys.argv[1], 30)
+"""
+
+
+@pytest.mark.parametrize("sig", [signal.SIGTERM, signal.SIGHUP], ids=["SIGTERM", "SIGHUP"])
+def test_token_cmd_dies_with_gl_on_a_signal(tmp_path, sig):
+    # token_cmd is in a session of its own, so a signal to gl's process group no longer reaches it:
+    # gl must kill it on the way out, or it would run on unbounded and outside the lock.
+    pidfile = tmp_path / "pid"
+    src = Path(settings_module.__file__).resolve().parents[1]
+    env = {**os.environ, "PYTHONPATH": str(src)}
+    gl = subprocess.Popen([sys.executable, "-c", GL_LIKE, f"sh -c 'echo $$ > {pidfile}; exec sleep 30' & wait"], env=env, cwd=tmp_path)
+    try:
+        deadline = time.monotonic() + 10
+        while not (pidfile.exists() and pidfile.read_text().strip()) and time.monotonic() < deadline:
+            time.sleep(0.02)
+        gl.send_signal(sig)
+        assert gl.wait(timeout=10) == 128 + sig
+        assert _wait_dead(int(pidfile.read_text()))
+    finally:
+        if gl.poll() is None:
+            gl.kill()
+
+
+def test_token_cmd_restores_signal_handlers():
+    before = {s: signal.getsignal(s) for s in (signal.SIGTERM, signal.SIGHUP)}
+    run_token_cmd("true", 10)
+    assert {s: signal.getsignal(s) for s in before} == before

@@ -14,8 +14,10 @@ from __future__ import annotations
 import fcntl
 import os
 import signal
+import stat
 import subprocess
 import sys
+import threading
 import time
 from collections.abc import Callable, Iterator, Mapping
 from contextlib import contextmanager
@@ -35,8 +37,9 @@ PROJECT_FILE_IGNORED = ("url", "token_cmd")
 ENV_URL = "GITLAB_CLIENT_URL"
 ENV_TOKEN = "GITLAB_CLIENT_TOKEN"
 TOKEN_CMD_TIMEOUT = 60
-# Every holder is itself bounded by TOKEN_CMD_TIMEOUT, so a waiter normally gets the lock in time.
-TOKEN_LOCK_WAIT = 60
+# Waiting plus running stays under two minutes (45 + 60 s), the default limit on a Claude Code
+# shell command, so gl reports its own timeout rather than being killed mid-run.
+TOKEN_LOCK_WAIT = 45
 _LOCK_POLL = 0.1
 
 
@@ -150,36 +153,60 @@ Runner = Callable[[str, float], Optional[subprocess.CompletedProcess]]
 
 
 def run_token_cmd(cmd: str, timeout: float) -> subprocess.CompletedProcess | None:
-    """Run `cmd` through the shell; None if it didn't finish within `timeout` seconds.
+    """Run `cmd` through the shell; its output as bytes, or None if it didn't finish in `timeout` s.
 
     From `/`: gl runs inside a checkout, and some secret-store CLIs read their current directory
     first (Keeper Commander runs a file named like its command as a command script, and takes a
     `config.json` as its config). stdin `/dev/null` and a session of its own: nobody can answer a
     prompt inside gl, and without a controlling terminal a prompt that opens /dev/tty (getpass)
-    fails at once. On a timeout or anything else that stops us waiting (Ctrl-C), the whole process
-    group is killed, so nothing it started outlives gl.
+    fails at once. When gl stops waiting — the timeout, Ctrl-C, SIGTERM, SIGHUP — its process group
+    is killed; a descendant that starts a session of its own (`setsid`) is out of reach.
     """
-    proc = subprocess.Popen(
-        cmd,
-        shell=True,
-        cwd="/",
-        stdin=subprocess.DEVNULL,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        text=True,
-        start_new_session=True,
-    )
-    timed_out = False
-    try:
-        stdout, stderr = proc.communicate(timeout=timeout)
-    except subprocess.TimeoutExpired:
-        timed_out = True  # its .output may hold the token: let it go here, unreferenced
-    finally:
-        if proc.returncode is None:
-            _kill_group(proc)
+    with _signals_raise():
+        proc = subprocess.Popen(
+            cmd,
+            shell=True,
+            cwd="/",
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            start_new_session=True,
+        )
+        timed_out = False
+        try:
+            stdout, stderr = proc.communicate(timeout=timeout)
+        except subprocess.TimeoutExpired:
+            timed_out = True  # its .output may hold the token: let it go here, unreferenced
+        finally:
+            if proc.returncode is None:
+                _kill_group(proc)
     if timed_out:
         return None
     return subprocess.CompletedProcess(cmd, proc.returncode, stdout, stderr)
+
+
+def _exit_on_signal(signum: int, frame: object) -> None:
+    raise SystemExit(128 + signum)
+
+
+@contextmanager
+def _signals_raise() -> Iterator[None]:
+    """Turn SIGTERM and SIGHUP into SystemExit while token_cmd runs (Ctrl-C already raises).
+
+    token_cmd is in a session of its own, so a signal to gl's process group no longer reaches it;
+    raising lets run_token_cmd's cleanup kill it instead of leaving it running unbounded. A signal
+    gl was told to ignore (nohup) stays ignored; signal handlers exist only in the main thread.
+    """
+    saved = {}
+    if threading.current_thread() is threading.main_thread():
+        for sig in (signal.SIGTERM, signal.SIGHUP):
+            if signal.getsignal(sig) is signal.SIG_DFL:
+                saved[sig] = signal.signal(sig, _exit_on_signal)
+    try:
+        yield
+    finally:
+        for sig, handler in saved.items():
+            signal.signal(sig, handler)
 
 
 def _kill_group(proc: subprocess.Popen) -> None:
@@ -214,7 +241,7 @@ def _token_lock(path: Path | None) -> Iterator[None]:
                 break
             except BlockingIOError:
                 if time.monotonic() >= deadline:
-                    raise ConfigError(f"another gl call has been running token_cmd for {TOKEN_LOCK_WAIT}s; gave up waiting for it") from None
+                    raise ConfigError(f"waited {TOKEN_LOCK_WAIT}s for other gl calls' token_cmd to finish; gave up") from None
                 time.sleep(_LOCK_POLL)
             except OSError:
                 break
@@ -230,9 +257,20 @@ def _open_lock(path: Path | None) -> int | None:
         path.parent.mkdir(parents=True, exist_ok=True)
         # Never passed to token_cmd (non-inheritable, and Popen closes other fds): one that outlived gl
         # must not keep holding the lock.
-        return os.open(path, os.O_RDWR | os.O_CREAT | getattr(os, "O_NOFOLLOW", 0), 0o600)
+        fd = os.open(path, os.O_RDWR | os.O_CREAT | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0), 0o600)
     except OSError:
         return None
+    try:
+        st = os.fstat(fd)
+    except OSError:
+        os.close(fd)
+        return None
+    # Someone else's file (a shared XDG_CACHE_HOME), or a FIFO or device: anyone who can open it could
+    # hold it and stall every gl call, so leave the run unlocked instead.
+    if not stat.S_ISREG(st.st_mode) or st.st_uid != os.getuid():
+        os.close(fd)
+        return None
+    return fd
 
 
 def resolve_token(settings: Settings, *, lock_path: Path | None = None, run: Runner = run_token_cmd) -> str:
@@ -247,11 +285,22 @@ def resolve_token(settings: Settings, *, lock_path: Path | None = None, run: Run
             raise ConfigError(f"could not start token_cmd: {e.strerror or e}") from None
     if proc is None:
         raise ConfigError(f"token_cmd timed out after {TOKEN_CMD_TIMEOUT}s")
-    stderr = (proc.stderr or "").strip()
+    stderr = (proc.stderr or b"").decode("utf-8", "replace").strip()
     suffix = f"; stderr: {stderr}" if stderr else ""
     if proc.returncode != 0:
         raise ConfigError(f"token_cmd exited {proc.returncode}{suffix}")
-    lines = [ln.strip() for ln in (proc.stdout or "").splitlines() if ln.strip()]
+    stdout = _utf8(proc.stdout or b"")
+    if stdout is None:
+        raise ConfigError(f"token_cmd printed something that is not UTF-8{suffix}")
+    lines = [ln.strip() for ln in stdout.splitlines() if ln.strip()]
     if len(lines) != 1:
         raise ConfigError(f"token_cmd must print exactly one non-empty line (got {len(lines)}){suffix}")
     return lines[0]
+
+
+def _utf8(data: bytes) -> str | None:
+    # None rather than an exception: a UnicodeDecodeError's .object would be the token's bytes.
+    try:
+        return data.decode("utf-8")
+    except UnicodeDecodeError:
+        return None

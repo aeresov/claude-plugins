@@ -17,7 +17,7 @@ First read the shared checklist at `<plugin-root>/setup-checklist.md` — it def
 Run check 1 (`python3` ≥ 3.9). If it fails, print its remediation text and **stop**.
 
 ### 2. Existing user settings?
-Run check 2. If `~/.claude/gitlab-client.local.md` exists, run `grep -E '^url:' ~/.claude/gitlab-client.local.md` and `grep -qE '^token_cmd: *[^ ]' ~/.claude/gitlab-client.local.md; echo "token_cmd set: $?"` (0 = set). Show the URL and whether `token_cmd` is set — **don't read or print the file**; a hand-written `token_cmd` could hold the token itself. Ask the user: *Keep as-is* / *Reconfigure (overwrite)* / *Abort*. On Keep, jump to step 5; on Abort, stop.
+Run check 2. If `~/.claude/gitlab-client.local.md` exists, run `grep -E '^url:' ~/.claude/gitlab-client.local.md` and `grep -qE '^token_cmd: *[^ ]' ~/.claude/gitlab-client.local.md; echo "token_cmd set: $?"` (0 = set). Show the URL and whether `token_cmd` is set — **don't read or print the file**; a hand-written `token_cmd` could hold the token itself. Also run `grep -qE '^token_cmd:.*setsid -w keeper' ~/.claude/gitlab-client.local.md; echo "0.2.x keeper line: $?"` (0 = yes); if it is the 0.2.x Keeper Commander line, say that it can now be just `keeper get --format password -- <record-uid>` (its `setsid` keeps Commander out of reach when `gl` times out) and recommend *Reconfigure*. Ask the user: *Keep as-is* / *Reconfigure (overwrite)* / *Abort*. On Keep, jump to step 5; on Abort, stop.
 
 ### 3. GitLab URL
 Ask for the instance URL (e.g. `https://gitlab.example.com`; relative-URL installs include the prefix, e.g. `https://intranet.example.com/gitlab`). Strip a trailing slash. It must start with `http://` or `https://`.
@@ -38,7 +38,7 @@ Open `<plugin-root>/skills/gitlab-client/references/local-settings.md` and show 
 For Keeper Commander, the only specific is the record's **UID**, never its title (`keeper search <words>` in the user's own terminal prints it): `get` falls back to a title search and could print another record's password. Then tell the user what Commander needs before the first `gl` call — setup checks and runs none of it:
 
 - Signed in on this host, in their own terminal, as the user `gl` runs as, with persistent login on and a logout timeout longer than the gaps between `gl` uses: `keeper login`, `keeper this-device persistent-login on`, `keeper this-device timeout 30d`. The timeout is required — Commander's default logs the session out after an idle hour, and `gitlab-client-doctor` run straight after setup would not notice. `keeper this-device` shows the current settings.
-- In a sandboxed client, `gl` must be allowed to write Commander's data directory (`~/.keeper`, else `~/.local/share/.keeper`) or the keychain it uses, granted before the first call: a blocked write lets that call succeed and breaks the next sign-in.
+- In a sandboxed client, `gl` must be allowed to write Commander's data directory (`~/.keeper` if it exists, else `~/.local/share/.keeper` on Linux or `~/Library/Application Support/.keeper` on macOS) or the keychain it uses, granted before the first call: a blocked write lets that call succeed and breaks the next sign-in.
 
 Enforce while assembling:
 
