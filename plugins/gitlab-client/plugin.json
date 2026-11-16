@@ -1,7 +1,7 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "gitlab-client",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Drive a self-managed GitLab 15.x — browse repos, read and open merge requests, debug CI pipelines and job logs — through a bundled REST client with an allow-listed write policy.",
   "author": {
     "name": "aeresov"
