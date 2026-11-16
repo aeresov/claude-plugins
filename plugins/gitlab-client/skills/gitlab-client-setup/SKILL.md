@@ -25,13 +25,17 @@ Ask for the instance URL (e.g. `https://gitlab.example.com`; relative-URL instal
 ### 4. Where does the token come from?
 Ask the user — "Where does your GitLab personal access token come from?":
 
-- **Keeper (ksm)** — "`ksm secret notation keeper://<record-uid>/field/password`"
+- **Keeper Commander (`keeper`)** — "The PAT is the password of a record in your vault: `cd / && flock ~/.claude/gitlab-client.keeper.lock keeper --batch-mode --fail-on-throttle get --format password -- <record-uid> </dev/null`"
 - **pass / 1Password / other CLI** — "`pass show <path>`, `op read \"op://<vault>/<item>/credential\"`, or any command whose stdout is the token."
 - **Environment variable** — "The token is already exported, e.g. `$GITLAB_TOKEN` → `printf '%s' \"$GITLAB_TOKEN\"`."
+
+Keeper means Keeper Commander, the `keeper` CLI. Don't offer Keeper Secrets Manager (`ksm`, `keeper://` notation): it needs a Secrets Manager application, an enterprise feature an ordinary Keeper account doesn't have.
 
 If the user offers to paste the token itself, decline: the file would then *be* the secret and later setup / doctor runs could echo it. Point them at the environment-variable form (export it from their shell profile or a secret-store hook).
 
 Open `<plugin-root>/skills/gitlab-client/references/local-settings.md` and show the matching example. Ask for the specifics and assemble the final `token_cmd`. Restate it and confirm before writing.
+
+For Keeper Commander, the only specific is the record's **UID**, never its title (`keeper search <words>` in the user's own terminal prints it); keep the rest of the line exactly as the reference gives it — each part is explained there. Ask whether Commander is already signed in on this host with persistent login on; if not, tell the user to run `keeper login` and then `keeper this-device persistent-login on` in their own terminal before running `gitlab-client-doctor` — `gl` runs Commander with nobody to answer a prompt.
 
 Enforce while assembling:
 

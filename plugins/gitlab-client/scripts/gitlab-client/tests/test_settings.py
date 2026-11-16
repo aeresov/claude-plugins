@@ -16,8 +16,8 @@ from gitlab_client.settings import (
 
 
 def test_parse_plain_and_quoted_values():
-    text = '---\n# comment\nurl: https://gitlab.example.com/\ntoken_cmd: "ksm secret get x"\n---\n\n# notes\nurl: not-parsed\n'
-    assert parse_frontmatter(text) == {"url": "https://gitlab.example.com/", "token_cmd": "ksm secret get x"}
+    text = '---\n# comment\nurl: https://gitlab.example.com/\ntoken_cmd: "pass show gitlab/pat"\n---\n\n# notes\nurl: not-parsed\n'
+    assert parse_frontmatter(text) == {"url": "https://gitlab.example.com/", "token_cmd": "pass show gitlab/pat"}
 
 
 def test_parse_block_scalar():
@@ -109,9 +109,9 @@ def settings(token_cmd="printf %s tok"):
 
 def test_resolve_token_runs_shell_command():
     run, calls = fake_run(stdout="glpat-abc\n")
-    assert resolve_token(settings("ksm secret get x"), run=run) == "glpat-abc"
+    assert resolve_token(settings("pass show gitlab/pat"), run=run) == "glpat-abc"
     cmd, kwargs = calls[0]
-    assert cmd == "ksm secret get x"
+    assert cmd == "pass show gitlab/pat"
     assert kwargs["shell"] is True and kwargs["capture_output"] is True and kwargs["timeout"] == 60
 
 
