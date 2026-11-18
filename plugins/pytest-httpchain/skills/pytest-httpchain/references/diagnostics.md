@@ -1,7 +1,7 @@
 # `HTTPCHAINxxx` diagnostics: meaning, severity, fix
 
 Loaded on demand from `SKILL.md`. Every finding of `validate` (and of pytest collection,
-which runs the same checks) carries one of these codes. As of pytest-httpchain 0.19.0;
+which runs the same checks) carries one of these codes. As of pytest-httpchain 0.20.0;
 codes are append-only, so an older package simply lacks the later ones (`031`–`040` came
 with 0.16, `041`–`046` with 0.19).
 
@@ -13,7 +13,7 @@ with 0.16, `041`–`046` with 0.19).
 
 | Code | Severity | Meaning | Fix |
 |------|----------|---------|-----|
-| `HTTPCHAIN000` | error | The scenario does not fit the model: an unknown or misspelled key, a wrong type, an invalid value | The message gives the path (`stages -> 0 -> request -> ...`). Check the key against `SKILL.md`, the installed version's gate, or the `schema` subcommand |
+| `HTTPCHAIN000` | error | The scenario does not fit the model: an unknown or misspelled key, a wrong type, an invalid value (a `graphql` query a server would not execute is one: `Invalid GraphQL query: ...`, or several operations and no `operation_name`) | The message gives the path (`stages -> 0 -> request -> ...`). Check the key against `SKILL.md`, the installed version's gate, or the `schema` subcommand; for a GraphQL query, the rules under *Body types* in `SKILL.md` |
 | `HTTPCHAIN001` | error | Duplicate stage names | Rename one |
 | `HTTPCHAIN002` | error | A fixture and a variable share a name | Rename the variable |
 | `HTTPCHAIN003` | warning | A name referenced but never defined, saved or provided as a fixture; or saved only by stages that may skip (`skip_if`, or a `skip`/`skipif`/`xfail` mark) | Fix the typo, define it, or read it with `get('name', default)`. Expected for a name only a `user_functions` save returns |

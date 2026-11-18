@@ -14,7 +14,7 @@ pytest-httpchain is a pytest plugin for declarative HTTP API integration testing
 
 This skill owns scenario *authoring* and the *validate → fix* loop; the `pytest-httpchain` package (a dev dependency of the project under test) supplies the `validate` CLI and the pytest collection that run scenarios.
 
-This skill documents pytest-httpchain **0.19.0**. The installed package decides what a scenario may use: on an older one, stay inside [Version gates](#version-gates); on a newer one, or whenever a field name is in doubt, the `schema` subcommand prints the exact JSON Schema of the installed version, and `validate` has the last word.
+This skill documents pytest-httpchain **0.20.0**. The installed package decides what a scenario may use: on an older one, stay inside [Version gates](#version-gates); on a newer one, or whenever a field name is in doubt, the `schema` subcommand prints the exact JSON Schema of the installed version, and `validate` has the last word.
 
 ## Setup check (do this first)
 
@@ -40,6 +40,7 @@ Compare the installed version from the setup check before using a feature. Below
 | ≥0.16 | `.jsonc` files, comments and trailing commas · `validate <directory>` and `--suffix` · the `client` block and relative URLs · built-in `auth` (`basic`, `digest`, `bearer`, `false`) · `verify.status` classes and lists · `verify.jmespath` · `save.regex` · a `multipart` body and file objects · `skip_if` · `retry` · `parallel.collect_saves` / `thresholds` / `stats_as` · a JSON pointer on a schema file · the time, encoding, URL and hashing template functions · the `\{{` escape · reading a `vars` object by key · `import har` / `import curl` |
 | ≥0.18 | `msgpack` and `bytes` bodies · `response_codec` · `msgpack_pack()`, `hex_bytes()`, `hexencode()`, `b64decode_bytes()` |
 | ≥0.19 | `connections` and `connection` stages · `sha1()` |
+| ≥0.20 | `operation_name` on a `graphql` body · `import` writing a recorded GraphQL request as a `graphql` body |
 
 On a package below 0.16, assert on the body by saving a value and testing it in `expressions`, write URLs absolute, and authenticate with a header or a user function.
 
@@ -141,10 +142,19 @@ Stages can also be written as a dict (keys become stage names):
 - `{"binary": "./file.bin"}` - a file's bytes as the body
 - `{"files": {"field": "./file.pdf"}}` - multipart upload of files only
 - `{"multipart": {"fields": {"title": "Q3", "tags": ["a", "b"]}, "files": {"document": "./report.pdf"}}}` - multipart form fields and files together
-- `{"graphql": {"query": "...", "variables": {}}}` - GraphQL
+- `{"graphql": {"query": "query User($id: ID!) { user(id: $id) { name } }", "variables": {"id": "{{ user_id }}"}}}` - GraphQL, sent as the JSON object `{"query": ..., "variables": ...}` (rules below)
 - `{"msgpack": { ... }}` - a value packed as MessagePack; `{"bytes": "{{ msgpack_pack(packet) }}"}` - raw bytes from one template
 
 A file in `files` or `multipart.files` is a path, a list of files, or an object with exactly one of `path`, `content` (text) and `base64`, plus optional `filename` and `content_type`: `{"content": "{\"a\": 1}", "filename": "meta.json", "content_type": "application/json"}`.
+
+Write a `graphql` query a server will execute. Package ≥0.20 holds it to these rules when the scenario loads (`HTTPCHAIN000`, naming the rule broken) and, where a template writes the query or `operation_name`, again once rendered, failing the stage:
+
+- operations and fragments only, at least one operation: a `type`/`schema`/`scalar`/`directive` definition or an extension fails, and so do fragments alone;
+- an anonymous operation is the only one, and no two operations share a name;
+- a query of several operations names the one to run in `operation_name` (sent as `operationName`, and may be a template; with one operation it is optional, but must name that one if given): `{"graphql": {"query": "query Me { me { id } } query Team($id: ID!) { team(id: $id) { name } }", "variables": {"id": "{{ team_id }}"}, "operation_name": "Team"}}`;
+- every selection set selects something (`{ user { } }` fails; an empty input value `f(filter: {})` is fine), and nesting stays within 200 levels.
+
+To send a document the check refuses on purpose, post the same request as a `json` body: `{"json": {"query": "...", "variables": {}}}`.
 
 ### Authentication
 
@@ -295,4 +305,5 @@ Invoke these through the selected interpreter as `"<test-python>" -B -m pytest_h
 - **Never paste a curl command into the shell line.** It is the user's text, with quotes, `$(...)` and usually a token in it. Write it unchanged to a new file of its own under a temporary directory with the file-writing tool, feed that file on stdin as above (`-` reads stdin; several commands make a stage each), then delete that one file.
 - `-o` refuses an existing file unless `--force`; ask before overwriting a scenario. Without `-o` the scenario goes to stdout.
 - `import har` leaves out static assets (`--all` keeps them); `--include REGEX` / `--exclude REGEX` filter entries by URL.
+- On package ≥0.20, a recorded GraphQL request (a JSON body of exactly a `query` text, a `variables` object and an optional `operationName`) becomes a `graphql` body, so its query is checked when the scenario loads. Any other stays a `json` body, sent as recorded; one whose operations a server would refuse (several and no `operationName`, say) gets a `note:` on stderr saying why: tell the user, and leave it a `json` body, since as a `graphql` body it would not load.
 - The result is a starting point: each request is a stage verifying only its status (`2xx` for curl). Add the `save` steps that chain the stages and the `verify.jmespath` checks the test is for, then validate as usual. Tell the user which environment variables the scenario now reads.
