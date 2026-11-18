@@ -16,7 +16,7 @@ You are running `pytest-httpchain-doctor`: a health check. Write no files, dispa
 2. Run checks **1–4 in order** against the project root, using the existing test interpreter selected in check 1. Never create/sync an environment or update its lockfile:
    - 1 Python project + package manager
    - 2 pytest-httpchain installed in the test env (+ version) — a missing interpreter is a failure too; SKIP 3–4 if it fails. Any version from 0.4.0 passes (older is a FAIL with the checklist's upgrade remediation); one older than the authoring skill documents gets the checklist's one-line note under the check
-   - 3 scenarios discoverable — report the suffix, version-supported extension(s), and count. On package ≥0.16, run the checklist's directory-validation command once (naming `testpaths` and symlinked scenario directories, and adding `--ref-parent-traversal-depth` when the config sets that option, as the checklist says) so both `.json` and `.jsonc` are included; retain its response for Check 4. A directory entry with only `HTTPCHAIN039` holds no scenarios; the suite is empty only when every entry is one, and other failures must be reported. On older packages, find the JSON paths as the checklist describes. Zero is **n/a**, not a failure; a leftover bare `suffix` key is a **FAIL** on ≥0.11
+   - 3 scenarios discoverable — report the suffix, version-supported extension(s), and count. On package ≥0.16, run the checklist's directory-validation command once (naming `testpaths` and symlinked scenario directories, and, below 0.21, adding `--ref-parent-traversal-depth` when the config sets that option, as the checklist says) so both `.json` and `.jsonc` are included; retain its response for Check 4. A directory entry with only `HTTPCHAIN039` holds no scenarios; the suite is empty only when every entry is one, and other failures must be reported. On older packages, find the JSON paths as the checklist describes. Zero is **n/a**, not a failure; a leftover bare `suffix` key is a **FAIL** on ≥0.11
    - 4 scenarios validate clean (`validate --format json`) — reuse the directory response on ≥0.16; on older packages validate the discovered files. SKIP if 2 failed or 3 found zero. Only error-severity diagnostics make a file invalid (each file's own `result.valid`); list warnings as `warning` and info as `info`, never as errors
 
 3. Print one line per check. Example with a missing package:
@@ -30,7 +30,7 @@ You are running `pytest-httpchain-doctor`: a health check. Write no files, dispa
    Example, all configured:
    ```
    PASS  1. python project — uv (existing interpreter: /project/.venv/bin/python)
-   PASS  2. pytest-httpchain installed — 0.20.1
+   PASS  2. pytest-httpchain installed — 0.21.0
    PASS  3. scenarios discoverable — suffix 'http' (default), .json + .jsonc, 4 found
    FAIL  4. scenarios validate — 1 of 4 invalid
          → tests/test_login.http.json: error [HTTPCHAIN001]: Duplicate stage names found: ['login']

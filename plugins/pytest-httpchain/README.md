@@ -4,7 +4,7 @@ A Claude Code and Codex plugin for authoring and validating [pytest-httpchain](h
 
 It's a **companion** to the package, not a copy of it: the package supplies the `validate` CLI and the pytest collection that run scenarios; this plugin supplies the authoring skill, a static-validating subagent, and `/setup` + `/doctor`.
 
-The authoring reference tracks **pytest-httpchain 0.20.1**. It works with installs from 0.4.0 on: the skill reads the installed version and keeps to what that version supports (its *Version gates* table).
+The authoring reference tracks **pytest-httpchain 0.21.0**. It works with installs from 0.4.0 on: the skill reads the installed version and keeps to what that version supports (its *Version gates* table).
 
 ## Quick start
 

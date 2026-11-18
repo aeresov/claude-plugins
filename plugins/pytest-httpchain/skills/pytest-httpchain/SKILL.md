@@ -14,7 +14,7 @@ pytest-httpchain is a pytest plugin for declarative HTTP API integration testing
 
 This skill owns scenario *authoring* and the *validate → fix* loop; the `pytest-httpchain` package (a dev dependency of the project under test) supplies the `validate` CLI and the pytest collection that run scenarios.
 
-This skill documents pytest-httpchain **0.20.1**. The installed package decides what a scenario may use: on an older one, stay inside [Version gates](#version-gates); on a newer one, or whenever a field name is in doubt, the `schema` subcommand prints the exact JSON Schema of the installed version, and `validate` has the last word.
+This skill documents pytest-httpchain **0.21.0**. The installed package decides what a scenario may use: on an older one, stay inside [Version gates](#version-gates); on a newer one, or whenever a field name is in doubt, the `schema` subcommand prints the exact JSON Schema of the installed version, and `validate` has the last word.
 
 ## Setup check (do this first)
 
@@ -45,6 +45,7 @@ Compare the installed version from the setup check before using a feature. Below
 | ≥0.19 | `connections` and `connection` stages · `sha1()` |
 | ≥0.20 | `operation_name` on a `graphql` body · `import` writing a recorded GraphQL request as a `graphql` body |
 | ≥0.20.1 | a context-manager factory fixture called in a connection's `params`, its resource held until that connection closes (released with the opening stage before) |
+| ≥0.21 | a `graphql` query holding templates checked at load (below) · `validate`/`resolve`/`show`/`graph` reading `httpchain_ref_parent_traversal_depth` from the pytest config (3 before, whatever it set) |
 
 On a package below 0.16, assert on the body by saving a value and testing it in `expressions`, write URLs absolute, and authenticate with a header or a user function.
 
@@ -160,8 +161,7 @@ Write a `graphql` query a server will execute. Package ≥0.20 holds a literal q
 - a query of several operations names the one to run in `operation_name` (sent as `operationName`, and may be a template; with one operation it is optional, but must name that one if given): `{"graphql": {"query": "query Me { me { id } } query Team($id: ID!) { team(id: $id) { name } }", "variables": {"id": "{{ team_id }}"}, "operation_name": "Team"}}`;
 - every selection set selects something (`{ user { } }` fails; an empty input value `f(filter: {})` is fine), and nesting stays within 200 levels.
 
-A query with a template anywhere in its text (a whole document from `vars`, or a value written into it, `user(id: "{{ uid }}")`) is not checked by `validate` at all, syntax included; it is checked once rendered, when its stage runs, and then fails the stage. So pass values through `variables`, and share one document across stages by `$include`, which keeps the load check: `"graphql": {"$include": "ops.json#/session", "operation_name": "Me"}`, the included object holding the `query`. A templated `operation_name` beside a literal query defers only the `operation_name` rule to run time.
-
+A query holding templates is checked at load only as far as its text allows (≥0.21; below, not at all): each template is read as a name, which is what one rendering a name, a value or a string's text parses as (`user(id: "{{ uid }}")`, `query {{ op }}`). Where the query parses that way, the rules above apply, `operation_name` too unless an operation's name holds a template. A query that does not parse that way — a template standing for a keyword, braces or a whole document (`"{{ doc }}"`), or a syntax error of the query's own — is checked only once rendered, when its stage runs, and then fails the stage; so are nesting past 200 levels and a templated `operation_name`'s rule. So pass values through `variables`, and share one document across stages by `$include`, which keeps the load check: `"graphql": {"$include": "ops.json#/session", "operation_name": "Me"}`, the included object holding the `query`. 
 To send a document the check refuses on purpose, post it as a `json` body, whose keys go out as written (`operationName`, not `operation_name`): `{"json": {"query": "...", "variables": {}, "operationName": "..."}}`.
 
 ### Authentication
@@ -264,7 +264,7 @@ Load these as the task needs them:
 "<test-python>" -B -m pytest_httpchain.cli validate test_<name>.http.json
 ```
 
-Use the actual scenario path, including `.jsonc` on package ≥0.16, where `validate` also takes a directory and searches it as pytest does by default (`validate tests/`), except that it follows no symlinked subdirectory and does not read the project's `testpaths` or `norecursedirs`. When the pytest config sets `httpchain_ref_parent_traversal_depth`, pass the same value as `--ref-parent-traversal-depth <N>`: the CLI does not read it and allows 3, so a deeper reference that collection accepts fails as `HTTPCHAIN012`. Never use `uvx` or a package-manager run command to repair a missing environment during validation.
+Use the actual scenario path, including `.jsonc` on package ≥0.16, where `validate` also takes a directory and searches it as pytest does by default (`validate tests/`), except that it follows no symlinked subdirectory and does not read the project's `testpaths` or `norecursedirs`. Below 0.21 the CLI does not read `httpchain_ref_parent_traversal_depth` and allows 3, so a deeper reference that collection accepts fails as `HTTPCHAIN012`: when the pytest config sets the option, pass the same value as `--ref-parent-traversal-depth <N>`. Never use `uvx` or a package-manager run command to repair a missing environment during validation.
 
 It checks structure plus semantics a JSON Schema cannot, each with a stable `HTTPCHAINxxx` code and a severity. **Errors** fail `validate`; **warnings** pass it (`OK with warnings`) unless `--strict`; `HTTPCHAIN025` is **info** and never affects the result. Common ones (all of them in [`references/diagnostics.md`](references/diagnostics.md)):
 
