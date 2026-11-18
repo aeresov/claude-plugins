@@ -30,7 +30,7 @@ You are running `pytest-httpchain-doctor`: a health check. Write no files, dispa
    Example, all configured:
    ```
    PASS  1. python project — uv (existing interpreter: /project/.venv/bin/python)
-   PASS  2. pytest-httpchain installed — 0.20.0
+   PASS  2. pytest-httpchain installed — 0.20.1
    PASS  3. scenarios discoverable — suffix 'http' (default), .json + .jsonc, 4 found
    FAIL  4. scenarios validate — 1 of 4 invalid
          → tests/test_login.http.json: error [HTTPCHAIN001]: Duplicate stage names found: ['login']
