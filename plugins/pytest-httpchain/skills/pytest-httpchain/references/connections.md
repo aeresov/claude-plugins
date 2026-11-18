@@ -71,6 +71,14 @@ They reach the constructor with no type conversion (a `vars` object arrives as a
 `validate --deep` checks only their names: an environment variable is text, so wrap it where the adapter takes a number
 (`int(env('DEVICE_PORT', '9000'))`).
 
+A fixture whose value is a factory may be called in `params` (`"lease": "{{ pool() }}"`); a
+context manager it returns is entered, and the param gets what it yields. On ≥0.20.1 it is held
+for that open of the connection and exited after the adapter's `close()`: on `close: true`, on a
+reopen (before the new `params` render), at once when the open fails (each `retry` attempt enters
+its own), and at the scenario's end. An exit that raises fails that stage, with no retry; at the
+scenario's end it is only logged. Older packages exit it when the opening stage ends, while the
+connection stays open.
+
 ## The connection step
 
 | Option | Default | Meaning |
@@ -87,7 +95,7 @@ the response steps, close.
 
 - The first stage that names a connection opens it implicitly, taking no message; write `open: true` only to check the handshake result or to connect again.
 - After a `close: true`, a later stage must say `open: true` (`HTTPCHAIN044`); a closed connection is never reopened implicitly.
-- Connections survive a failed stage, so an `always_run` stage can send a farewell; all are closed when the scenario ends. After a failure, an `always_run` stage whose connection is not open is skipped — it never connects just to say goodbye.
+- Connections survive a failed stage, so an `always_run` stage can send a farewell; all are closed when the scenario ends, before the class-scoped fixtures in its scenario-level `fixtures` are torn down: list a local server or pool the adapter uses there (≥0.20.1; older packages close them after, so make such a fixture module-scoped). After a failure, an `always_run` stage whose connection is not open is skipped — it never connects just to say goodbye.
 
 ## `expect` — waiting for a message
 

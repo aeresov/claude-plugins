@@ -44,6 +44,7 @@ Compare the installed version from the setup check before using a feature. Below
 | ≥0.18 | `msgpack` and `bytes` bodies · `response_codec` · `msgpack_pack()`, `hex_bytes()`, `hexencode()`, `b64decode_bytes()` (its `urlsafe=` and unpadded input ≥0.18.1) |
 | ≥0.19 | `connections` and `connection` stages · `sha1()` |
 | ≥0.20 | `operation_name` on a `graphql` body · `import` writing a recorded GraphQL request as a `graphql` body |
+| ≥0.20.1 | a context-manager factory fixture called in a connection's `params`, its resource held until that connection closes (released with the opening stage before) |
 
 On a package below 0.16, assert on the body by saving a value and testing it in `expressions`, write URLs absolute, and authenticate with a header or a user function.
 
