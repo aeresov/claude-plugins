@@ -20,12 +20,12 @@ This skill documents pytest-httpchain **0.20.0**. The installed package decides 
 
 Before authoring, read checks 1–2 of `<plugin-root>/setup-checklist.md` and select the project's **existing test interpreter**, the same one pytest uses. Run its version probe and retain the installed version and literal absolute interpreter path as `<test-python>`. Use `"<test-python>" -B -m pytest_httpchain.cli` for every inspection and validation command, including delegated work. This works in uv, Poetry, PDM and active-venv projects without switching to a global installation. Do not create/sync an environment or update a lockfile; even `uv run --no-sync` can create a missing venv.
 
-Missing environment or package? Stop and run `pytest-httpchain-setup` (or have the user create/sync the test environment or add the dev dependency) — without it you can't `validate`.
+Missing environment or package, or a package older than 0.4.0? Stop and run `pytest-httpchain-setup` (or have the user create/sync the test environment, or add or upgrade the dev dependency) — without it you can't `validate`.
 
 ## Inline or dispatch the subagent?
 
 - **A single small scenario, or a one-line edit → do it inline** with the reference below, then validate.
-- **A multi-stage chain, multi-file `$ref`/`$include` composition, parametrized/parallel stages, connection stages, or several validate→fix rounds → follow [the authoring procedure](references/authoring.md).** In Claude Code, dispatch the registered `httpchain-author` agent. In Codex, use an available subagent with the absolute procedure path, this skill's path, the goal, target scenario path, API shape, selected interpreter/version and any `--syspath` directories; instruct it to read both files before authoring. If delegation is unavailable, follow the procedure inline. Do not assume Claude's agent registration or `sonnet` model exists in Codex. The author **never makes live HTTP calls** — it only writes JSON and runs the static subcommands `validate`, `resolve`, `show`, `graph`, `schema`, `import`.
+- **A multi-stage chain, multi-file `$ref`/`$include` composition, parametrized/parallel stages, connection stages, or several validate→fix rounds → follow [the authoring procedure](references/authoring.md).** In Claude Code, dispatch the registered `httpchain-author` agent. In Codex, use an available subagent with the absolute procedure path, this skill's path, the goal, target scenario path, API shape, selected interpreter/version and any `--syspath` directories; instruct it to read both files before authoring. If delegation is unavailable, follow the procedure inline. Do not assume Claude's agent registration or `sonnet` model exists in Codex. The author **never makes live HTTP calls** — it only writes JSON and runs the static subcommands `validate`, `resolve`, `show`, `graph`, `schema`, `import`, plus the read-only interpreter probes of setup-checklist checks 1–2 and deleting its temporary curl file.
 
 Always `validate` after authoring, inline or not (see *Validate your scenario* below).
 
@@ -35,10 +35,13 @@ Compare the installed version from the setup check before using a feature. Below
 
 | Needs | Feature |
 |-------|---------|
+| ≥0.4 | this workflow: `validate --format json`, `--deep`, `--syspath`, `--strict` and `HTTPCHAINxxx` codes (`validate` itself: 0.3) |
 | ≥0.5 | `resolve` / `show` / `graph` / `schema` subcommands |
-| ≥0.10 | the `httpchain_suffix` ini option (`suffix` before it) |
+| ≥0.10 | the `httpchain_suffix` ini option (`suffix` before it) · relative file paths resolving against the scenario file's directory (pytest's working directory before) |
+| ≥0.11 | a matcher object as a `verify.headers` value (plain strings only before) · the `response` namespace in response steps |
+| ≥0.12 | an inline `verify.body.schema` read verbatim, its own `$ref`/`$defs` included (before, the scenario's `$ref` resolver took them: put such a schema in a file) |
 | ≥0.16 | `.jsonc` files, comments and trailing commas · `validate <directory>` and `--suffix` · the `client` block and relative URLs · built-in `auth` (`basic`, `digest`, `bearer`, `false`) · `verify.status` classes and lists · `verify.jmespath` · `save.regex` · a `multipart` body and file objects · `skip_if` · `retry` · `parallel.collect_saves` / `thresholds` / `stats_as` · a JSON pointer on a schema file · the time, encoding, URL and hashing template functions · the `\{{` escape · reading a `vars` object by key · `import har` / `import curl` |
-| ≥0.18 | `msgpack` and `bytes` bodies · `response_codec` · `msgpack_pack()`, `hex_bytes()`, `hexencode()`, `b64decode_bytes()` |
+| ≥0.18 | `msgpack` and `bytes` bodies · `response_codec` · `msgpack_pack()`, `hex_bytes()`, `hexencode()`, `b64decode_bytes()` (its `urlsafe=` and unpadded input ≥0.18.1) |
 | ≥0.19 | `connections` and `connection` stages · `sha1()` |
 | ≥0.20 | `operation_name` on a `graphql` body · `import` writing a recorded GraphQL request as a `graphql` body |
 
@@ -63,7 +66,7 @@ On a package below 0.16, assert on the body by saving a value and testing it in 
 ```
 
 - Keys are checked strictly at every level: an unknown or misspelled one fails validation, naming it. Only `$schema` and the `$ref`/`$include`/`$merge` directives are extra.
-- `fixtures` — pytest fixtures available to every stage (a stage's own `fixtures` add to them). `marks` apply to every stage; an `xdist_group` mark belongs here, never on a stage (`HTTPCHAIN031`).
+- `fixtures` — pytest fixtures available to every stage (a stage's own `fixtures` add to them). Each stage is its own pytest test, so a function-scoped fixture (pytest's default) is set up and torn down again for every stage, with a fresh value: one the stages must share needs `scope="class"` or wider, or bind a generated value once in scenario `vars` (`"run_id": "{{ uuid4() }}"`). `marks` apply to every stage; an `xdist_group` mark belongs here, never on a stage (`HTTPCHAIN031`).
 - `auth` — default auth for every request (forms under [Authentication](#authentication)). A request's own `auth` overrides it.
 - `ssl` — `verify`: `true` / `false` / a CA-bundle path; `cert`: a client-cert path or `[cert_path, key_path]`.
 - `client` — the one HTTP client all stages share: `base_url` (makes stage URLs relative), `headers` and `params` sent with every request, `timeout` (default 30), `follow_redirects` (`true`), `max_redirects` (20), `proxy`, `http2` (`true`), `max_connections` (`null`, no limit), `max_keepalive_connections` (20). Cookies a response sets are sent by every later stage of the scenario.
@@ -145,16 +148,20 @@ Stages can also be written as a dict (keys become stage names):
 - `{"graphql": {"query": "query User($id: ID!) { user(id: $id) { name } }", "variables": {"id": "{{ user_id }}"}}}` - GraphQL, sent as the JSON object `{"query": ..., "variables": ...}` (rules below)
 - `{"msgpack": { ... }}` - a value packed as MessagePack; `{"bytes": "{{ msgpack_pack(packet) }}"}` - raw bytes from one template
 
+`xml`, `text`, `base64`, `binary` and `bytes` go out with no `Content-Type`: set one in the request's `headers` (`"Content-Type": "application/xml"`). `json` and `graphql` send `application/json`, `msgpack` `application/msgpack`, and `form`, `files` and `multipart` their encoding's type. A `Content-Type` in `client.headers` replaces the label of every body but `msgpack`, `form`, `files` and `multipart`, `json` and `graphql` included.
+
 A file in `files` or `multipart.files` is a path, a list of files, or an object with exactly one of `path`, `content` (text) and `base64`, plus optional `filename` and `content_type`: `{"content": "{\"a\": 1}", "filename": "meta.json", "content_type": "application/json"}`.
 
-Write a `graphql` query a server will execute. Package ≥0.20 holds it to these rules when the scenario loads (`HTTPCHAIN000`, naming the rule broken) and, where a template writes the query or `operation_name`, again once rendered, failing the stage:
+Write a `graphql` query a server will execute. Package ≥0.20 holds a literal query to these rules when the scenario loads (`HTTPCHAIN000`, naming the rule broken):
 
 - operations and fragments only, at least one operation: a `type`/`schema`/`scalar`/`directive` definition or an extension fails, and so do fragments alone;
 - an anonymous operation is the only one, and no two operations share a name;
 - a query of several operations names the one to run in `operation_name` (sent as `operationName`, and may be a template; with one operation it is optional, but must name that one if given): `{"graphql": {"query": "query Me { me { id } } query Team($id: ID!) { team(id: $id) { name } }", "variables": {"id": "{{ team_id }}"}, "operation_name": "Team"}}`;
 - every selection set selects something (`{ user { } }` fails; an empty input value `f(filter: {})` is fine), and nesting stays within 200 levels.
 
-To send a document the check refuses on purpose, post the same request as a `json` body: `{"json": {"query": "...", "variables": {}}}`.
+A query with a template anywhere in its text (a whole document from `vars`, or a value written into it, `user(id: "{{ uid }}")`) is not checked by `validate` at all, syntax included; it is checked once rendered, when its stage runs, and then fails the stage. So pass values through `variables`, and share one document across stages by `$include`, which keeps the load check: `"graphql": {"$include": "ops.json#/session", "operation_name": "Me"}`, the included object holding the `query`. A templated `operation_name` beside a literal query defers only the `operation_name` rule to run time.
+
+To send a document the check refuses on purpose, post it as a `json` body, whose keys go out as written (`operationName`, not `operation_name`): `{"json": {"query": "...", "variables": {}, "operationName": "..."}}`.
 
 ### Authentication
 
@@ -166,7 +173,7 @@ At scenario level (every request) or in one request (replacing the scenario's):
 | `{"digest": {"username": "...", "password": "..."}}` | HTTP Digest, answering the server's challenge |
 | `{"bearer": "..."}` | `Authorization: Bearer <token>` |
 | `"module:func"` or `{"name": "module:func", "kwargs": {...}}` | whatever `httpx.Auth` your function returns |
-| `false` (request only) | nothing — a public endpoint in an authenticated scenario |
+| `false` (request only) | no scheme: the scenario's is off for this request (a public endpoint). Credentials in `client.headers` or the request's `headers`, a URL's `user:pass@` and cookies earlier responses set are still sent |
 
 Values take templates. The scenario's `auth` resolves once against the scenario substitutions, so a token an earlier stage **saved** goes in the request's own `auth`: `"auth": {"bearer": "{{ token }}"}`. A bare string is always a user function's name — `"auth": "{{ token }}"` fails.
 
@@ -207,17 +214,17 @@ One verify step runs **all** its checks and reports every failure, in this order
 **Verify fields:**
 - `status` — one code (100–599), a class `"1xx"`…`"5xx"`, or a non-empty list of either, any of which passes: `["2xx", 304]`.
 - `headers` — a plain string is an **exact, full-string** match (`"application/json"` fails against `application/json; charset=utf-8`). For partial/pattern checks use a matcher object with any of `contains`, `not_contains`, `matches`, `not_matches` (regex, `re.search`); an absent header counts as `""`.
-- `jmespath` — assert on the decoded JSON body. Each key is a JMESPath expression; its value is the JSON value it must equal (`true` is not `1`, `"42"` is not `42`) or a matcher object whose every key must hold: `eq`, `ne`, `gt`, `ge`, `lt`, `le`, `contains`, `not_contains`, `matches`, `not_matches`, `type` (`string`/`number`/`integer`/`boolean`/`array`/`object`/`null`), `length` (the exact count; for "at least one" check `"length(items)": {"ge": 1}`). **Values and matcher operands take templates**, so a value saved earlier is compared in place — `"id": "{{ order_id }}"`, no save-then-`expressions` detour; only the key is never rendered. An object here is always a matcher, so compare with an object through `eq`: `"meta": {"eq": {"page": 1}}`. A missing path gives `null`.
+- `jmespath` — assert on the decoded JSON body. Each key is a JMESPath expression; its value is the JSON value it must equal (`true` is not `1`, `"42"` is not `42`) or a matcher object whose every key must hold: `eq`, `ne`, `gt`, `ge`, `lt`, `le`, `contains`, `not_contains`, `matches`, `not_matches`, `type` (`string`/`number`/`integer`/`boolean`/`array`/`object`/`null`), `length` (the exact count; for "at least one" check `"length(items)": {"ge": 1}`). **Values and matcher operands take templates**, so a value saved earlier is compared in place — `"id": "{{ order_id }}"`, no save-then-`expressions` detour; only the key is never rendered. The rendered value must have the body's JSON type: a `save.regex` value and `env()` are text, so convert where the body holds a number (`"{{ int(order_id) }}"`), and a `gt`/`ge`/`lt`/`le` operand must render a number, a `length` one a non-negative integer, never numeric text — `validate` cannot tell. An object here is always a matcher, so compare with an object through `eq`: `"meta": {"eq": {"page": 1}}`. A missing path gives `null`.
 - `expressions` — `{{ }}` templates that must each evaluate to a real bool. Use them for logic across values (two body fields against each other, a sum, a value against `response` metadata); one body value against a literal or a saved name is a `jmespath` check.
-- `user_functions` — `"module:func"` or `{"name": ..., "kwargs": {...}}`; each is called with the `httpx.Response` (plus kwargs) and returns a bool. It runs even when an earlier check of the step failed, so it must not assume a good response.
-- `body.schema` — an inline JSON Schema (standard JSON Schema, verbatim: `$include`/`$merge` are **not** resolved inside it — `HTTPCHAIN028`), or a schema **file path** relative to the scenario file, optionally ending in a JSON pointer to one schema inside the document (an OpenAPI 3.1 component: `"./openapi.json#/components/schemas/User"`). `format` is enforced, and a `$ref` resolves within the document or to a local file, never over the network.
+- `user_functions` — `"module:func"` or `{"name": ..., "kwargs": {...}}`; each is called as `func(response=<httpx.Response>, **kwargs)`, so its parameter must be named `response`, and returns a bool. It runs even when an earlier check of the step failed, so it must not assume a good response.
+- `body.schema` — an inline JSON Schema (standard JSON Schema, verbatim: `$include`/`$merge` are **not** resolved inside it — `HTTPCHAIN028`), or a schema **file path** relative to the scenario file, optionally ending in a JSON pointer to one schema inside the document (an OpenAPI 3.1 component: `"./openapi.json#/components/schemas/User"`). `format` is checked (≥0.16), but out of the box (default dialect, Draft 2020-12) only `email`, `idn-email`, `ipv4`, `ipv6`, `date`, `uuid`, `regex` (Python `re` syntax) and `idn-hostname`: `date-time`, `time`, `uri`, `hostname`, `duration` and the rest pass any value unless the test environment has `jsonschema[format-nongpl]`, so check those with `pattern` or a `jmespath` `matches`. A `$ref` resolves within the document or to a local file, never over the network.
 - `body.contains` / `not_contains` / `matches` / `not_matches` — lists of substrings or regexes checked against the body text.
 
 **Save types** (one per step):
-- `{"jmespath": {"name": "expr"}}` - extract values from the JSON body via JMESPath
-- `{"regex": {"csrf": "name=\"csrf\" value=\"([^\"]+)\""}}` - extract from a body that is not JSON: group 1 of the first match (the whole match without groups). As an object: `{"pattern": "id=(\\d+)", "group": 1, "all": true}` — `group` by number or name, `all` for a list of every match. No match fails the step.
+- `{"jmespath": {"name": "expr"}}` - extract values from the JSON body via JMESPath (a missing path saves `null`, not a failure)
+- `{"regex": {"csrf": "name=\"csrf\" value=\"([^\"]+)\""}}` - extract from a body that is not JSON: group 1 of the first match (the whole match without groups). As an object: `{"pattern": "id=(\\d+)", "group": 1, "all": true}` — `group` by number or name, `all` for a list of every match. The values are text. Without `all`, no match fails the step; with `all`, it saves `[]` and passes, so check it later (`"{{ len(ids) > 0 }}"`).
 - `{"substitutions": [...]}` - compute values using template expressions
-- `{"user_functions": [...]}` - call Python functions (given the `httpx.Response`) that each return a dict of names to save; `validate` can't see those names, so later uses draw an expected `HTTPCHAIN003`
+- `{"user_functions": [...]}` - call Python functions (given the `httpx.Response` as `response=`, the parameter's required name) that each return a dict of names to save; `validate` can't see those names, so later uses draw an expected `HTTPCHAIN003`
 
 **What templates can see in response steps:** the context (saved variables, fixtures, substitutions) plus a reserved **`response` metadata namespace** — `response.status`, `response.reason`, `response.headers` (case-insensitive), `response.elapsed_ms`: `"{{ response.status == 200 }}"`, or save a header with `{"save": {"substitutions": [{"vars": {"etag": "{{ response.headers['etag'] }}"}}]}}`. The namespace exists only in response steps, and a name of your own called `response` is shadowed there (`HTTPCHAIN027`). The response **body** is not in it: check it with `verify.jmespath`, or `save` a value and use the saved name. A value `save`d by a step is available to *later* steps and stages, never to the request that produced it.
 
@@ -256,7 +263,7 @@ Load these as the task needs them:
 "<test-python>" -B -m pytest_httpchain.cli validate test_<name>.http.json
 ```
 
-Use the actual scenario path, including `.jsonc` on package ≥0.16, where `validate` also takes a directory and checks every scenario pytest would collect under it (`validate tests/`). Never use `uvx` or a package-manager run command to repair a missing environment during validation.
+Use the actual scenario path, including `.jsonc` on package ≥0.16, where `validate` also takes a directory and searches it as pytest does by default (`validate tests/`), except that it follows no symlinked subdirectory and does not read the project's `testpaths` or `norecursedirs`. When the pytest config sets `httpchain_ref_parent_traversal_depth`, pass the same value as `--ref-parent-traversal-depth <N>`: the CLI does not read it and allows 3, so a deeper reference that collection accepts fails as `HTTPCHAIN012`. Never use `uvx` or a package-manager run command to repair a missing environment during validation.
 
 It checks structure plus semantics a JSON Schema cannot, each with a stable `HTTPCHAINxxx` code and a severity. **Errors** fail `validate`; **warnings** pass it (`OK with warnings`) unless `--strict`; `HTTPCHAIN025` is **info** and never affects the result. Common ones (all of them in [`references/diagnostics.md`](references/diagnostics.md)):
 
@@ -278,7 +285,7 @@ For a deeper check that imports your `module:func` references and connection ada
 "<test-python>" -B -m pytest_httpchain.cli validate --deep --syspath . test_<name>.http.json
 ```
 
-Fix every reported issue and re-validate until clean. Then hand the user the run command (`"<test-python>" -m pytest -k <name>`, with the actual interpreter path) — do **not** run the suite yourself; firing the live HTTP calls is the user's call, not this skill's. For a whole-suite health check, use `pytest-httpchain-doctor`.
+Fix every reported issue and re-validate until clean. Then hand the user the run command naming the scenario file (`"<test-python>" -m pytest tests/test_<name>.http.json`, with the actual interpreter and path), not `-k <name>`: a substring match, it also runs every other scenario whose name contains `<name>`, and any other scenario's stage whose name does, without the earlier stages of its chain. Do **not** run it yourself; firing the live HTTP calls is the user's call, not this skill's. For a whole-suite health check, use `pytest-httpchain-doctor`.
 
 ## Inspect (read-only, pytest-httpchain ≥0.5.0)
 
@@ -305,5 +312,5 @@ Invoke these through the selected interpreter as `"<test-python>" -B -m pytest_h
 - **Never paste a curl command into the shell line.** It is the user's text, with quotes, `$(...)` and usually a token in it. Write it unchanged to a new file of its own under a temporary directory with the file-writing tool, feed that file on stdin as above (`-` reads stdin; several commands make a stage each), then delete that one file.
 - `-o` refuses an existing file unless `--force`; ask before overwriting a scenario. Without `-o` the scenario goes to stdout.
 - `import har` leaves out static assets (`--all` keeps them); `--include REGEX` / `--exclude REGEX` filter entries by URL.
-- On package ≥0.20, a recorded GraphQL request (a JSON body of exactly a `query` text, a `variables` object and an optional `operationName`) becomes a `graphql` body, so its query is checked when the scenario loads. Any other stays a `json` body, sent as recorded; one whose operations a server would refuse (several and no `operationName`, say) gets a `note:` on stderr saying why: tell the user, and leave it a `json` body, since as a `graphql` body it would not load.
-- The result is a starting point: each request is a stage verifying only its status (`2xx` for curl). Add the `save` steps that chain the stages and the `verify.jmespath` checks the test is for, then validate as usual. Tell the user which environment variables the scenario now reads.
+- On package ≥0.20, a recorded GraphQL request (a JSON body of exactly a `query` text, a `variables` object and an optional `operationName`) whose query passes the check above becomes a `graphql` body, checked when the scenario loads. Any other stays a `json` body, sent as recorded. One of that shape whose query the check refuses gets no note: when the query is GraphQL (a syntax error, a type definition, fragments alone, an empty selection set), tell the user a server refuses it too; when it is not GraphQL at all, it may be another API's own `query` field, fine as recorded. One whose operations it refuses gets a `note:` on stderr. For several operations and no `operationName`, or an `operationName` naming none, ask the user which operation the request is for and write a `graphql` body with that `operation_name`. For an anonymous operation beside another, or two operations of one name, the query itself is at fault: tell the user and leave the `json` body.
+- The result is a starting point: each request is a stage verifying only its status (`2xx` for curl). Chain a stage only where a later request reuses a value an earlier response returned (an id written literally, as in `/orders/42`, or a token `import` turned into an `env()` placeholder): save it from that response and use the saved name in its place. Read the save path from the response body the HAR records; where it records none (a curl command never does), ask the user for it. Leave independent requests unchained. Add the `verify.jmespath` checks the test is for from a response shape you were given, then validate as usual. Tell the user which environment variables the scenario now reads.

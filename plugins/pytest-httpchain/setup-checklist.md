@@ -26,9 +26,9 @@ Use the platform's interpreter layout (for example `Scripts/python.exe` on Windo
 test -x "<test-python>" &&
   "<test-python>" -B -c "from importlib.metadata import version; print(version('pytest-httpchain'))"
 ```
-Run it as written, changing only the interpreter path, subject to the host client's approval policy. Pass = it prints a version; retain it for the version gates below. This confirms the distribution is installed in the selected test environment; it does not run pytest or import the user's fixtures. If the interpreter is missing, report that the user must create/sync the test environment themselves before re-running.
+Run it as written, changing only the interpreter path, subject to the host client's approval policy. Pass = it prints a version from 0.4.0 on (below); retain it for the version gates below. This confirms the distribution is installed in the selected test environment; it does not run pytest or import the user's fixtures. If the interpreter is missing, report that the user must create/sync the test environment themselves before re-running.
 
-Any installed version passes. When it is older than the release `skills/pytest-httpchain/SKILL.md` says it documents, add one line to the report naming both versions: scenario features above the installed version (that skill's *Version gates*) are unavailable until the user upgrades.
+Any installed version from 0.4.0 passes. An older one is a **FAIL**: `validate` arrived in 0.3.0, and `--format json`, `--deep`, `--syspath`, `--strict` and the `HTTPCHAINxxx` codes this workflow reads in 0.4.0. When a passing version is older than the release `skills/pytest-httpchain/SKILL.md` says it documents, add one line to the report naming both versions: scenario features above the installed version (that skill's *Version gates*) are unavailable until the user upgrades.
 
 **Remediation (not installed), printed for the detected manager:**
 > pytest-httpchain isn't installed in this project's test environment. Add it as a dev dependency, then re-run:
@@ -37,17 +37,25 @@ Any installed version passes. When it is older than the release `skills/pytest-h
 > - pdm:    `pdm add -dG dev pytest-httpchain`
 > - pip:    `pip install pytest-httpchain` (and record it in your dev requirements)
 
+**Remediation (older than 0.4.0), printed for the detected manager, `<documented>` being the release `skills/pytest-httpchain/SKILL.md` documents:**
+> pytest-httpchain `<version>` predates 0.4.0, the first release with the `validate --format json` output and `HTTPCHAINxxx` codes this workflow reads. Upgrade the dev dependency, then re-run:
+> - uv:     `uv add --group dev "pytest-httpchain>=<documented>"`
+> - poetry: `poetry add --group dev "pytest-httpchain>=<documented>"`
+> - pdm:    `pdm add -dG dev "pytest-httpchain>=<documented>"`
+> - pip:    `pip install "pytest-httpchain>=<documented>"` (and record it in your dev requirements)
+
 ## Check 3 — scenarios discoverable
 
 **Probe.**
-1. **Find the pytest config table pytest actually reads.** In the project root, the first of these that holds pytest config wins, and pytest ignores the rest:
+1. **Find the pytest config file and table pytest actually reads.** In the project root, pytest takes the first of these it finds and ignores the rest:
    `pytest.toml` / `.pytest.toml` (`[pytest]`) → `pytest.ini` / `.pytest.ini` (`[pytest]`) → `pyproject.toml` (`[tool.pytest]`, pytest 9's native table, **or** `[tool.pytest.ini_options]` — never both: pytest 9 refuses to start) → `tox.ini` (`[pytest]`) → `setup.cfg` (`[tool:pytest]`).
-2. Read `httpchain_suffix` from that table (default `http`; the name needs pytest-httpchain ≥0.10). For older packages read `suffix`; 0.10 still honors that deprecated alias when `httpchain_suffix` is absent.
-3. **Doctor, pytest-httpchain ≥0.16:** let the package discover and shallow-validate the project in one call, so its supported extensions and directory exclusions stay authoritative:
+   `pytest.toml`, `.pytest.toml`, `pytest.ini` and `.pytest.ini` win as soon as the file exists, even empty or without its `[pytest]` table/section, and then set nothing (suffix `http`). `pyproject.toml`, `tox.ini` and `setup.cfg` count only when they hold their table.
+2. Read `httpchain_suffix` from that table (default `http`; the name needs pytest-httpchain ≥0.10). For older packages read `suffix`; 0.10 still honors that deprecated alias when `httpchain_suffix` is absent. Also read `httpchain_ref_parent_traversal_depth`: when it is set, add `--ref-parent-traversal-depth <N>` with its value to every `validate` command below. The CLI does not read the option and allows 3, so a deeper reference that collection resolves fails as `HTTPCHAIN012`.
+3. **Doctor, pytest-httpchain ≥0.16:** let the package discover and shallow-validate the project in one call, so its supported extensions and pytest's default directory exclusions apply:
    ```bash
    "<test-python>" -B -m pytest_httpchain.cli validate --format json .
    ```
-   This includes both `test_*.<suffix>.json` and `test_*.<suffix>.jsonc`. Parse `files` and retain the response for Check 4; count actual scenario entries. A sole directory result whose only diagnostic is `HTTPCHAIN039` means zero scenarios: report the empty suite and skip Check 4, despite the CLI's nonzero exit. Any other failure (including unreadable/invalid config, malformed output, or failure to launch) is a failure, never an empty suite.
+   This includes both `test_*.<suffix>.json` and `test_*.<suffix>.jsonc`. Unlike pytest, it enters no symlinked subdirectory and reads none of the project's `testpaths`, `norecursedirs`, `--ignore` or `collect_ignore`. So name the config's `testpaths` directories (globs expanded), when it sets them, in place of `.`, and also name each symlinked directory under the searched paths that holds scenarios. A file that only the project's own exclusions keep from pytest is still validated: report it, noting that pytest does not collect it. Parse `files` and retain the response for Check 4; count actual scenario entries. A directory entry whose only diagnostic is `HTTPCHAIN039` holds no scenarios and is no failure, though it makes the exit nonzero; when every entry is one, report the empty suite and skip Check 4. Any other failure (including unreadable/invalid config, malformed output, or failure to launch) is a failure, never an empty suite.
 4. **Doctor, package <0.16:** directory validation and JSONC collection are unavailable. Find `test_*.<suffix>.json` files under the project (typically `tests/`), respecting pytest's default directory exclusions, existing virtual environments and symlinked directories; pass those literal file paths to Check 4. If matching `.jsonc` files exist, explain that this installed version does not collect them and suggest upgrading; do not rename them.
 
 Report the installed version, suffix, where it came from, supported extension(s), and count. **Zero is not a failure** — it's an empty suite; say so. Setup only reads the config in steps 1–2; it never performs doctor validation.
@@ -66,7 +74,7 @@ With package ≥0.11, **FAIL** if that table still has a bare `suffix` key (the 
 ```bash
 "<test-python>" -B -m pytest_httpchain.cli validate --format json <scenario> [<scenario> ...]
 ```
-Pass = exit 0 and every file `valid`. Parse the JSON; surface any `HTTPCHAINxxx` diagnostics (code + severity + message) per file.
+Pass = every scenario entry `valid`, and exit 0 unless only `HTTPCHAIN039` directory entries made it nonzero. Parse the JSON; surface any `HTTPCHAINxxx` diagnostics (code + severity + message) per file.
 
 **Remediation (one or more invalid):**
 > `<N>` scenario(s) failed validation — see the `HTTPCHAINxxx` diagnostics above (`skills/pytest-httpchain/references/diagnostics.md` has each code's fix). Fix each error and re-run, or use the shared authoring procedure in `skills/pytest-httpchain/references/authoring.md` to repair it (inline or delegated). An `HTTPCHAIN000` naming a key as not permitted (`client`, `retry`, `connection`, …) usually means the scenario uses a feature newer than the installed pytest-httpchain: upgrade the package rather than rewrite the scenario. Run `--deep --syspath <dir>` to additionally check that `module:func` references and connection adapters resolve.

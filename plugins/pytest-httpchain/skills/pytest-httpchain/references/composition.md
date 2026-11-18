@@ -16,13 +16,16 @@ Define variables before stages run:
 ```
 
 Substitutions can appear at scenario level (global) or stage level (local). Steps run in
-order, so a later step may read what an earlier one defined (the other way round is
-`HTTPCHAIN004`). A dict of named steps works in place of the list; the names only organize.
+order, and a step sees only the steps before it, never its own names: put a value built
+from another name in a later step (`[{"vars": {"host": "…"}}, {"vars": {"url": "{{ host }}/api"}}]`),
+not in the same `vars`. A read from the same or a later step is `HTTPCHAIN017` in the
+scenario's `substitutions` and `HTTPCHAIN004` in a stage's (the stage then fails when it
+runs). A dict of named steps works in place of the list; the names only organize.
 
 A `functions` entry binds a **callable** — it isn't invoked when the substitution runs. Call it in a template: `"Authorization": "Bearer {{ generate_token() }}"` (a bare `{{ generate_token }}` renders the function object). Its `kwargs` are passed unrendered (`HTTPCHAIN030`).
 
 Scenario-level substitutions resolve once, before any fixture or save exists, so they may
-read only each other, `env()` and the other built-ins (`HTTPCHAIN016`/`017` otherwise).
+read only earlier steps, `env()` and the other built-ins (`HTTPCHAIN016`/`017` otherwise).
 
 ## References ($include / $merge / $ref)
 
@@ -49,13 +52,13 @@ Merge rules (a violation fails loading with `HTTPCHAIN012: … Merge conflict at
 - **Objects** merge recursively — new keys are added, shared keys merged by these rules.
 - **Arrays** concatenate — referenced elements first, then the sibling's.
 - **Scalars** must be equal, as JSON (`true` is not `1`). A sibling `"method": "POST"` over a referenced `"GET"` is a conflict, and so is `null` against any other value (it is not an escape hatch). Mixing types at one path is a conflict too.
-- **Three values merge whole**, like a scalar, because concatenating them would loosen a shared check: a `verify.status` list, a stage's `retry.on`, and one `verify.jmespath` expression's expectation (matcher included). An equal one is kept; a different one is a conflict. Different `jmespath` expressions still merge side by side.
+- **Some values merge whole**, like a scalar: a `verify.status` list and a stage's `retry.on` (alternatives — concatenating them would loosen a shared check), one expression's expectation in `verify.jmespath` or a connection's `expect.match` (matcher included), and an inline `verify.body.schema`. An equal one is kept; a different one is a conflict. Different `jmespath`/`match` expressions still merge side by side.
 
-To vary a value per use, leave it **out** of the shared fragment (or reference a sub-node that omits it) and set it in each sibling. To extend one shared `jmespath` matcher, write the reference at the expectation itself: `"price": {"$merge": "common.json#/checks/verify/jmespath/price", "lt": 100}`.
+To vary a value per use, leave it **out** of the shared fragment (or reference a sub-node that omits it) and set it in each sibling. To extend one shared `jmespath` matcher, write the reference at the expectation itself: `"price": {"$merge": "common.json#/checks/verify/jmespath/price", "lt": 100}`. A sibling cannot extend an inline schema (a conflict), and a `$merge` written at it is not resolved (`HTTPCHAIN028`): give each use its whole schema, or share a schema file (below).
 
 Path rules:
 - A relative path is looked up next to the **referencing file** first, then under the root (pytest's rootdir, or `--root-path`). A file found under both draws `HTTPCHAIN026`.
-- At most `httpchain_ref_parent_traversal_depth` `../` segments (ini option, default 3), never an absolute path, and never outside the root.
+- At most `httpchain_ref_parent_traversal_depth` `../` segments (ini option, default 3), never an absolute path, and never outside the root. The CLI ignores the ini option and allows 3: when the project sets it, pass the same value as `--ref-parent-traversal-depth <N>` to `validate`/`resolve`/`show`/`graph`.
 - A referenced file may be `.json` or `.jsonc`, with comments.
 
 Directives are **not** resolved inside an inline `verify.body.schema` (it's standard JSON Schema, verbatim — `HTTPCHAIN028` for `$include`/`$merge`). A JSON Schema `$ref` inside it does resolve, within the schema or to a local file relative to the scenario's directory; to share a whole schema, use the file-path form `"schema": "./schemas/user.json"`, optionally with a pointer (`"./openapi.json#/components/schemas/User"`).

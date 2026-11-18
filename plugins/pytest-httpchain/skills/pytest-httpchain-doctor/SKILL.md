@@ -15,8 +15,8 @@ You are running `pytest-httpchain-doctor`: a health check. Write no files, dispa
 
 2. Run checks **1–4 in order** against the project root, using the existing test interpreter selected in check 1. Never create/sync an environment or update its lockfile:
    - 1 Python project + package manager
-   - 2 pytest-httpchain installed in the test env (+ version) — a missing interpreter is a failure too; SKIP 3–4 if it fails. Any version passes; an older one than the authoring skill documents gets the checklist's one-line note under the check
-   - 3 scenarios discoverable — report the suffix, version-supported extension(s), and count. On package ≥0.16, run the checklist's directory-validation command once so both `.json` and `.jsonc` are included; retain its response for Check 4. Only a sole `HTTPCHAIN039` directory result means an empty suite; other failures must be reported. On older packages, find the JSON paths as the checklist describes. Zero is **n/a**, not a failure; a leftover bare `suffix` key is a **FAIL** on ≥0.11
+   - 2 pytest-httpchain installed in the test env (+ version) — a missing interpreter is a failure too; SKIP 3–4 if it fails. Any version from 0.4.0 passes (older is a FAIL with the checklist's upgrade remediation); one older than the authoring skill documents gets the checklist's one-line note under the check
+   - 3 scenarios discoverable — report the suffix, version-supported extension(s), and count. On package ≥0.16, run the checklist's directory-validation command once (naming `testpaths` and symlinked scenario directories, and adding `--ref-parent-traversal-depth` when the config sets that option, as the checklist says) so both `.json` and `.jsonc` are included; retain its response for Check 4. A directory entry with only `HTTPCHAIN039` holds no scenarios; the suite is empty only when every entry is one, and other failures must be reported. On older packages, find the JSON paths as the checklist describes. Zero is **n/a**, not a failure; a leftover bare `suffix` key is a **FAIL** on ≥0.11
    - 4 scenarios validate clean (`validate --format json`) — reuse the directory response on ≥0.16; on older packages validate the discovered files. SKIP if 2 failed or 3 found zero. Only error-severity diagnostics make a file invalid (each file's own `result.valid`); list warnings as `warning` and info as `info`, never as errors
 
 3. Print one line per check. Example with a missing package:
@@ -40,7 +40,7 @@ You are running `pytest-httpchain-doctor`: a health check. Write no files, dispa
 
 4. End with a one-line summary:
    - All green → `OK — pytest-httpchain ready · <manager> · <N> scenario(s) valid`.
-   - Environment/package missing → `Not set up — create/sync the test environment or add pytest-httpchain as a dev dependency (see check 2), then re-run, or pytest-httpchain-setup`.
+   - Environment/package missing or older than 0.4.0 → `Not set up — create/sync the test environment or add or upgrade pytest-httpchain as a dev dependency (see check 2), then re-run, or pytest-httpchain-setup`.
    - Otherwise → `<n> issue(s) — see the FAIL lines above`.
 
 Keep it terse. Don't fix anything here — point at `pytest-httpchain-setup` or the shared authoring procedure only where the checklist's remediation already does.

@@ -4,7 +4,7 @@ Loaded on demand from `SKILL.md`. The essentials (context, `{{ expr }}` in value
 quoted names for `env`/`get`/`exists`) stay in `SKILL.md`; this file is the detail.
 Version gates: the time, encoding, URL and hashing functions, the `\{{` escape and
 reading a `vars` object by key need pytest-httpchain ≥0.16; the MessagePack and bytes
-helpers ≥0.18; `sha1()` ≥0.19.
+helpers ≥0.18 (`b64decode_bytes`'s `urlsafe=` and unpadded input ≥0.18.1); `sha1()` ≥0.19.
 
 ## Built-in functions
 
@@ -16,7 +16,7 @@ helpers ≥0.18; `sha1()` ≥0.19.
 | `uuid4()` | a fresh UUID string, new on every call |
 | `rand()` | a random float, `0 <= x < 1` |
 | `randint(top)` | a random int, `0 <= n < top` (one argument) |
-| `env('VAR', default)` | an environment variable, `default` (else `null`) when unset |
+| `env('VAR', default)` | an environment variable's value, always **text**; `default` (else `null`) when unset, so a numeric default is a number only while the variable is unset; for a number write `int(env('PORT', '9000'))` |
 | `get('name', default)` | the context value `name`, `default` (else `null`) when it is not defined |
 | `exists('name')` | whether `name` is defined in the context |
 | `now()` | the current UTC time, ISO 8601 with offset and microseconds: `2026-09-27T12:34:56.789012+00:00` |
@@ -37,10 +37,10 @@ helpers ≥0.18; `sha1()` ≥0.19.
 
 Rules that bite:
 
-- **Call it.** `{{ now }}`, `{{ env }}` or `str(timestamp)` hands over the function, not its value: the stage fails (`Uncalled function ... call it: now()`) and `validate` warns (`HTTPCHAIN035`).
+- **Call it.** `{{ now }}`, `{{ env }}` or `str(timestamp)` hands over the function, not its value, and `validate` warns (`HTTPCHAIN035`). A template whose value is the function fails the stage (`Uncalled function ... call it: now()`); `str(timestamp)` does not, and sends `<function timestamp at 0x...>`.
 - **Every call reads the clock or the dice again.** To use one moment or one id in several places, bind it once: `{"vars": {"sent_at": "{{ now() }}", "key": "{{ uuid4() }}"}}`. Scenario `substitutions` bind once per scenario; a stage's bind once per stage, before the first attempt of a `retry`.
 - **A header value is text.** `"X-Timestamp": "{{ timestamp() }}"` is a number and fails; write `"{{ str(timestamp()) }}"` or put the call inside text (`"t={{ timestamp() }}"`). Numbers are fine in `params` and a JSON body.
-- **Your names come first.** A variable, fixture, parameter, save or function substitution named like a built-in wins over it where it is in scope; `get()` and `exists()` always stay the built-ins. Out of scope the built-in silently takes its place (`HTTPCHAIN036`), so don't name a save `timestamp`, `max` or `len` without need.
+- **Your names come first.** A variable, fixture, parameter, save or function substitution named like a built-in wins over it where it is in scope; `get()` and `exists()` always stay the built-ins. Out of scope (before the save lands, outside the stage that lists the fixture) the built-in takes its place. A read there is a missing name (`HTTPCHAIN003`/`004` warnings in a stage, `HTTPCHAIN016`/`017` errors at scenario level) and gets the function: `{{ max }}` renders it, `{{ timestamp }}` fails the stage. A use as a function runs the built-in silently (`HTTPCHAIN036`): a `key=` (`sorted(rows, key=len)`), or a call or the name handed to your own function where yours is a fixture or function substitution. So don't name a save `timestamp`, `max` or `len` without need.
 - **`env`, `get`, `exists` take the name as a quoted string.** `get(token)` looks up a name equal to the token's value.
 
 Signing a request, the signed text sent as the body so the two are the same bytes:
@@ -79,7 +79,7 @@ An object reads by attribute or by key, at any depth and inside lists: `{{ user.
 
 | Where the object comes from | It is | Mind |
 |-----------------------------|-------|------|
-| a `vars` substitution | a namespace | Attribute and key both read its keys. Interpolated into text it reads `namespace(...)`: send it whole as a value, or through `json_dumps()`. It never equals a dict: compare `json_loads(json_dumps(user))`. |
+| a `vars` substitution; a connection stage's `message` and `sent` | a namespace | Attribute and key both read its keys. Interpolated into text it reads `namespace(...)`: send it whole as a value, or through `json_dumps()`. It never equals a dict: compare `json_loads(json_dumps(user))`. |
 | a JMESPath `save`, a fixture's dict, a `combinations` parameter, `json_loads()` | a dict | An attribute reads a dict **method** before a key: for a saved `{"items": 3}`, `{{ saved.items }}` is the method. Read such a key (`items`, `keys`, `values`, `get`, `copy`, `pop`, `update`…) by key: `saved['items']`. |
 | the `response` namespace of a response step | metadata | `response.status`, `response['status']`; `response.headers['etag']` is case-insensitive. |
 
@@ -150,6 +150,9 @@ That covers `verify.status`, `verify.body.schema`, header matcher fields, `jmesp
 operands, `request.auth` and its credentials, a `save.regex` `group`, a multipart file's
 `filename`/`content_type`, `parallel.calls_per_sec` and thresholds, `retry.max_delay`, and
 (failing scenario initialization) `ssl.cert`, `client.base_url`, `client.proxy` and the
-pool limits. Two places keep `null` as a value: a `jmespath` value written as a template
-compares with `null`, and `"json": null` sends the JSON document `null`. To compare with
-`null`, write `null`.
+pool limits. Where `null` is a value it is passed on and fails nothing: a `json` or
+`msgpack` body sends `null`; a `jmespath` value written as a template compares with
+`null`; a query parameter or form field is sent empty (`?q=`); a user function's kwarg or
+a `vars` value receives `null`; a template `always_run` reads it as false. Give `get()` a
+default, or guard the stage with `skip_if`, where that would be wrong. In a matcher
+operand, write `null` itself to compare with `null`.

@@ -4,7 +4,7 @@ A Claude Code and Codex plugin for authoring and validating [pytest-httpchain](h
 
 It's a **companion** to the package, not a copy of it: the package supplies the `validate` CLI and the pytest collection that run scenarios; this plugin supplies the authoring skill, a static-validating subagent, and `/setup` + `/doctor`.
 
-The authoring reference tracks **pytest-httpchain 0.20.0**. It works with older installs too: the skill reads the installed version and keeps to what that version supports (its *Version gates* table).
+The authoring reference tracks **pytest-httpchain 0.20.0**. It works with installs from 0.4.0 on: the skill reads the installed version and keeps to what that version supports (its *Version gates* table).
 
 ## Quick start
 
@@ -59,7 +59,7 @@ The skill and subagent author and **statically validate** only — they never fi
 
 ## The `httpchain-author` subagent
 
-For a non-trivial scenario — a multi-stage chain, multi-file `$ref`/`$include` composition, parametrized or parallel stages, retry/polling or connection stages, or one needing several validate→fix rounds — the skill dispatches a context-isolated subagent. It loops `write → (resolve / show, for composed or multi-stage scenarios) → validate → fix` until clean — adding `--deep` only when the scenario references `module:func` code, connection adapters or files — then returns the scenario and the command to run it. It runs only the static `pytest-httpchain` subcommands (`validate`, `resolve`, `show`, `graph`, `schema`, `import`) — never a live HTTP call.
+For a non-trivial scenario — a multi-stage chain, multi-file `$ref`/`$include` composition, parametrized or parallel stages, retry/polling or connection stages, or one needing several validate→fix rounds — the skill dispatches a context-isolated subagent. It loops `write → (resolve / show, for composed or multi-stage scenarios) → validate → fix` until clean — adding `--deep` only when the scenario references `module:func` code, connection adapters or files — then returns the scenario and the command to run it. It runs only the static `pytest-httpchain` subcommands (`validate`, `resolve`, `show`, `graph`, `schema`, `import`), plus the read-only interpreter probes and the deletion of its temporary curl file — never a live HTTP call.
 
 See the shared [authoring procedure](skills/pytest-httpchain/references/authoring.md) and the [Claude agent wrapper](agents/httpchain-author.md).
 
@@ -70,7 +70,7 @@ See the shared [authoring procedure](skills/pytest-httpchain/references/authorin
 
 ## Validation & inspection
 
-`validate` catches what a JSON Schema can't — undefined variables, use-before-save data-flow, no-op verifies, contradictory body checks, a relative URL without a base, a template the engine would refuse — each with a stable `HTTPCHAINxxx` code. `--deep` also imports `module:func` references and connection adapters and checks their signatures. The same checks run at `pytest --collect-only`. The skill carries the full code table with severities and fixes ([`references/diagnostics.md`](skills/pytest-httpchain/references/diagnostics.md)).
+`validate` catches what a JSON Schema can't — undefined variables, use-before-save data-flow, no-op verifies, contradictory body checks, a relative URL without a base, a template the engine would refuse — each with a stable `HTTPCHAINxxx` code. The same checks run at `pytest --collect-only`. `validate --deep` also imports `module:func` references and connection adapters, checks their signatures, and checks referenced files and body schemas; it imports your code, so it is opt-in and never runs at collection. The skill carries the full code table with severities and fixes ([`references/diagnostics.md`](skills/pytest-httpchain/references/diagnostics.md)).
 
 Four read-only inspection commands (pytest-httpchain ≥0.5.0) round it out: `resolve` (inline `$ref`/`$include`/`$merge`), `show` (stage + data-flow summary), `graph` (Mermaid flowchart), and `schema` (emit the JSON Schema for editors). The skill and subagent use them to check composition and data-flow without running the suite. `import har` / `import curl` (≥0.16) write a starter scenario from recorded traffic, with secrets replaced by environment-variable placeholders.
 
