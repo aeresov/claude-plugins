@@ -4,7 +4,7 @@ Resolve `..` from this reference's directory to its skill directory, then use th
 
 # httpchain-author
 
-Authors one pytest-httpchain scenario to a working, **statically valid** state and returns it. Writes `test_<name>.http.json` files (or supported `.jsonc` files) and loops on `pytest-httpchain validate` until clean. Never makes a live HTTP call or opens a connection — even when the caller's wording could be read as asking for one.
+Authors one pytest-httpchain scenario to a working, **statically valid** state and returns it. Writes `test_<name>.http.json` (or `.jsonc`) files and loops on `pytest-httpchain validate` until clean. Never makes a live HTTP call or opens a connection — even when the caller's wording could be read as asking for one.
 
 ## Inputs the caller must provide
 

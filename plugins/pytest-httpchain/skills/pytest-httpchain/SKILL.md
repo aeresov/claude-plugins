@@ -35,6 +35,7 @@ Compare the installed version from the setup check before using a feature. Below
 
 | Needs | Feature |
 |-------|---------|
+| ≥0.17 | a stage's own `skip`/`skipif`/`xfail` mark counting as one that may skip: `validate` reports a later read of a name only such stages save (`HTTPCHAIN003`), `show` lists the earlier producers past it and `graph` draws its edges dotted (before, only a `skip_if` counts: such a read passes `validate` and fails at run time) |
 | ≥0.18 | `msgpack` and `bytes` bodies · `response_codec` · `msgpack_pack()`, `hex_bytes()`, `hexencode()`, `b64decode_bytes()` |
 | ≥0.19 | `connections` and `connection` stages · `sha1()` |
 | ≥0.20 | `operation_name` on a `graphql` body · `import` writing a recorded GraphQL request as a `graphql` body |
@@ -289,7 +290,7 @@ Invoke these through the selected interpreter as `"<test-python>" -B -m pytest_h
 
 - `pytest-httpchain resolve <file>` — print the scenario with every `$ref`/`$include`/`$merge` inlined, as strict JSON. See what a composed, multi-file scenario actually becomes.
 - `pytest-httpchain show <file>` — summarize stages and variable data-flow: per stage, what it `saves` and `consumes`, which earlier stage produced each consumed value, and its `skip_if`. A connection stage shows `CONNECTION <name>` and its actions. Add `--format json` for machine output.
-- `pytest-httpchain graph <file>` — emit a Mermaid flowchart of the stage data-flow (`--direction LR` for wide chains); edges out of a stage that may skip, and connection edges, are dotted. Render it to show the user how a scenario chains.
+- `pytest-httpchain graph <file>` — emit a Mermaid flowchart of the stage data-flow (`--direction LR` for wide chains); edges out of a stage that may skip (by `skip_if`, or from 0.17 by its own `skip`/`skipif`/`xfail` mark), and connection edges, are dotted. Render it to show the user how a scenario chains.
 - `pytest-httpchain schema > scenario.schema.json` — emit the scenario JSON Schema of the installed version (stdout only) for editor autocomplete/validation, and to settle a field name this skill does not cover.
 
 `show` and `graph` need the scenario to load — run `validate` first if they error; `resolve` works even when a scenario doesn't fully validate. Below 0.21, give them the same `--ref-parent-traversal-depth <N>` as `validate` (above).
