@@ -1,7 +1,7 @@
 # `HTTPCHAINxxx` diagnostics: meaning, severity, fix
 
 Loaded on demand from `SKILL.md`. Every finding of `validate` (and of pytest collection,
-which runs the same checks) carries one of these codes. As of pytest-httpchain 0.21.0;
+which runs the same checks) carries one of these codes. As of pytest-httpchain 0.21.1;
 codes are append-only, so an older package simply lacks the later ones (`041`–`046` came
 with 0.19).
 

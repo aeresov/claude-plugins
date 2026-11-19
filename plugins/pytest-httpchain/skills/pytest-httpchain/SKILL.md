@@ -14,7 +14,7 @@ pytest-httpchain is a pytest plugin for declarative HTTP API integration testing
 
 This skill owns scenario *authoring* and the *validate → fix* loop; the `pytest-httpchain` package (a dev dependency of the project under test) supplies the `validate` CLI and the pytest collection that run scenarios.
 
-This skill documents pytest-httpchain **0.21.0**. The installed package decides what a scenario may use: on an older one, stay inside [Version gates](#version-gates); on a newer one, or whenever a field name is in doubt, the `schema` subcommand prints the exact JSON Schema of the installed version, and `validate` has the last word.
+This skill documents pytest-httpchain **0.21.1**. The installed package decides what a scenario may use: on an older one, stay inside [Version gates](#version-gates); on a newer one, or whenever a field name is in doubt, the `schema` subcommand prints the exact JSON Schema of the installed version, and `validate` has the last word.
 
 ## Setup check (do this first)
 
