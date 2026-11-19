@@ -1,14 +1,13 @@
 # Flow control: retry and polling, `skip_if`, `always_run`, marks that skip, pytest-xdist
 
 Loaded on demand from `SKILL.md`. Everything here decides *whether* and *how often* a
-stage runs, and what that leaves for the stages after it. `skip_if` and `retry` need
-pytest-httpchain ≥0.16.
+stage runs, and what that leaves for the stages after it.
 
 ## How a chain runs
 
 - Stages run in order. A stage that **fails** discards its saves and aborts the chain: every later stage is skipped ("Flow aborted") unless its `always_run` lets it through.
 - A stage that is **skipped** — by `skip_if`, or by its own `skip`/`skipif`/`xfail` mark — is no failure: the chain goes on, but that stage saved nothing.
-- So a name can be missing in a later stage for two reasons, and `validate` reports the second (`HTTPCHAIN003`, naming the `skip_if` or the mark). Read a name that may be missing with `get('name', default)`, or guard the stage with `exists('name')`.
+- So a name can be missing in a later stage for two reasons, and `validate` reports the second (`HTTPCHAIN003`, naming the `skip_if`, or, from 0.17, the mark). Read a name a skippable stage saves with `get('name', default)`, and the stage runs on the default. To skip it instead, add a `"skip_if": "{{ not exists('name') }}"` guard and keep `get()`, in the stage's `substitutions` too (they render before `skip_if`): `validate` does not evaluate conditions, so a direct read under the guard still draws `HTTPCHAIN003`. `always_run` is no such guard: it is consulted only after a failure, so after a skip the stage runs and fails on the missing name. `"always_run": "{{ exists('name') }}"` is for the first reason: cleanup that reads what stages saved before the chain failed.
 
 ## `always_run` — cleanup after a failure
 
@@ -88,7 +87,15 @@ naming the mark. A scenario-level mark applies to every stage, so it does not co
 
 Supported forms in `marks`: `"skip"`, `"skip(reason='...')"`, `"skipif(...)"`, `"xfail"`,
 `"usefixtures('name')"` (runs the fixture; its value is **not** available to templates —
-list it in `fixtures` for that). An invalid marker expression is `HTTPCHAIN019`.
+list it in `fixtures` for that). An invalid marker expression, a non-literal argument
+included, is `HTTPCHAIN019`; write a computed condition as a string, which pytest evaluates
+at run time (`"skipif(\"sys.platform == 'win32'\")"`). Two forms `validate` passes go wrong
+when they run: a non-string condition without `reason=` is a pytest error
+(`"skipif(True)"`, `"skipif(False)"`, `"xfail(True)"`; write
+`"skipif(True, reason='...')"`), and `xfail(raises=...)` can name an exception only by a
+literal, never its type: with a string a failure counts as real, and with a tuple of
+strings a failing stage ends the whole pytest run in `INTERNALERROR`. That error or failure
+aborts the chain. Leave `raises` out.
 
 ## `retry` — polling until a stage passes
 
@@ -129,19 +136,20 @@ list it in `fixtures` for that). An invalid marker expression is `HTTPCHAIN019`.
 
 The wait before attempt *n* + 1 is `delay × backoff^(n − 1)`, capped at `max_delay`.
 
-- **`verify`** — a verify step's checks failed (status, header, `jmespath`, expression, body, a verify function returning `False`). **`save`** — a save step could not take its values (a body that is not JSON, a regex without a match). **`request`** — a timeout or a connection that failed. A response is never a `request` failure, whatever its status: to retry on `503`, verify the status and retry on `verify`.
+- **`verify`** — a verify step's checks failed (status, header, `jmespath`, expression, body, a verify function returning `False`). **`save`** — a save step could not take its values (a body that is not JSON, a regex without a match — not with `all`, which saves `[]`). **`request`** — a timeout or a connection that failed. A response is never a `request` failure, whatever its status: to retry on `503`, verify the status and retry on `verify`.
 - **Each attempt renders the request anew** (a fresh `uuid4()`, a current `now()`) and runs every response step in a context of its own; only the attempt that passes commits its saves. The stage's `substitutions`, `skip_if`, `always_run` and the `retry` settings are decided once, before the first attempt.
 - **Never retried:** a template that cannot render, a user function that crashed or cannot be imported, an unreadable body schema, `pytest.skip()`/`xfail()`/`fail()` from a user function.
 - **Do not retry a non-idempotent request blindly.** Start the job in a stage of its own and retry the `GET` that polls it, as above. To retry a `POST`, use `"on": "verify"` (only after the server answered) or send an idempotency key bound once in the stage's `substitutions`: `{"vars": {"key": "{{ uuid4() }}"}}` with `"Idempotency-Key": "{{ key }}"`.
 - The settings except `on` take templates (`"attempts": "{{ int(env('POLL_ATTEMPTS', '30')) }}"`), rendered once in `skip_if`'s scope. `true`/`false` is refused in any of them.
 - A user function says "not yet" by returning `False` (verify) or raising `SaveError` (save), and "never" with `VerificationError(..., retryable=False)` / `SaveError(..., retryable=False)` from `pytest_httpchain.errors`, which ends the stage at once.
-- In a `parallel` stage each iteration makes its own attempts. A sibling `on` beside a `$merge`d `retry` is a merge conflict, never concatenated.
+- In a `parallel` stage each iteration makes its own attempts. `retry.on` merges whole (see `composition.md`): a sibling `on` beside a `$merge`d `retry` is added when the fragment sets none, kept when equal as JSON (`"verify"` is not `["verify"]`), and otherwise `HTTPCHAIN012`, never concatenated. To set `on` per stage, leave it out of the shared `retry`.
 
 ## pytest-xdist
 
 A scenario's stages are one chain on shared state, so they must run on one worker, in order.
 
 - Supported: `--dist loadscope`, `--dist loadfile`, `--dist loadgroup`. Plain `-n 4` (`--dist load`), `each` and `worksteal` are rejected at collection.
-- An `xdist_group` mark goes in the **scenario's** `marks` (`"marks": ["xdist_group('db')"]`), to keep several scenarios on one worker. On a stage it is `HTTPCHAIN031`, and a group name with a `]` after its last `@` is `HTTPCHAIN033`.
+- Under `--dist loadgroup`, an `xdist_group` mark in the **scenario's** `marks` (`"marks": ["xdist_group('db')"]`) keeps several scenarios on one worker, one after the other. `loadscope` and `loadfile` ignore it, so scenarios that must not overlap need `loadgroup`. On a stage, a group the scenario does not declare is `HTTPCHAIN031`, and a group name with a `]` after its last `@` is `HTTPCHAIN033`.
 - A stage name with `::` is `HTTPCHAIN032`: rename it (`Users: list`).
+- Under `--dist loadscope`, a stage's test id in brackets cannot contain `::` either: from a parametrize value (`"::1"`), explicit `ids`, or a fixture's params. `validate` passes it; collection of a scenario with more than one stage fails. Give the step (or fixture) `ids` without `::`, or use `loadfile`/`loadgroup`.
 - A parametrize step whose values are drawn at random or read the clock needs explicit `ids`, or the workers collect different tests.

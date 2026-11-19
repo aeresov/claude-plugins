@@ -11,7 +11,7 @@ the connection, sends one message and decodes the next. The scenario only names 
   "connections": {
     "device": {
       "adapter": "adapters:LineJsonAdapter",
-      "params": { "host": "127.0.0.1", "port": "{{ env('DEVICE_PORT', '9000') }}" }
+      "params": { "host": "127.0.0.1", "port": "{{ int(env('DEVICE_PORT', '9000')) }}" }
     }
   },
   "stages": [
@@ -67,6 +67,17 @@ one chain and read each other's saves.
 `params` render each time the connection opens. They may read scenario substitutions,
 **scenario-level** `fixtures` (class-scoped or wider), and saves of stages before the
 opening one — not the opening stage's own fixtures, parameters or substitutions.
+They reach the constructor with no type conversion (a `vars` object arrives as a dict), and
+`validate --deep` checks only their names: an environment variable is text, so wrap it where the adapter takes a number
+(`int(env('DEVICE_PORT', '9000'))`).
+
+A fixture whose value is a factory may be called in `params` (`"lease": "{{ pool() }}"`); a
+context manager it returns is entered, and the param gets what it yields. On ≥0.20.1 it is held
+for that open of the connection and exited after the adapter's `close()`: on `close: true`, on a
+reopen (before the new `params` render), at once when the open fails (each `retry` attempt enters
+its own), and at the scenario's end. An exit that raises fails that stage, with no retry; at the
+scenario's end it is only logged. Older packages exit it when the opening stage ends, while the
+connection stays open.
 
 ## The connection step
 
@@ -84,7 +95,7 @@ the response steps, close.
 
 - The first stage that names a connection opens it implicitly, taking no message; write `open: true` only to check the handshake result or to connect again.
 - After a `close: true`, a later stage must say `open: true` (`HTTPCHAIN044`); a closed connection is never reopened implicitly.
-- Connections survive a failed stage, so an `always_run` stage can send a farewell; all are closed when the scenario ends. After a failure, an `always_run` stage whose connection is not open is skipped — it never connects just to say goodbye.
+- Connections survive a failed stage, so an `always_run` stage can send a farewell; all are closed when the scenario ends, before the class-scoped fixtures in its scenario-level `fixtures` are torn down: list a local server or pool the adapter uses there (≥0.20.1; older packages close them after, so make such a fixture module-scoped). After a failure, an `always_run` stage whose connection is not open is skipped — it never connects just to say goodbye.
 
 ## `expect` — waiting for a message
 
@@ -97,7 +108,7 @@ stage that sends nothing looks at the whole queue. Non-matching messages stay qu
 | `match` | any message | A JMESPath expression (a string, never rendered — no `{{` in it), taken when truthy: ``"header.action == 'DoCommand' && body.seq > `3`"``. Or an object of expectations written as in `verify.jmespath`, values rendered: `{"op": "pong", "body.items": {"length": 2}}` |
 | `timeout` | `5` | Seconds to wait |
 | `absent` | `false` | Pass if **no** message matches within `timeout`; fail at once on one that does |
-| `closed` | `false` | Wait for the other side to end the connection; takes no `match` and no `absent` |
+| `closed` | `false` | Wait for the other side to end the connection; takes no `match` and no `absent`. The message says how it ended (below) |
 
 - **Push test:** open and `drain` the connection *before* the HTTP stage that triggers the push — a `drain` in the expecting stage would discard the very message it waits for.
 - **Nothing should happen:** `{"expect": {"match": "op == 'play'", "absent": true, "timeout": 3}}` after the call that must not push.
@@ -105,11 +116,14 @@ stage that sends nothing looks at the whole queue. Non-matching messages stay qu
 
 ## Checking the message
 
-The message a stage took — the `expect` match, or what `connect()` returned on an
-`open: true` stage without an `expect` — is what its response steps work on:
+The message a stage took is what its response steps work on: the `expect` match; on
+`closed: true`, how the connection ended — `{"error": null, "detail": null}` for a clean
+end (`receive()` raised `EOFError`), else the error that ended it by type name and text
+(`{"error": "ConnectionResetError", "detail": "..."}`); or what `connect()` returned on an
+`open: true` stage without an `expect`.
 
 - `verify.jmespath`, `save.jmespath` and `verify.body.schema` read it as a decoded JSON body.
-- Templates in the response steps read it as `message` (`{{ message.body.state == 'playing' }}`). A stage that sends also reads what the adapter's `send()` returned as `sent`, in its response steps and in its `expect.match` values. A name of your own called `message` or `sent` is shadowed there (`HTTPCHAIN045`).
+- Templates in the response steps read it as `message` (`{{ message.body.state == 'playing' }}`). A stage that sends also reads what the adapter's `send()` returned as `sent`, in its response steps and in its `expect.match` values. Both are namespaces, as a `vars` object is: `{{ message.body == {...} }}` is always false, so compare a whole object in `verify.jmespath` (`{"body": {"eq": {...}}}`). A name of your own called `message` or `sent` is shadowed there (`HTTPCHAIN045`).
 - User functions are called with `message=` (a dict) in place of `response=`: `def ack_accepted(message: dict) -> bool`.
 
 Refused on a connection stage (`HTTPCHAIN041`): `verify.status`, `verify.headers`,
@@ -135,7 +149,7 @@ contract, which `validate --deep` checks (`HTTPCHAIN046`):
 
 ```python
 class LineJsonAdapter:
-    def __init__(self, host: str, port: int): ...          # the connection's rendered params
+    def __init__(self, host: str, port: int): ...          # the connection's params, with no type conversion
     def connect(self, timeout: float) -> dict | None: ...  # open + handshake; the result is the open stage's message
     def send(self, message: dict) -> dict | None: ...      # a returned dict is the stage's `sent`
     def receive(self, timeout: float) -> dict | None: ...  # next message, None on timeout; raise EOFError on a clean end

@@ -5,8 +5,6 @@ saves feeding later stages, and verify steps together.
 
 ## Complete example: multi-stage API test
 
-Needs pytest-httpchain ≥0.16 (`client`, built-in `auth`, `verify.jmespath`, status lists, `retry`).
-
 ```json
 {
   "description": "Order lifecycle: log in, create an order, wait until it ships, clean up.",

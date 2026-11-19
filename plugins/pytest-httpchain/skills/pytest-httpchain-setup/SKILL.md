@@ -17,16 +17,16 @@ First read the shared checklist at `<plugin-root>/setup-checklist.md` — it def
 Run check 1. If no Python project is found, print its remediation text and **stop**. Otherwise retain the detected manager and existing test interpreter's absolute path for the steps below. Do not create an environment or invoke a package-manager run command.
 
 ### 2. Is the package installed?
-Run check 2's probe with that existing interpreter. If it prints a version, say so (with the checklist's one-line note when it is older than the release the authoring skill documents) and go to step 3. If the interpreter is missing, report the missing test environment; otherwise print check 2's package remediation for the detected manager. Tell the user to create/sync the environment or run the add command themselves, then **stop** and ask them to re-run `pytest-httpchain-setup`. Do **not** add dependencies, create a venv, or update a lockfile yourself.
+Run check 2's probe with that existing interpreter. If it prints 0.16.1 or later, say so (with the checklist's one-line note when it is older than the release the authoring skill documents) and go to step 3. Otherwise report a missing interpreter as a missing test environment, or print check 2's remediation for the detected manager: the upgrade one for an older version, else the not-installed one. Tell the user to create/sync the environment or run the add or upgrade command themselves, then **stop** and ask them to re-run `pytest-httpchain-setup`. Do **not** add dependencies, create a venv, or update a lockfile yourself.
 
 ### 3. Test file suffix (optional)
-Scenarios are discovered as `test_<name>.<suffix>.json`, plus `.jsonc` on pytest-httpchain ≥0.16; the `httpchain_suffix` ini option defaults to `http`. That name needs pytest-httpchain ≥0.10 — if step 2 found an older version, suggest upgrading and skip this step. Locate the pytest config table pytest actually reads and the current value exactly as check 3 does, using only its static config-reading steps; do not run doctor validation here. If that table still has a bare `suffix` key (ignored since 0.11), say so and offer to rename it to `httpchain_suffix` as part of this step. Ask the user — "Keep the default test suffix `http`, or set a custom one?":
+Scenarios are discovered as `test_<name>.<suffix>.json` and `.jsonc`; the `httpchain_suffix` ini option defaults to `http`. Locate the pytest config file and table pytest actually reads and the current value exactly as check 3 does, using only its static config-reading steps; do not run doctor validation here. If that table still has a bare `suffix` key (ignored since 0.11), say so and offer to rename it to `httpchain_suffix` as part of this step. Ask the user — "Keep the default test suffix `http`, or set a custom one?":
 - **Keep `http`** — most projects; change nothing.
-- **Set custom** — ask for the value (letters, digits, `_`, `-`; at most 32 characters — anything else aborts pytest), then add/replace `httpchain_suffix` **in the table check 3 found**, replacing any bare `suffix` key there: `httpchain_suffix = "<value>"` in a TOML table (`[tool.pytest]`, `[tool.pytest.ini_options]`, `pytest.toml`'s `[pytest]`), unquoted `httpchain_suffix = <value>` in an INI file (`pytest.ini`, `tox.ini`, `setup.cfg`). **Never add a second pytest table** — pytest 9 refuses to start when `pyproject.toml` has both `[tool.pytest]` and `[tool.pytest.ini_options]`, and a table in a lower-precedence file is silently ignored. Only when no pytest config exists at all, create `[tool.pytest.ini_options]` in `pyproject.toml`. Restate the file, table, and resulting discovery pattern (`test_<name>.<value>.json`) and confirm before writing.
+- **Set custom** — ask for the value (letters, digits, `_`, `-`; at most 32 characters — anything else aborts pytest), then add/replace `httpchain_suffix` **in the file check 3 found**, adding a `[pytest]` section/table to a `pytest.ini`/`pytest.toml` (or dot-prefixed one) that has none (in a TOML file, above any options written outside a table, so they move under it: say so, and rewrite any of them that is a quoted string where pytest expects a list, an integer or `true`/`false`, such as `addopts = ["-q"]` or `testpaths = ["tests"]`, or pytest rejects it), and replacing any bare `suffix` key there: `httpchain_suffix = "<value>"` in a TOML table (`[tool.pytest]`, `[tool.pytest.ini_options]`, `pytest.toml`'s `[pytest]`), unquoted `httpchain_suffix = <value>` in an INI file (`pytest.ini`, `tox.ini`, `setup.cfg`). **Never add a second pytest table**, except as below for a file found in a parent directory — pytest 9 refuses to start when `pyproject.toml` has both `[tool.pytest]` and `[tool.pytest.ini_options]`, and a table in a lower-precedence file is silently ignored. Only when check 3 found no file that counts, here or in a parent directory (an empty `pytest.ini` or `pytest.toml` counts), create `[tool.pytest.ini_options]` in `pyproject.toml`. A file it found in a parent directory also configures every project under it: write there only if the user agrees. Otherwise, and only with this warning, offer that exception: `[tool.pytest.ini_options]` created in this project's `pyproject.toml` becomes pytest's config for runs from here, dropping that file's settings and moving the rootdir (the `$ref` root) here. Restate the file, table, and resulting discovery pattern (`test_<name>.<value>.json`) and confirm before writing.
 
 ### 4. Scaffold an example (optional)
 Ask the user — "Scaffold a minimal example scenario + conftest?":
-- **Yes** — write into `tests/` if it exists, else ask where. Create a `test_example.<suffix>.json` and, if no `conftest.py` exists there, a tiny one. Use a self-contained scenario that validates without a server. With pytest-httpchain ≥0.16:
+- **Yes** — write into `tests/` if it exists, else ask where. Create a `test_example.<suffix>.json` and, if no `conftest.py` exists there, a tiny one. Use a self-contained scenario that validates without a server:
   ```json
   {
     "description": "Example pytest-httpchain scenario — replace with your API.",
@@ -45,30 +45,10 @@ Ask the user — "Scaffold a minimal example scenario + conftest?":
     ]
   }
   ```
-  With an older package, which has neither `client` nor `verify.jmespath`, write this one instead:
-  ```json
-  {
-    "description": "Example pytest-httpchain scenario — replace with your API.",
-    "substitutions": [
-      { "vars": { "base": "{{ env('API_URL', 'https://httpbin.org') }}" } }
-    ],
-    "stages": [
-      {
-        "name": "get",
-        "request": { "url": "{{ base }}/get", "params": { "q": "hello" } },
-        "response": [
-          { "verify": { "status": 200 } },
-          { "save": { "jmespath": { "echoed": "args.q" } } },
-          { "verify": { "expressions": ["{{ echoed == 'hello' }}"] } }
-        ]
-      }
-    ]
-  }
-  ```
   ```python
   # conftest.py — fixtures available to scenarios go here.
   ```
 - **No** — change nothing.
 
 ### 5. Summary
-Print what you wrote (paths), the detected manager and existing interpreter path, the installed version, and the active `httpchain_suffix` (and which config table it's in). End with: "Done. Run `pytest-httpchain-doctor` to confirm the install, discovery, and that every scenario validates. Ask me to write a scenario any time — I'll validate it and follow the shared authoring procedure for multi-stage ones." With pytest-httpchain ≥0.16, add: "I can also turn a HAR recording or curl commands into a starter scenario."
+Print what you wrote (paths), the detected manager and existing interpreter path, the installed version, and the active `httpchain_suffix` (and which config table it's in). End with: "Done. Run `pytest-httpchain-doctor` to confirm the install, discovery, and that every scenario validates. Ask me to write a scenario any time — I'll validate it and follow the shared authoring procedure for multi-stage ones. I can also turn a HAR recording or curl commands into a starter scenario."
