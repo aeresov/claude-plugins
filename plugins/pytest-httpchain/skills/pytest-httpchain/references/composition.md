@@ -16,11 +16,14 @@ Define variables before stages run:
 ```
 
 Substitutions can appear at scenario level (global) or stage level (local). Steps run in
-order, and a step sees only the steps before it, never its own names: put a value built
-from another name in a later step (`[{"vars": {"host": "…"}}, {"vars": {"url": "{{ host }}/api"}}]`),
-not in the same `vars`. A read from the same or a later step is `HTTPCHAIN017` in the
-scenario's `substitutions` and `HTTPCHAIN004` in a stage's (the stage then fails when it
-runs). A dict of named steps works in place of the list; the names only organize.
+order: a step sees the steps before it, never its own names or a later step's (a stage's
+steps also see fixtures, parametrize parameters, scenario substitutions and earlier saves).
+Put a value built from another name in a later step
+(`[{"vars": {"host": "…"}}, {"vars": {"url": "{{ host }}/api"}}]`), not in the same `vars`.
+A read from the same or a later step is `HTTPCHAIN017` in the scenario's `substitutions`
+(≥0.14.1) and `HTTPCHAIN004` in a stage's (≥0.13; the stage then fails when it runs). Older
+`validate` passes both, and they fail at run time all the same. A dict of named steps works
+in place of the list; the names only organize.
 
 A `functions` entry binds a **callable** — it isn't invoked when the substitution runs. Call it in a template: `"Authorization": "Bearer {{ generate_token() }}"` (a bare `{{ generate_token }}` renders the function object). Its `kwargs` are passed unrendered (`HTTPCHAIN030`).
 

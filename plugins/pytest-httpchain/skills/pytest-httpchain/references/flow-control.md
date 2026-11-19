@@ -8,7 +8,7 @@ pytest-httpchain ≥0.16.
 
 - Stages run in order. A stage that **fails** discards its saves and aborts the chain: every later stage is skipped ("Flow aborted") unless its `always_run` lets it through.
 - A stage that is **skipped** — by `skip_if`, or by its own `skip`/`skipif`/`xfail` mark — is no failure: the chain goes on, but that stage saved nothing.
-- So a name can be missing in a later stage for two reasons, and `validate` reports the second (`HTTPCHAIN003`, naming the `skip_if` or the mark). Read a name a skippable stage saves with `get('name', default)`: `validate` does not evaluate conditions, so a `"skip_if": "{{ not exists('name') }}"` guard still draws `HTTPCHAIN003`, and `always_run` is consulted only after a failure, so after a skip the stage runs and fails on the missing name. `"always_run": "{{ exists('name') }}"` is for the first reason: cleanup that reads what stages saved before the chain failed.
+- So a name can be missing in a later stage for two reasons, and `validate` reports the second (`HTTPCHAIN003`, naming the `skip_if` or the mark). Read a name a skippable stage saves with `get('name', default)`, and the stage runs on the default. To skip it instead, add a `"skip_if": "{{ not exists('name') }}"` guard and keep `get()`, in the stage's `substitutions` too (they render before `skip_if`): `validate` does not evaluate conditions, so a direct read under the guard still draws `HTTPCHAIN003`. `always_run` is no such guard: it is consulted only after a failure, so after a skip the stage runs and fails on the missing name. `"always_run": "{{ exists('name') }}"` is for the first reason: cleanup that reads what stages saved before the chain failed.
 
 ## `always_run` — cleanup after a failure
 
