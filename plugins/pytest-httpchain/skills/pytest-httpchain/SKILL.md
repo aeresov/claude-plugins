@@ -263,7 +263,7 @@ Load these as the task needs them:
 "<test-python>" -B -m pytest_httpchain.cli validate test_<name>.http.json
 ```
 
-Use the actual scenario path, including `.jsonc` on package ≥0.16, where `validate` also takes a directory and searches it as pytest does by default (`validate tests/`), except that it follows no symlinked subdirectory and does not read the project's `testpaths` or `norecursedirs`. Below 0.21 the CLI does not read `httpchain_ref_parent_traversal_depth` and allows 3, so a deeper reference that collection accepts fails `validate` as `HTTPCHAIN012`, and `resolve`/`show`/`graph` with `exceeds maximum parent traversal depth of 3`: when the pytest config sets the option (or, below 0.11, its old name `ref_parent_traversal_depth`), pass the same value as `--ref-parent-traversal-depth <N>` to each of them. Never use `uvx` or a package-manager run command to repair a missing environment during validation.
+Use the actual scenario path, including `.jsonc` on package ≥0.16, where `validate` also takes a directory and searches it as pytest does by default (`validate tests/`), except that it follows no symlinked subdirectory and does not read the project's `testpaths` or `norecursedirs`. Below 0.21 the CLI does not read `httpchain_ref_parent_traversal_depth` and allows 3, so a deeper reference that collection accepts fails `validate` as `HTTPCHAIN012`, and `resolve`/`show`/`graph` with `exceeds maximum parent traversal depth of 3`: when the pytest config sets the option (or, below 0.11, its old name `ref_parent_traversal_depth`), pass the same value as `--ref-parent-traversal-depth <N>` to each of them. Below 0.16.1 also pass `--root-path <rootdir>` (the pytest config file's directory) to each: their default `$ref` root can be narrower than pytest's rootdir (before 0.11, the nearest `tests/` ancestor), and a reference that leaves it fails the same way. Never use `uvx` or a package-manager run command to repair a missing environment during validation.
 
 It checks structure plus semantics a JSON Schema cannot, each with a stable `HTTPCHAINxxx` code and a severity. **Errors** fail `validate`; **warnings** pass it (`OK with warnings`) unless `--strict`; `HTTPCHAIN025` is **info** and never affects the result. Common ones (all of them in [`references/diagnostics.md`](references/diagnostics.md)):
 
@@ -298,7 +298,7 @@ Invoke these through the selected interpreter as `"<test-python>" -B -m pytest_h
 - `pytest-httpchain graph <file>` — emit a Mermaid flowchart of the stage data-flow (`--direction LR` for wide chains); edges out of a stage that may skip, and connection edges, are dotted. Render it to show the user how a scenario chains.
 - `pytest-httpchain schema > scenario.schema.json` — emit the scenario JSON Schema of the installed version (stdout only) for editor autocomplete/validation, and to settle a field name this skill does not cover.
 
-`show` and `graph` need the scenario to load — run `validate` first if they error; `resolve` works even when a scenario doesn't fully validate. Below 0.21, give them the same `--ref-parent-traversal-depth <N>` as `validate` (above).
+`show` and `graph` need the scenario to load — run `validate` first if they error; `resolve` works even when a scenario doesn't fully validate. Below 0.21, give them the same `--ref-parent-traversal-depth <N>`, and below 0.16.1 the same `--root-path <rootdir>`, as `validate` (above).
 
 ## Import recorded traffic (pytest-httpchain ≥0.16)
 

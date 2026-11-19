@@ -9,6 +9,8 @@ allowed-tools:
   - Bash(poetry env info --no-ansi)
   - Bash(python* -B -c "from importlib.metadata import version; print(version('pytest-httpchain'))")
   - Bash(*/bin/python* -B -c "from importlib.metadata import version; print(version('pytest-httpchain'))")
+  - Bash(python* -B -c "from importlib.metadata import version; print(version('pytest'))")
+  - Bash(*/bin/python* -B -c "from importlib.metadata import version; print(version('pytest'))")
   - Bash(python* -B -m pytest_httpchain.cli validate *)
   - Bash(*/bin/python* -B -m pytest_httpchain.cli validate *)
   - Read

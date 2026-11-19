@@ -91,12 +91,12 @@ Supported forms in `marks`: `"skip"`, `"skip(reason='...')"`, `"skipif(...)"`, `
 list it in `fixtures` for that). An invalid marker expression, a non-literal argument
 included, is `HTTPCHAIN019`; write a computed condition as a string, which pytest evaluates
 at run time (`"skipif(\"sys.platform == 'win32'\")"`). Two forms `validate` passes go wrong
-when they run: a non-string condition without `reason=` is a pytest error that aborts the
-chain (`"skipif(True)"`, `"skipif(False)"`, `"xfail(True)"`; write
+when they run: a non-string condition without `reason=` is a pytest error
+(`"skipif(True)"`, `"skipif(False)"`, `"xfail(True)"`; write
 `"skipif(True, reason='...')"`), and `xfail(raises=...)` can name an exception only by a
-literal, never its type: with a string a failure counts as real and aborts the chain, and
-with a tuple of strings a failing stage ends the whole pytest run in `INTERNALERROR`. Leave
-`raises` out.
+literal, never its type: with a string a failure counts as real, and with a tuple of
+strings a failing stage ends the whole pytest run in `INTERNALERROR`. On ≥0.15 that error
+or failure aborts the chain; below, the later stages still run. Leave `raises` out.
 
 ## `retry` — polling until a stage passes
 
@@ -149,8 +149,8 @@ The wait before attempt *n* + 1 is `delay × backoff^(n − 1)`, capped at `max_
 
 A scenario's stages are one chain on shared state, so they must run on one worker, in order.
 
-- Supported: `--dist loadscope`, `--dist loadfile`, `--dist loadgroup`. Plain `-n 4` (`--dist load`), `each` and `worksteal` are rejected at collection (≥0.9.1; 0.9.0 runs them and can split a chain across workers).
-- Under `--dist loadgroup`, an `xdist_group` mark in the **scenario's** `marks` (`"marks": ["xdist_group('db')"]`) keeps several scenarios on one worker, one after the other (≥0.16; below, each scenario also gets a group of its own beside yours, so they still run side by side: upgrade, or run those scenarios without `-n`). `loadscope` and `loadfile` ignore it, so scenarios that must not overlap need `loadgroup`. On a stage, a group the scenario does not declare is `HTTPCHAIN031`, and a group name with a `]` after its last `@` is `HTTPCHAIN033`.
+- Supported: `--dist loadscope` and `--dist loadfile`, and `--dist loadgroup` from 0.9.1, on pytest ≥9.2 only from 0.15.2 (below that, and on 0.9.0 with any pytest, loadgroup breaks chains apart: use `loadscope` or `loadfile`, or upgrade). Plain `-n 4` (`--dist load`), `each` and `worksteal` are rejected at collection (≥0.9.1; 0.9.0 runs them and can split a chain across workers).
+- Under `--dist loadgroup` (where it keeps a chain together, above), an `xdist_group` mark in the **scenario's** `marks` (`"marks": ["xdist_group('db')"]`) keeps several scenarios on one worker, one after the other (≥0.16; below, each scenario also gets a group of its own beside yours, so they still run side by side: upgrade, or, from 0.12, run those scenarios without `-n`). `loadscope` and `loadfile` ignore it, so scenarios that must not overlap need `loadgroup`. On a stage, a group the scenario does not declare is `HTTPCHAIN031`, and a group name with a `]` after its last `@` is `HTTPCHAIN033`.
 - A stage name with `::` is `HTTPCHAIN032`: rename it (`Users: list`).
-- Under `--dist loadscope`, a stage's test id in brackets cannot contain `::` either: from a parametrize value (`"::1"`), explicit `ids`, or a fixture's params. `validate` passes it; on ≥0.16 collection of a scenario with more than one stage fails, and below 0.16 nothing catches it: loadscope runs that stage apart from the rest of its scenario. Give the step (or fixture) `ids` without `::`, or use `loadfile`/`loadgroup`.
+- Under `--dist loadscope`, a stage's test id in brackets cannot contain `::` either: from a parametrize value (`"::1"`), explicit `ids`, or a fixture's params. `validate` passes it; on ≥0.16 collection of a scenario with more than one stage fails, and below 0.16 nothing catches it: loadscope runs that stage apart from the rest of its scenario. Give the step (or fixture) `ids` without `::`, or use `loadfile` (or `loadgroup` where it keeps a chain together, above).
 - A parametrize step whose values are drawn at random or read the clock needs explicit `ids`, or the workers collect different tests.
