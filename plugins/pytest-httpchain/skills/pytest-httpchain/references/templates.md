@@ -2,9 +2,11 @@
 
 Loaded on demand from `SKILL.md`. The essentials (context, `{{ expr }}` in values only,
 quoted names for `env`/`get`/`exists`) stay in `SKILL.md`; this file is the detail.
-Version gates: the time, encoding, URL and hashing functions, the `\{{` escape and
-reading a `vars` object by key need pytest-httpchain ≥0.16; the MessagePack and bytes
-helpers ≥0.18 (`b64decode_bytes`'s `urlsafe=` and unpadded input ≥0.18.1); `sha1()` ≥0.19.
+Version gates: the time, encoding, URL and hashing functions, the `\{{` escape,
+reading a `vars` object by key, a `json` body of `null` sent as `null` (no body before)
+and the `null` refusal below on every field but `verify.status` and `verify.body.schema`
+(those ≥0.14.2) need pytest-httpchain ≥0.16; the MessagePack and bytes helpers ≥0.18;
+`sha1()` ≥0.19.
 
 ## Built-in functions
 
@@ -40,7 +42,7 @@ Rules that bite:
 - **Call it.** `{{ now }}`, `{{ env }}` or `str(timestamp)` hands over the function, not its value, and `validate` warns (`HTTPCHAIN035`). A template whose value is the function fails the stage (`Uncalled function ... call it: now()`); `str(timestamp)` does not, and sends `<function timestamp at 0x...>`.
 - **Every call reads the clock or the dice again.** To use one moment or one id in several places, bind it once: `{"vars": {"sent_at": "{{ now() }}", "key": "{{ uuid4() }}"}}`. Scenario `substitutions` bind once per scenario; a stage's bind once per stage, before the first attempt of a `retry`.
 - **A header value is text.** `"X-Timestamp": "{{ timestamp() }}"` is a number and fails; write `"{{ str(timestamp()) }}"` or put the call inside text (`"t={{ timestamp() }}"`). Numbers are fine in `params` and a JSON body.
-- **Your names come first.** A variable, fixture, parameter, save or function substitution named like a built-in wins over it where it is in scope; `get()` and `exists()` always stay the built-ins. Out of scope (before the save lands, outside the stage that lists the fixture) the built-in takes its place. A read there is a missing name (`HTTPCHAIN003`/`004` warnings in a stage, `HTTPCHAIN016`/`017` errors at scenario level) and gets the function: `{{ max }}` renders it, `{{ timestamp }}` fails the stage. A use as a function runs the built-in silently (`HTTPCHAIN036`): a `key=` (`sorted(rows, key=len)`), or a call or the name handed to your own function where yours is a fixture or function substitution. So don't name a save `timestamp`, `max` or `len` without need.
+- **Your names come first.** A variable, fixture, parameter, save or function substitution named like a built-in wins over it where it is in scope; `get()` and `exists()` always stay the built-ins. Out of scope (before the save lands, outside the stage that lists the fixture) the built-in takes its place. A read there is a missing name (`HTTPCHAIN003`/`004` warnings in a stage, `HTTPCHAIN016`/`017` errors at scenario level) and gets the function: `{{ max }}` renders `<built-in function max>` inside text and as a whole `params` or `form` value, and fails the stage as a whole header, `text` or `json` value; `{{ timestamp }}` fails the stage. A use as a function runs the built-in silently (`HTTPCHAIN036`): a `key=` (`sorted(rows, key=len)`), or a call or the name handed to your own function where yours is a fixture or function substitution. So don't name a save `timestamp`, `max` or `len` without need.
 - **`env`, `get`, `exists` take the name as a quoted string.** `get(token)` looks up a name equal to the token's value.
 
 Signing a request, the signed text sent as the body so the two are the same bytes:
@@ -152,7 +154,9 @@ operands, `request.auth` and its credentials, a `save.regex` `group`, a multipar
 (failing scenario initialization) `ssl.cert`, `client.base_url`, `client.proxy` and the
 pool limits. Where `null` is a value it is passed on and fails nothing: a `json` or
 `msgpack` body sends `null`; a `jmespath` value written as a template compares with
-`null`; a query parameter or form field is sent empty (`?q=`); a user function's kwarg or
-a `vars` value receives `null`; a template `always_run` reads it as false. Give `get()` a
-default, or guard the stage with `skip_if`, where that would be wrong. In a matcher
+`null`; a query parameter or `form` field is sent empty (`?q=`, `f=`); a user function's
+kwarg or a `vars` value receives `null`; a template `always_run` reads it as false. A
+`multipart` field (or an item of its list) and a file take no `null`: there the stage
+fails. Give `get()` a default, or guard the stage with `skip_if`, where that would be
+wrong. In a matcher
 operand, write `null` itself to compare with `null`.

@@ -58,7 +58,7 @@ To vary a value per use, leave it **out** of the shared fragment (or reference a
 
 Path rules:
 - A relative path is looked up next to the **referencing file** first, then under the root (pytest's rootdir, or `--root-path`). A file found under both draws `HTTPCHAIN026`.
-- At most `httpchain_ref_parent_traversal_depth` `../` segments (ini option, default 3), never an absolute path, and never outside the root. `validate`/`resolve`/`show`/`graph` read it from the pytest config on ≥0.21; below, they allow 3 whatever it sets, so pass the same value as `--ref-parent-traversal-depth <N>`.
+- At most `httpchain_ref_parent_traversal_depth` `../` segments (ini option, default 3; `ref_parent_traversal_depth` before 0.10, which 0.10 still reads when the new name is absent), never an absolute path, and never outside the root. `validate`/`resolve`/`show`/`graph` read it from the pytest config on ≥0.21; below, they allow 3 whatever it sets, so pass the value collection uses as `--ref-parent-traversal-depth <N>`.
 - A referenced file may be `.json` or `.jsonc`, with comments.
 
 Directives are **not** resolved inside an inline `verify.body.schema` (it's standard JSON Schema, verbatim — `HTTPCHAIN028` for `$include`/`$merge`). A JSON Schema `$ref` inside it does resolve, within the schema or to a local file relative to the scenario's directory; to share a whole schema, use the file-path form `"schema": "./schemas/user.json"`, optionally with a pointer (`"./openapi.json#/components/schemas/User"`).

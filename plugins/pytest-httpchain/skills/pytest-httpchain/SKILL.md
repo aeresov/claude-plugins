@@ -20,7 +20,7 @@ This skill documents pytest-httpchain **0.21.0**. The installed package decides 
 
 Before authoring, read checks 1–2 of `<plugin-root>/setup-checklist.md` and select the project's **existing test interpreter**, the same one pytest uses. Run its version probe and retain the installed version and literal absolute interpreter path as `<test-python>`. Use `"<test-python>" -B -m pytest_httpchain.cli` for every inspection and validation command, including delegated work. This works in uv, Poetry, PDM and active-venv projects without switching to a global installation. Do not create/sync an environment or update a lockfile; even `uv run --no-sync` can create a missing venv.
 
-Missing environment or package, or a package older than 0.4.0? Stop and run `pytest-httpchain-setup` (or have the user create/sync the test environment, or add or upgrade the dev dependency) — without it you can't `validate`.
+Missing environment or package, or a package older than 0.9.0? Stop and run `pytest-httpchain-setup` (or have the user create/sync the test environment, or add or upgrade the dev dependency) — without it you can't `validate`.
 
 ## Inline or dispatch the subagent?
 
@@ -31,17 +31,15 @@ Always `validate` after authoring, inline or not (see *Validate your scenario* b
 
 ## Version gates
 
-Compare the installed version from the setup check before using a feature. Below its gate the key is unknown, and the scenario fails validation (`HTTPCHAIN000`) or the template its stage.
+Compare the installed version from the setup check before using a feature. Below its gate, a key or value the model lacks fails `validate` (`HTTPCHAIN000`; a comment `HTTPCHAIN014`), a template function or name fails its stage, a command or option is refused, and a `.jsonc` file is not collected. Where a row names the older behavior, that release keeps it, often while `validate` passes.
 
 | Needs | Feature |
 |-------|---------|
-| ≥0.4 | this workflow: `validate --format json`, `--deep`, `--syspath`, `--strict` and `HTTPCHAINxxx` codes (`validate` itself: 0.3) |
-| ≥0.5 | `resolve` / `show` / `graph` / `schema` subcommands |
 | ≥0.10 | the `httpchain_suffix` ini option (`suffix` before it) · relative file paths resolving against the scenario file's directory (pytest's working directory before) |
 | ≥0.11 | a matcher object as a `verify.headers` value (plain strings only before) · the `response` namespace in response steps |
 | ≥0.12 | an inline `verify.body.schema` read verbatim, its own `$ref`/`$defs` included (before, the scenario's `$ref` resolver took them: put such a schema in a file) |
-| ≥0.16 | `.jsonc` files, comments and trailing commas · `validate <directory>` and `--suffix` · the `client` block and relative URLs · built-in `auth` (`basic`, `digest`, `bearer`, `false`) · `verify.status` classes and lists · `verify.jmespath` · `save.regex` · a `multipart` body and file objects · `skip_if` · `retry` · `parallel.collect_saves` / `thresholds` / `stats_as` · a JSON pointer on a schema file · the time, encoding, URL and hashing template functions · the `\{{` escape · reading a `vars` object by key · `import har` / `import curl` |
-| ≥0.18 | `msgpack` and `bytes` bodies · `response_codec` · `msgpack_pack()`, `hex_bytes()`, `hexencode()`, `b64decode_bytes()` (its `urlsafe=` and unpadded input ≥0.18.1) |
+| ≥0.16 | `.jsonc` files, comments and trailing commas · `validate <directory>` and `--suffix` · the `client` block and relative URLs · built-in `auth` (`basic`, `digest`, `bearer`, `false`) · `verify.status` classes and lists · `verify.jmespath` · `save.regex` · a `multipart` body and file objects · `skip_if` · `retry` · `parallel.collect_saves` / `thresholds` / `stats_as` · a JSON pointer on a schema file · the time, encoding, URL and hashing template functions · the `\{{` escape · reading a `vars` object by key · `import har` / `import curl` · `params` merged into the URL's own query (below, httpx ≥0.28 replaces that query: put every parameter in one place) · `{"json": null}` sent as `null` (no body before) · a template rendering `null` failing every optional check or setting (only `verify.status` and `verify.body.schema` before, from 0.14.2) |
+| ≥0.18 | `msgpack` and `bytes` bodies · `response_codec` · `msgpack_pack()`, `hex_bytes()`, `hexencode()`, `b64decode_bytes()` |
 | ≥0.19 | `connections` and `connection` stages · `sha1()` |
 | ≥0.20 | `operation_name` on a `graphql` body · `import` writing a recorded GraphQL request as a `graphql` body |
 | ≥0.20.1 | a context-manager factory fixture called in a connection's `params`, its resource held until that connection closes (released with the opening stage before) |
@@ -224,7 +222,7 @@ One verify step runs **all** its checks and reports every failure, in this order
 
 **Save types** (one per step):
 - `{"jmespath": {"name": "expr"}}` - extract values from the JSON body via JMESPath (a missing path saves `null`, not a failure)
-- `{"regex": {"csrf": "name=\"csrf\" value=\"([^\"]+)\""}}` - extract from a body that is not JSON: group 1 of the first match (the whole match without groups). As an object: `{"pattern": "id=(\\d+)", "group": 1, "all": true}` — `group` by number or name, `all` for a list of every match. The values are text. Without `all`, no match fails the step; with `all`, it saves `[]` and passes, so check it later (`"{{ len(ids) > 0 }}"`).
+- `{"regex": {"csrf": "name=\"csrf\" value=\"([^\"]+)\""}}` - extract from a body that is not JSON: group 1 of the first match (the whole match without groups). As an object: `{"pattern": "id=(\\d+)", "group": 1, "all": true}` — `group` by number or name, `all` for a list of every match. The values are text, `null` where the group took no part in the match (`(x)?`, the other side of a `|`). Without `all`, no match fails the step; with `all`, it saves `[]` and passes, so check it later (`"{{ len(ids) > 0 }}"`).
 - `{"substitutions": [...]}` - compute values using template expressions
 - `{"user_functions": [...]}` - call Python functions (given the `httpx.Response` as `response=`, the parameter's required name) that each return a dict of names to save; `validate` can't see those names, so later uses draw an expected `HTTPCHAIN003`
 
@@ -265,7 +263,7 @@ Load these as the task needs them:
 "<test-python>" -B -m pytest_httpchain.cli validate test_<name>.http.json
 ```
 
-Use the actual scenario path, including `.jsonc` on package ≥0.16, where `validate` also takes a directory and searches it as pytest does by default (`validate tests/`), except that it follows no symlinked subdirectory and does not read the project's `testpaths` or `norecursedirs`. Below 0.21 the CLI does not read `httpchain_ref_parent_traversal_depth` and allows 3, so a deeper reference that collection accepts fails as `HTTPCHAIN012`: when the pytest config sets the option (or, below 0.11, its old name `ref_parent_traversal_depth`), pass the same value as `--ref-parent-traversal-depth <N>`. Never use `uvx` or a package-manager run command to repair a missing environment during validation.
+Use the actual scenario path, including `.jsonc` on package ≥0.16, where `validate` also takes a directory and searches it as pytest does by default (`validate tests/`), except that it follows no symlinked subdirectory and does not read the project's `testpaths` or `norecursedirs`. Below 0.21 the CLI does not read `httpchain_ref_parent_traversal_depth` and allows 3, so a deeper reference that collection accepts fails `validate` as `HTTPCHAIN012`, and `resolve`/`show`/`graph` with `exceeds maximum parent traversal depth of 3`: when the pytest config sets the option (or, below 0.11, its old name `ref_parent_traversal_depth`), pass the same value as `--ref-parent-traversal-depth <N>` to each of them. Never use `uvx` or a package-manager run command to repair a missing environment during validation.
 
 It checks structure plus semantics a JSON Schema cannot, each with a stable `HTTPCHAINxxx` code and a severity. **Errors** fail `validate`; **warnings** pass it (`OK with warnings`) unless `--strict`; `HTTPCHAIN025` is **info** and never affects the result. Common ones (all of them in [`references/diagnostics.md`](references/diagnostics.md)):
 
@@ -289,7 +287,7 @@ For a deeper check that imports your `module:func` references and connection ada
 
 Fix every reported issue and re-validate until clean. Then hand the user the run command naming the scenario file (`"<test-python>" -m pytest tests/test_<name>.http.json`, with the actual interpreter and path), not `-k <name>`: a substring match, it also runs every other scenario whose name contains `<name>`, and any other scenario's stage whose name does, without the earlier stages of its chain. Do **not** run it yourself; firing the live HTTP calls is the user's call, not this skill's. For a whole-suite health check, use `pytest-httpchain-doctor`.
 
-## Inspect (read-only, pytest-httpchain ≥0.5.0)
+## Inspect (read-only)
 
 Four CLI commands explain a scenario without running it — all static, no network:
 
@@ -298,9 +296,9 @@ Invoke these through the selected interpreter as `"<test-python>" -B -m pytest_h
 - `pytest-httpchain resolve <file>` — print the scenario with every `$ref`/`$include`/`$merge` inlined, as strict JSON. See what a composed, multi-file scenario actually becomes.
 - `pytest-httpchain show <file>` — summarize stages and variable data-flow: per stage, what it `saves` and `consumes`, which earlier stage produced each consumed value, and its `skip_if`. A connection stage shows `CONNECTION <name>` and its actions. Add `--format json` for machine output.
 - `pytest-httpchain graph <file>` — emit a Mermaid flowchart of the stage data-flow (`--direction LR` for wide chains); edges out of a stage that may skip, and connection edges, are dotted. Render it to show the user how a scenario chains.
-- `pytest-httpchain schema > scenario.schema.json` — emit the scenario JSON Schema of the installed version (stdout only; `-o` was removed in 0.8.0) for editor autocomplete/validation, and to settle a field name this skill does not cover.
+- `pytest-httpchain schema > scenario.schema.json` — emit the scenario JSON Schema of the installed version (stdout only) for editor autocomplete/validation, and to settle a field name this skill does not cover.
 
-`show` and `graph` need the scenario to load — run `validate` first if they error; `resolve` works even when a scenario doesn't fully validate.
+`show` and `graph` need the scenario to load — run `validate` first if they error; `resolve` works even when a scenario doesn't fully validate. Below 0.21, give them the same `--ref-parent-traversal-depth <N>` as `validate` (above).
 
 ## Import recorded traffic (pytest-httpchain ≥0.16)
 
@@ -314,5 +312,5 @@ Invoke these through the selected interpreter as `"<test-python>" -B -m pytest_h
 - **Never paste a curl command into the shell line.** It is the user's text, with quotes, `$(...)` and usually a token in it. Write it unchanged to a new file of its own under a temporary directory with the file-writing tool, feed that file on stdin as above (`-` reads stdin; several commands make a stage each), then delete that one file.
 - `-o` refuses an existing file unless `--force`; ask before overwriting a scenario. Without `-o` the scenario goes to stdout.
 - `import har` leaves out static assets (`--all` keeps them); `--include REGEX` / `--exclude REGEX` filter entries by URL.
-- On package ≥0.20, a recorded GraphQL request (a JSON body of exactly a `query` text, a `variables` object and an optional `operationName`) whose query passes the check above becomes a `graphql` body, checked when the scenario loads. Any other stays a `json` body, sent as recorded. One of that shape whose query the check refuses gets no note: when the query is GraphQL (a syntax error, a type definition, fragments alone, an empty selection set), tell the user a server refuses it too; when it is not GraphQL at all, it may be another API's own `query` field, fine as recorded. One whose operations it refuses gets a `note:` on stderr. For several operations and no `operationName`, or an `operationName` naming none, ask the user which operation the request is for and write a `graphql` body with that `operation_name`. For an anonymous operation beside another, or two operations of one name, the query itself is at fault: tell the user and leave the `json` body.
+- On package ≥0.20, a recorded GraphQL request (a JSON body of exactly a `query` text, a `variables` object and, if any, an `operationName` text) whose query passes the check above becomes a `graphql` body, checked when the scenario loads. Any other stays a `json` body, sent as recorded, and `import` notes nothing about its query, whatever that query is: one with `"operationName": null`, `"variables": null` or no `variables`, an `extensions` key, or a batch. One of exactly that shape whose query the check refuses gets no note either: when the query is GraphQL (a syntax error, a type definition, fragments alone, an empty selection set), tell the user a server refuses it too; when it is not GraphQL at all, it may be another API's own `query` field, fine as recorded. One whose operations it refuses gets a `note:` on stderr. For several operations and no `operationName`, or an `operationName` naming none, ask the user which operation the request is for and write a `graphql` body with that `operation_name`; when the query's only operation is anonymous, write it without `operation_name`. For an anonymous operation beside another, or two operations of one name, the query itself is at fault: tell the user and leave the `json` body.
 - The result is a starting point: each request is a stage verifying only its status (`2xx` for curl). Chain a stage only where a later request reuses a value an earlier response returned (an id written literally, as in `/orders/42`, or a token `import` turned into an `env()` placeholder): save it from that response and use the saved name in its place. Read the save path from the response body the HAR records; where it records none (a curl command never does), ask the user for it. Leave independent requests unchained. Add the `verify.jmespath` checks the test is for from a response shape you were given, then validate as usual. Tell the user which environment variables the scenario now reads.

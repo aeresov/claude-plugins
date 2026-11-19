@@ -26,9 +26,9 @@ Use the platform's interpreter layout (for example `Scripts/python.exe` on Windo
 test -x "<test-python>" &&
   "<test-python>" -B -c "from importlib.metadata import version; print(version('pytest-httpchain'))"
 ```
-Run it as written, changing only the interpreter path, subject to the host client's approval policy. Pass = it prints a version from 0.4.0 on (below); retain it for the version gates below. This confirms the distribution is installed in the selected test environment; it does not run pytest or import the user's fixtures. If the interpreter is missing, report that the user must create/sync the test environment themselves before re-running.
+Run it as written, changing only the interpreter path, subject to the host client's approval policy. Pass = it prints a version from 0.9.0 on (below); retain it for the version gates below. This confirms the distribution is installed in the selected test environment; it does not run pytest or import the user's fixtures. If the interpreter is missing, report that the user must create/sync the test environment themselves before re-running.
 
-Any installed version from 0.4.0 passes. An older one is a **FAIL**: `validate` arrived in 0.3.0, and `--format json`, `--deep`, `--syspath`, `--strict` and the `HTTPCHAINxxx` codes this workflow reads in 0.4.0. When a passing version is older than the release `skills/pytest-httpchain/SKILL.md` says it documents, add one line to the report naming both versions: scenario features above the installed version (that skill's *Version gates*) are unavailable until the user upgrades.
+Any installed version from 0.9.0 passes. An older one is a **FAIL**: 0.3.0–0.8.1 are yanked from PyPI and no longer install, and they lack what the authoring skill takes for granted (before 0.6, unknown keys pass `validate` and scenario-level `fixtures` are dropped). When a passing version is older than the release `skills/pytest-httpchain/SKILL.md` says it documents, add one line to the report naming both versions: scenario features above the installed version (that skill's *Version gates*) are unavailable until the user upgrades.
 
 **Remediation (not installed), printed for the detected manager:**
 > pytest-httpchain isn't installed in this project's test environment. Add it as a dev dependency, then re-run:
@@ -37,8 +37,8 @@ Any installed version from 0.4.0 passes. An older one is a **FAIL**: `validate` 
 > - pdm:    `pdm add -dG dev pytest-httpchain`
 > - pip:    `pip install pytest-httpchain` (and record it in your dev requirements)
 
-**Remediation (older than 0.4.0), printed for the detected manager, `<documented>` being the release `skills/pytest-httpchain/SKILL.md` documents:**
-> pytest-httpchain `<version>` predates 0.4.0, the first release with the `validate --format json` output and `HTTPCHAINxxx` codes this workflow reads. Upgrade the dev dependency, then re-run:
+**Remediation (older than 0.9.0), printed for the detected manager, `<documented>` being the release `skills/pytest-httpchain/SKILL.md` documents:**
+> pytest-httpchain `<version>` predates 0.9.0, the oldest release this workflow supports (0.3.0–0.8.1 are yanked from PyPI). Upgrade the dev dependency, then re-run:
 > - uv:     `uv add --group dev "pytest-httpchain>=<documented>"`
 > - poetry: `poetry add --group dev "pytest-httpchain>=<documented>"`
 > - pdm:    `pdm add -dG dev "pytest-httpchain>=<documented>"`
