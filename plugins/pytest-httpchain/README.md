@@ -4,7 +4,7 @@ A Claude Code and Codex plugin for authoring and validating [pytest-httpchain](h
 
 It's a **companion** to the package, not a copy of it: the package supplies the `validate` CLI and the pytest collection that run scenarios; this plugin supplies the authoring skill, a static-validating subagent, and `/setup` + `/doctor`.
 
-The authoring reference tracks **pytest-httpchain 0.21.0**. It works with installs from 0.9.0 on, the oldest release PyPI still installs: the skill reads the installed version and keeps to what that version supports (its *Version gates* table).
+The authoring reference tracks **pytest-httpchain 0.21.0**. It works with installs from 0.16.1 on: the skill reads the installed version and keeps to what that version supports (its *Version gates* table).
 
 ## Quick start
 
@@ -33,7 +33,7 @@ Claude registers the named subagent described below. Codex reads the same proced
 
 A Python project whose test environment has `pytest-httpchain` as a dev dependency. `/pytest-httpchain:setup` detects your package manager (uv / poetry / pdm / pip) and prints the add command; it never installs for you. No servers, credentials, or network are needed to author and validate — running the scenarios (the live HTTP calls) is `pytest`'s job, which you drive.
 
-Setup, doctor and authoring use the existing test interpreter directly. Create/sync that environment yourself first; these workflows report a missing environment and leave dependency files and lockfiles alone. Doctor uses package-owned directory validation on pytest-httpchain ≥0.16, including both `.json` and `.jsonc` scenarios. Older versions retain JSON-file validation and report JSONC as unsupported.
+Setup, doctor and authoring use the existing test interpreter directly. Create/sync that environment yourself first; these workflows report a missing environment and leave dependency files and lockfiles alone. Doctor uses package-owned directory validation, including both `.json` and `.jsonc` scenarios.
 
 ## What triggers the skill
 
@@ -65,14 +65,14 @@ See the shared [authoring procedure](skills/pytest-httpchain/references/authorin
 
 ## Commands
 
-- **`/pytest-httpchain:setup`** — confirms the dev dependency (guiding the install per your package manager, never running it), optionally sets the `httpchain_suffix` pytest ini option (pytest-httpchain ≥0.10) in whichever pytest config table the project already uses, optionally scaffolds an example scenario + `conftest.py`. Writes only files you approve.
+- **`/pytest-httpchain:setup`** — confirms the dev dependency (guiding the install per your package manager, never running it), optionally sets the `httpchain_suffix` pytest ini option in whichever pytest config table the project already uses, optionally scaffolds an example scenario + `conftest.py`. Writes only files you approve.
 - **`/pytest-httpchain:doctor`** — read-only: package manager · package installed (+ version) · scenarios discoverable · every scenario passes `validate`. One line per check, with a fix for each failure.
 
 ## Validation & inspection
 
 `validate` catches what a JSON Schema can't — undefined variables, use-before-save data-flow, no-op verifies, contradictory body checks, a relative URL without a base, a template the engine would refuse — each with a stable `HTTPCHAINxxx` code. The same checks run at `pytest --collect-only`. `validate --deep` also imports `module:func` references and connection adapters, checks their signatures, and checks referenced files and body schemas; it imports your code, so it is opt-in and never runs at collection. The skill carries the full code table with severities and fixes ([`references/diagnostics.md`](skills/pytest-httpchain/references/diagnostics.md)).
 
-Four read-only inspection commands round it out: `resolve` (inline `$ref`/`$include`/`$merge`), `show` (stage + data-flow summary), `graph` (Mermaid flowchart), and `schema` (emit the JSON Schema for editors). The skill and subagent use them to check composition and data-flow without running the suite. `import har` / `import curl` (≥0.16) write a starter scenario from recorded traffic, with secrets replaced by environment-variable placeholders.
+Four read-only inspection commands round it out: `resolve` (inline `$ref`/`$include`/`$merge`), `show` (stage + data-flow summary), `graph` (Mermaid flowchart), and `schema` (emit the JSON Schema for editors). The skill and subagent use them to check composition and data-flow without running the suite. `import har` / `import curl` write a starter scenario from recorded traffic, with secrets replaced by environment-variable placeholders.
 
 ## License
 

@@ -2,8 +2,8 @@
 
 Loaded on demand from `SKILL.md`. Every finding of `validate` (and of pytest collection,
 which runs the same checks) carries one of these codes. As of pytest-httpchain 0.21.0;
-codes are append-only, so an older package simply lacks the later ones (`031`–`040` came
-with 0.16, `041`–`046` with 0.19).
+codes are append-only, so an older package simply lacks the later ones (`041`–`046` came
+with 0.19).
 
 **Severity decides the outcome — never report a warning as an error, or the reverse.**
 
@@ -24,7 +24,7 @@ with 0.16, `041`–`046` with 0.19).
 | `HTTPCHAIN008` | error | `matches` and `not_matches` name the same pattern | Remove the contradiction |
 | `HTTPCHAIN009` | warning | A saved name is shadowed by a scenario-level fixture | Save under another name |
 | `HTTPCHAIN010` | error | File not found | Fix the path given to the command |
-| `HTTPCHAIN011` | error | Path is not a file | Name a file (a directory is searched on ≥0.16) |
+| `HTTPCHAIN011` | error | Path is not a file | Name a file, or a directory to search |
 | `HTTPCHAIN012` | error | `$include`/`$merge`/`$ref` did not resolve: a missing file, a bad pointer, a path outside the root or past the `../` limit (`httpchain_ref_parent_traversal_depth`; below 0.21 the CLI's is 3 whatever the ini sets), or a `Merge conflict at <path>` | Fix the path (a project that raises the ini depth passes it as `--ref-parent-traversal-depth <N>`: below 0.21 always, from 0.21 only when pytest takes it from `-o` or a `-c` file), or see the merge rules in `composition.md` |
 | `HTTPCHAIN013` | warning | File extension is neither `.json` nor `.jsonc` | pytest would not collect it: rename |
 | `HTTPCHAIN014` | error | Invalid JSON in the scenario or a file it includes: a syntax error, an unclosed `/*`, a duplicate key, bytes that are not UTF-8, `NaN`/`Infinity` | Fix at the line and column given; the message names an included file |

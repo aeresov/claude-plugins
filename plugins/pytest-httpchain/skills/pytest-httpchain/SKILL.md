@@ -10,7 +10,7 @@ description: Author, edit, and validate pytest-httpchain HTTP API test scenarios
 
 This skill supports Claude Code and Codex. Resolve `../..` from this SKILL.md's directory to the absolute plugin root and substitute it for `<plugin-root>` below. Keep shell calls in the consuming project directory.
 
-pytest-httpchain is a pytest plugin for declarative HTTP API integration testing. Test scenarios are JSON files discovered by pattern `test_<name>.http.json`, plus `test_<name>.http.jsonc` on package ≥0.16 (the `http` suffix is the default of the `httpchain_suffix` ini option — named `suffix` before 0.10, and that old name is ignored since 0.11). Preserve an existing supported `.jsonc` filename when editing.
+pytest-httpchain is a pytest plugin for declarative HTTP API integration testing. Test scenarios are JSON files discovered by pattern `test_<name>.http.json` or `test_<name>.http.jsonc` (the `http` suffix is the default of the `httpchain_suffix` ini option; its pre-0.10 name `suffix` is ignored). Preserve an existing `.jsonc` filename when editing.
 
 This skill owns scenario *authoring* and the *validate → fix* loop; the `pytest-httpchain` package (a dev dependency of the project under test) supplies the `validate` CLI and the pytest collection that run scenarios.
 
@@ -20,7 +20,7 @@ This skill documents pytest-httpchain **0.21.0**. The installed package decides 
 
 Before authoring, read checks 1–2 of `<plugin-root>/setup-checklist.md` and select the project's **existing test interpreter**, the same one pytest uses. Run its version probe and retain the installed version and literal absolute interpreter path as `<test-python>`. Use `"<test-python>" -B -m pytest_httpchain.cli` for every inspection and validation command, including delegated work. This works in uv, Poetry, PDM and active-venv projects without switching to a global installation. Do not create/sync an environment or update a lockfile; even `uv run --no-sync` can create a missing venv.
 
-Missing environment or package, or a package older than 0.9.0? Stop and run `pytest-httpchain-setup` (or have the user create/sync the test environment, or add or upgrade the dev dependency) — without it you can't `validate`.
+Missing environment or package, or a package older than 0.16.1? Stop and run `pytest-httpchain-setup` (or have the user create/sync the test environment, or add or upgrade the dev dependency) — without it you can't `validate`.
 
 ## Inline or dispatch the subagent?
 
@@ -31,21 +31,15 @@ Always `validate` after authoring, inline or not (see *Validate your scenario* b
 
 ## Version gates
 
-Compare the installed version from the setup check before using a feature. Below its gate, a key or value the model lacks fails `validate` (`HTTPCHAIN000`; a comment `HTTPCHAIN014`), a template function or name fails its stage, a command or option is refused, and a `.jsonc` file is not collected. Where a row names the older behavior, that release keeps it, often while `validate` passes.
+Compare the installed version from the setup check before using a feature. Below its gate, a key the model lacks fails `validate` (`HTTPCHAIN000`) and a template function fails its stage; where a row names the older behavior, that release keeps it, often while `validate` passes.
 
 | Needs | Feature |
 |-------|---------|
-| ≥0.10 | the `httpchain_suffix` ini option (`suffix` before it) · relative file paths resolving against the scenario file's directory (pytest's working directory before) |
-| ≥0.11 | a matcher object as a `verify.headers` value (plain strings only before) · the `response` namespace in response steps |
-| ≥0.12 | an inline `verify.body.schema` read verbatim, its own `$ref`/`$defs` included (before, the scenario's `$ref` resolver took them: put such a schema in a file) |
-| ≥0.16 | `.jsonc` files, comments and trailing commas · `validate <directory>` and `--suffix` · the `client` block and relative URLs · built-in `auth` (`basic`, `digest`, `bearer`, `false`) · `verify.status` classes and lists · `verify.jmespath` · `save.regex` · a `multipart` body and file objects · `skip_if` · `retry` · `parallel.collect_saves` / `thresholds` / `stats_as` · a JSON pointer on a schema file · the time, encoding, URL and hashing template functions · the `\{{` escape · reading a `vars` object by key · `import har` / `import curl` · `params` merged into the URL's own query (below, httpx ≥0.28 replaces that query: put every parameter in one place) · `{"json": null}` sent as `null` (no body before) · a template rendering `null` failing every optional check or setting (only `verify.status` and `verify.body.schema` before, from 0.14.2) |
 | ≥0.18 | `msgpack` and `bytes` bodies · `response_codec` · `msgpack_pack()`, `hex_bytes()`, `hexencode()`, `b64decode_bytes()` |
 | ≥0.19 | `connections` and `connection` stages · `sha1()` |
 | ≥0.20 | `operation_name` on a `graphql` body · `import` writing a recorded GraphQL request as a `graphql` body |
 | ≥0.20.1 | a context-manager factory fixture called in a connection's `params`, its resource held until that connection closes (released with the opening stage before) |
 | ≥0.21 | a `graphql` query holding templates checked at load (below) · `validate`/`resolve`/`show`/`graph` reading `httpchain_ref_parent_traversal_depth` from the pytest config (3 before, whatever it set) |
-
-On a package below 0.16, assert on the body by saving a value and testing it in `expressions`, write URLs absolute, and authenticate with a header or a user function.
 
 ---
 
@@ -217,7 +211,7 @@ One verify step runs **all** its checks and reports every failure, in this order
 - `jmespath` — assert on the decoded JSON body. Each key is a JMESPath expression; its value is the JSON value it must equal (`true` is not `1`, `"42"` is not `42`) or a matcher object whose every key must hold: `eq`, `ne`, `gt`, `ge`, `lt`, `le`, `contains`, `not_contains`, `matches`, `not_matches`, `type` (`string`/`number`/`integer`/`boolean`/`array`/`object`/`null`), `length` (the exact count; for "at least one" check `"length(items)": {"ge": 1}`). **Values and matcher operands take templates**, so a value saved earlier is compared in place — `"id": "{{ order_id }}"`, no save-then-`expressions` detour; only the key is never rendered. The rendered value must have the body's JSON type: a `save.regex` value and `env()` are text, so convert where the body holds a number (`"{{ int(order_id) }}"`), and a `gt`/`ge`/`lt`/`le` operand must render a number, a `length` one a non-negative integer, never numeric text — `validate` cannot tell. An object here is always a matcher, so compare with an object through `eq`: `"meta": {"eq": {"page": 1}}`. A missing path gives `null`.
 - `expressions` — `{{ }}` templates that must each evaluate to a real bool. Use them for logic across values (two body fields against each other, a sum, a value against `response` metadata); one body value against a literal or a saved name is a `jmespath` check.
 - `user_functions` — `"module:func"` or `{"name": ..., "kwargs": {...}}`; each is called as `func(response=<httpx.Response>, **kwargs)`, so its parameter must be named `response`, and returns a bool. It runs even when an earlier check of the step failed, so it must not assume a good response.
-- `body.schema` — an inline JSON Schema (standard JSON Schema, verbatim: `$include`/`$merge` are **not** resolved inside it — `HTTPCHAIN028`), or a schema **file path** relative to the scenario file, optionally ending in a JSON pointer to one schema inside the document (an OpenAPI 3.1 component: `"./openapi.json#/components/schemas/User"`). `format` is checked (≥0.16), but out of the box (default dialect, Draft 2020-12) only `email`, `idn-email`, `ipv4`, `ipv6`, `date`, `uuid`, `regex` (Python `re` syntax) and `idn-hostname`: `date-time`, `time`, `uri`, `hostname`, `duration` and the rest pass any value unless the test environment has `jsonschema[format-nongpl]`, so check those with `pattern` or a `jmespath` `matches`. A `$ref` resolves within the document or to a local file, never over the network.
+- `body.schema` — an inline JSON Schema (standard JSON Schema, verbatim: `$include`/`$merge` are **not** resolved inside it — `HTTPCHAIN028`), or a schema **file path** relative to the scenario file, optionally ending in a JSON pointer to one schema inside the document (an OpenAPI 3.1 component: `"./openapi.json#/components/schemas/User"`). `format` is checked, but out of the box (default dialect, Draft 2020-12) only `email`, `idn-email`, `ipv4`, `ipv6`, `date`, `uuid`, `regex` (Python `re` syntax) and `idn-hostname`: `date-time`, `time`, `uri`, `hostname`, `duration` and the rest pass any value unless the test environment has `jsonschema[format-nongpl]`, so check those with `pattern` or a `jmespath` `matches`. A `$ref` resolves within the document or to a local file, never over the network.
 - `body.contains` / `not_contains` / `matches` / `not_matches` — lists of substrings or regexes checked against the body text.
 
 **Save types** (one per step):
@@ -263,7 +257,7 @@ Load these as the task needs them:
 "<test-python>" -B -m pytest_httpchain.cli validate test_<name>.http.json
 ```
 
-Use the actual scenario path, including `.jsonc` on package ≥0.16, where `validate` also takes a directory and searches it as pytest does by default (`validate tests/`), except that it follows no symlinked subdirectory and does not read the project's `testpaths` or `norecursedirs`. Below 0.21 the CLI does not read `httpchain_ref_parent_traversal_depth` and allows 3, so a deeper reference that collection accepts fails `validate` as `HTTPCHAIN012`, and `resolve`/`show`/`graph` with `exceeds maximum parent traversal depth of 3`: when the pytest config sets the option (or, below 0.11, its old name `ref_parent_traversal_depth`), pass the same value as `--ref-parent-traversal-depth <N>` to each of them. Below 0.16.1 also pass `--root-path <rootdir>` (the pytest config file's directory) to each: their default `$ref` root can be narrower than pytest's rootdir (before 0.11, the nearest `tests/` ancestor), and a reference that leaves it fails the same way. Never use `uvx` or a package-manager run command to repair a missing environment during validation.
+Use the actual scenario path, `.jsonc` included; `validate` also takes a directory and searches it as pytest does by default (`validate tests/`), except that it follows no symlinked subdirectory and does not read the project's `testpaths` or `norecursedirs`. Below 0.21 the CLI does not read `httpchain_ref_parent_traversal_depth` and allows 3, so a deeper reference that collection accepts fails `validate` as `HTTPCHAIN012`, and `resolve`/`show`/`graph` with `exceeds maximum parent traversal depth of 3`: when the pytest config sets the option, pass the same value as `--ref-parent-traversal-depth <N>` to each of them. Never use `uvx` or a package-manager run command to repair a missing environment during validation.
 
 It checks structure plus semantics a JSON Schema cannot, each with a stable `HTTPCHAINxxx` code and a severity. **Errors** fail `validate`; **warnings** pass it (`OK with warnings`) unless `--strict`; `HTTPCHAIN025` is **info** and never affects the result. Common ones (all of them in [`references/diagnostics.md`](references/diagnostics.md)):
 
@@ -298,9 +292,9 @@ Invoke these through the selected interpreter as `"<test-python>" -B -m pytest_h
 - `pytest-httpchain graph <file>` — emit a Mermaid flowchart of the stage data-flow (`--direction LR` for wide chains); edges out of a stage that may skip, and connection edges, are dotted. Render it to show the user how a scenario chains.
 - `pytest-httpchain schema > scenario.schema.json` — emit the scenario JSON Schema of the installed version (stdout only) for editor autocomplete/validation, and to settle a field name this skill does not cover.
 
-`show` and `graph` need the scenario to load — run `validate` first if they error; `resolve` works even when a scenario doesn't fully validate. Below 0.21, give them the same `--ref-parent-traversal-depth <N>`, and below 0.16.1 the same `--root-path <rootdir>`, as `validate` (above).
+`show` and `graph` need the scenario to load — run `validate` first if they error; `resolve` works even when a scenario doesn't fully validate. Below 0.21, give them the same `--ref-parent-traversal-depth <N>` as `validate` (above).
 
-## Import recorded traffic (pytest-httpchain ≥0.16)
+## Import recorded traffic
 
 `import` writes a starter scenario from traffic the user already has. It sends nothing, validates what it writes, and replaces secrets (tokens, passwords, cookies) with `{{ env('...') }}` placeholders that it lists on stderr.
 

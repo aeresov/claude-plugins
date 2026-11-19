@@ -2,11 +2,8 @@
 
 Loaded on demand from `SKILL.md`. The essentials (context, `{{ expr }}` in values only,
 quoted names for `env`/`get`/`exists`) stay in `SKILL.md`; this file is the detail.
-Version gates: the time, encoding, URL and hashing functions, the `\{{` escape,
-reading a `vars` object by key, a `json` body of `null` sent as `null` (no body before)
-and the `null` refusal below on every field but `verify.status` and `verify.body.schema`
-(those ≥0.14.2) need pytest-httpchain ≥0.16; the MessagePack and bytes helpers ≥0.18;
-`sha1()` ≥0.19.
+Version gates: the MessagePack and bytes helpers need pytest-httpchain ≥0.18; `sha1()`
+≥0.19.
 
 ## Built-in functions
 

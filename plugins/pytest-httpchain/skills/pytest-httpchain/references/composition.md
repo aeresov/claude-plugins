@@ -21,10 +21,7 @@ steps also see fixtures, parametrize parameters, scenario substitutions and earl
 Put a value built from another name in a later step
 (`[{"vars": {"host": "…"}}, {"vars": {"url": "{{ host }}/api"}}]`), not in the same `vars`.
 A read from the same or a later step is `HTTPCHAIN017` in the scenario's `substitutions`
-(≥0.14.1) and `HTTPCHAIN004` in a stage's (≥0.13; the stage then fails when it runs). Older
-`validate` passes both, and pytest still fails them: a stage's when that stage runs, the
-scenario's at its first stage, or, on 0.9.x or when a stage's `parametrize` values are
-templates (below), as a collection error that stops the whole run. A dict of named steps
+and `HTTPCHAIN004` in a stage's (the stage then fails when it runs). A dict of named steps
 works in place of the list; the names only organize.
 
 A `functions` entry binds a **callable** — it isn't invoked when the substitution runs. Call it in a template: `"Authorization": "Bearer {{ generate_token() }}"` (a bare `{{ generate_token }}` renders the function object). Its `kwargs` are passed unrendered (`HTTPCHAIN030`).
@@ -62,8 +59,8 @@ Merge rules (a violation fails loading with `HTTPCHAIN012: … Merge conflict at
 To vary a value per use, leave it **out** of the shared fragment (or reference a sub-node that omits it) and set it in each sibling. To extend one shared `jmespath` matcher, write the reference at the expectation itself: `"price": {"$merge": "common.json#/checks/verify/jmespath/price", "lt": 100}`. A sibling cannot extend an inline schema (a conflict), and a `$merge` written at it is not resolved (`HTTPCHAIN028`): give each use its whole schema, or share a schema file (below).
 
 Path rules:
-- A relative path is looked up next to the **referencing file** first, then under the root (pytest's rootdir, or `--root-path`; below 0.16.1 the CLI's default root can be narrower, so pass pytest's rootdir as `--root-path` to `validate`/`resolve`/`show`/`graph`). A file found under both draws `HTTPCHAIN026`.
-- At most `httpchain_ref_parent_traversal_depth` `../` segments (ini option, default 3; `ref_parent_traversal_depth` before 0.10, which 0.10 still reads when the new name is absent), never an absolute path, and never outside the root. `validate`/`resolve`/`show`/`graph` read it from the pytest config on ≥0.21; below, they allow 3 whatever it sets, so pass the value collection uses as `--ref-parent-traversal-depth <N>`.
+- A relative path is looked up next to the **referencing file** first, then under the root (pytest's rootdir, or `--root-path`). A file found under both draws `HTTPCHAIN026`.
+- At most `httpchain_ref_parent_traversal_depth` `../` segments (ini option, default 3), never an absolute path, and never outside the root. `validate`/`resolve`/`show`/`graph` read it from the pytest config on ≥0.21; below, they allow 3 whatever it sets, so pass the value collection uses as `--ref-parent-traversal-depth <N>`.
 - A referenced file may be `.json` or `.jsonc`, with comments.
 
 Directives are **not** resolved inside an inline `verify.body.schema` (it's standard JSON Schema, verbatim — `HTTPCHAIN028` for `$include`/`$merge`). A JSON Schema `$ref` inside it does resolve, within the schema or to a local file relative to the scenario's directory; to share a whole schema, use the file-path form `"schema": "./schemas/user.json"`, optionally with a pointer (`"./openapi.json#/components/schemas/User"`).
@@ -131,7 +128,7 @@ How a parallel stage behaves:
 - More than 100 requests in flight against an HTTP/2 server needs `"client": {"http2": false}`.
 - Not available on a `connection` stage (`HTTPCHAIN041`).
 
-Three more options need pytest-httpchain ≥0.16:
+Three more options:
 
 | Option | Meaning |
 |--------|---------|
